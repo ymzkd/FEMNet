@@ -155,7 +155,8 @@ BeamStress BeamElement::stress(Displacement d0, Displacement d1)
 	wvec.segment(6, 6) = Eigen::Map<Eigen::VectorXd>(d1.displace, 6);
 	
 	wvec = trans_matrix() * wvec;
-	wvec = StiffnessMatrix() * wvec;
+	wvec = stiffness_matrix_local() * wvec;
+	//wvec = StiffnessMatrix() * wvec;
 
 	BeamStressData s0(wvec(0), wvec(1), wvec(2), wvec(3), wvec(4), wvec(5));
 	BeamStressData s1(wvec(6), wvec(7), wvec(8), wvec(9), wvec(10), wvec(11));
@@ -221,13 +222,23 @@ Eigen::Matrix3d trans_matrix3(const Point p0, const Point p1, const double beta)
 	// ex = p1 - p0;
 	ex = ex * (1 / ex.norm());
 
-	// Ş²•ûŒü‚Æ‘S‘ÌÀ•WŒnZ²‚ª•Às‚Ì‚Æ‚«
-	if (std::abs(1 - std::abs(ex * Vector::ZAxis())) < TOL)
+	// æè»¸æ–¹å‘ã¨å…¨ä½“åº§æ¨™ç³»Zè»¸ãŒä¸¦è¡Œã®ã¨ã
+	double dot = ex * Vector::ZAxis();
+	if (std::abs(1 - std::abs(dot)) < TOL)
 	{
-		ey = Vector::XAxis();
-		ez = Vector::YAxis();
+		if (dot < 0)
+			ey = Vector::YAxis();
+		else
+			ey = Vector::YAxis() * -1.0;
+		
+		// Ref Book
+		//ey = Vector::XAxis();
+		//ez = Vector::YAxis();
+
+		// Midasä»•æ§˜
+		ez = Vector::XAxis();
 	}
-	// Ş²•ûŒü‚Æ‘S‘ÌÀ•WŒnZ²‚ª•Às‚Å‚Í‚È‚¢‚Æ‚«
+	// æè»¸æ–¹å‘ã¨å…¨ä½“åº§æ¨™ç³»Zè»¸ãŒä¸¦è¡Œã§ã¯ãªã„ã¨ã
 	else {
 		ez = Vector::ZAxis() - ex * (ex * Vector::ZAxis());
 		ez = ez * (1 / ez.norm());
@@ -259,12 +270,12 @@ Eigen::MatrixXd BeamElement::trans_matrix()
 	
 	Eigen::Matrix3d tr0 = trans_matrix3(Nodes[0]->Location, Nodes[1]->Location, Beta);
 	
-	// ƒuƒƒbƒN‚Ì”‚ğw’è
+	// ãƒ–ãƒ­ãƒƒã‚¯ã®æ•°ã‚’æŒ‡å®š
 	const int numBlocks = 4;
 
-	// ‘å‚«‚Ès—ñ‚ğì¬‚µA‘ÎŠpƒuƒƒbƒNs—ñ‚Æ‚µ‚Ä“¯‚¶s—ñ‚ğ”z’u
+	// å¤§ããªè¡Œåˆ—ã‚’ä½œæˆã—ã€å¯¾è§’ãƒ–ãƒ­ãƒƒã‚¯è¡Œåˆ—ã¨ã—ã¦åŒã˜è¡Œåˆ—ã‚’é…ç½®
 	Eigen::MatrixXd matrix(total_dof, total_dof);
-	matrix.setZero();  // s—ñ‚ğ0‚Å‰Šú‰»
+	matrix.setZero();  // è¡Œåˆ—ã‚’0ã§åˆæœŸåŒ–
 
 	for (int i = 0; i < numBlocks; ++i) {
 		matrix.block(i * tr0.rows(), i * tr0.cols(), tr0.rows(), tr0.cols()) = tr0;
@@ -334,8 +345,8 @@ std::ostream& operator<<(std::ostream& os, const MembraneStressData& strs)
 
 std::ostream& operator<<(std::ostream& os, const PlateStressData& strs)
 {
-	os << "Plate Stress  " << "Mx: " << strs.Mx << ", My: " << strs.My
-		<< ", Mxy: " << strs.Mxy;
+	os << "Plate Stress Mx: " << strs.Mx << ", My: " << strs.My
+		<< ", Mxy: " << strs.Mxy << ", Qx: " << strs.Qx << ", Qy: " << strs.Qy;
 	return os;
 }
 
@@ -459,12 +470,12 @@ Eigen::MatrixXd TriPlaneElement::trans_matrix()
 {	
 	Eigen::Matrix3d tr0 = trans_matrix3(plane);
 
-	// ƒuƒƒbƒN‚Ì”‚ğw’è
+	// ãƒ–ãƒ­ãƒƒã‚¯ã®æ•°ã‚’æŒ‡å®š
 	const int numBlocks = node_num;
 
-	// ‘å‚«‚Ès—ñ‚ğì¬‚µA‘ÎŠpƒuƒƒbƒNs—ñ‚Æ‚µ‚Ä“¯‚¶s—ñ‚ğ”z’u
+	// å¤§ããªè¡Œåˆ—ã‚’ä½œæˆã—ã€å¯¾è§’ãƒ–ãƒ­ãƒƒã‚¯è¡Œåˆ—ã¨ã—ã¦åŒã˜è¡Œåˆ—ã‚’é…ç½®
 	Eigen::MatrixXd matrix(3*2, total_dof);
-	matrix.setZero();  // s—ñ‚ğ0‚Å‰Šú‰»
+	matrix.setZero();  // è¡Œåˆ—ã‚’0ã§åˆæœŸåŒ–
 
 	for (int i = 0; i < numBlocks; ++i) {
 		matrix.block(i * 2, i * node_dof, 2, node_dof) = tr0.block(0,0,2,node_dof);
@@ -511,7 +522,7 @@ Eigen::MatrixXd TriPlateElement::BMatrix(double xi, double eta)
 		eta * (q4 - q5),
 		-eta * (r5 - r4);
 	
-	// Œ³˜_•¶
+	// å…ƒè«–æ–‡
 	Hy_xi <<
 		t6 * (1 - 2 * xi) + (t5 - t6) * eta,
 		1 + r6 * (1 - 2 * xi) - (r5 + r6) * eta,
@@ -534,7 +545,7 @@ Eigen::MatrixXd TriPlateElement::BMatrix(double xi, double eta)
 		q5 * (1 - 2 * eta) + xi * (q4 - q5),
 		-2 + 6 * eta + r5 * (1 - 2 * eta) + xi * (r4 - r5);
 
-	// Œ³˜_•¶
+	// å…ƒè«–æ–‡
 	Hy_eta <<
 		-t5 * (1 - 2 * eta) - xi * (t6 - t5),
 		1 + r5 * (1 - 2 * eta) - xi * (r5 + r6),
@@ -554,8 +565,7 @@ Eigen::MatrixXd TriPlateElement::BMatrix(double xi, double eta)
 	return mat;
 }
 
-
-//void TriPlateElement::shearstress(Displacement d0, Displacement d1, Displacement d2, double xi, double eta)
+//void TriPlateElement::shearstress(Displacement d0, Displacement d1, Displacement d2)
 //{
 //	Point p1 = plane.PointToCoord(Nodes[0]->Location);
 //	Point p2 = plane.PointToCoord(Nodes[1]->Location);
@@ -628,101 +638,18 @@ Eigen::MatrixXd TriPlateElement::BMatrix(double xi, double eta)
 //
 //	Eigen::VectorXd wvec(9);
 //	wvec << d0t.Dz(), d0t.Rx(), d0t.Ry(), d1t.Dz(), d1t.Rx(), d1t.Ry(), d2t.Dz(), d2t.Rx(), d2t.Ry();
-//	Eigen::Matrix3d Dmat = DMatrix();
+//	Eigen::Matrix3d Dmat = DMatrix(); // .topLeftCorner<2, 2>();
 //
-//	Eigen::Vector3d qx = Dmat * Bmat_x * wvec;
-//	Eigen::Vector3d qy = Dmat * Bmat_y * wvec;
+//	Eigen::Vector3d dMdx = Dmat * (Bmat_x * wvec);
+//	Eigen::Vector3d dMdy = Dmat * (Bmat_y * wvec);
+//	
+//	double qx = dMdx(0) + dMdy(2);
+//	double qy = dMdy(1) + dMdx(2);
+//	// double qy = Dmat.row(1) * (Bmat_y * wvec);
 //
-//	std::cout << "[Mx,x, My,x, Mxy,x]: " << qx << std::endl;
-//	std::cout << "[Mx,y, My,y, Mxy,y]: " << qy << std::endl;
+//	std::cout << "qx: " << qx << std::endl;
+//	std::cout << "qy: " << qy << std::endl;
 //}
-
-
-void TriPlateElement::shearstress(Displacement d0, Displacement d1, Displacement d2)
-{
-	Point p1 = plane.PointToCoord(Nodes[0]->Location);
-	Point p2 = plane.PointToCoord(Nodes[1]->Location);
-	Point p3 = plane.PointToCoord(Nodes[2]->Location);
-
-	Vector v23 = p2 - p3;
-	Vector v31 = p3 - p1;
-	Vector v12 = p1 - p2;
-
-	double p4 = -6 * v23.x / v23.squared_norm();
-	double p5 = -6 * v31.x / v31.squared_norm();
-	double p6 = -6 * v12.x / v12.squared_norm();
-
-	double q4 = 3 * v23.x * v23.y / v23.squared_norm();
-	double q5 = 3 * v31.x * v31.y / v31.squared_norm();
-	double q6 = 3 * v12.x * v12.y / v12.squared_norm();
-
-	double r4 = 3 * v23.y * v23.y / v23.squared_norm();
-	double r5 = 3 * v31.y * v31.y / v31.squared_norm();
-	double r6 = 3 * v12.y * v12.y / v12.squared_norm();
-
-	double t4 = -6 * v23.y / v23.squared_norm();
-	double t5 = -6 * v31.y / v31.squared_norm();
-	double t6 = -6 * v12.y / v12.squared_norm();
-
-	double Jl = v12.y * v31.x - v12.x * v31.y;
-	Eigen::Matrix2d Jinv;
-	Jinv << v31.y / Jl, v12.y / Jl, -v31.x / Jl, -v12.x / Jl;
-
-	Eigen::Vector<double, 9> Hy_xi_xi, Hy_xi_eta, Hy_eta_xi, Hy_eta_eta;
-	Hy_xi_xi << -2.0 * t6, -2.0 * r6, 2.0 * q6, 2.0 * t6, -2.0 * r6, 2.0 * q6, 0, 0, 0;
-	Hy_xi_eta << t5 - t6, -(r5 + r6), q5 + q6, t4 + t6, r4 - r6, -(q4 - q6), -(t4 + t5), r4 - r5, q5 - q4;
-	Hy_eta_xi << t5 - t6, -(r5 + r6), q5 + q6, t4 + t6, r4 - r6, -(q4 - q6), -(t4 + t5), r4 - r5, q5 - q4;
-	Hy_eta_eta << 2.0 * t5, -2.0 * r5, 2.0 * q5, 0, 0, 0, -2.0 * t5, -2.0 * r5, 2.0 * q5;
-
-	Eigen::Vector<double, 9> Hx_xi_xi, Hx_xi_eta, Hx_eta_xi, Hx_eta_eta;
-	Hx_xi_xi << -2.0 * p6, -2.0 * q6, 6.0 - 2.0 * r6, 2.0 * p6, -2.0 * q6, 6.0 - 2.0 * r6, 0, 0, 0;
-	Hx_xi_eta << p5 - p6, -(q5 + q6), 6.0 - (r5 + r6), p4 + p6, q4 - q6, r4 - r6, -(p5 + p4), (q4 - q5), -(r5 - r4);
-	Hx_eta_xi << p5 - p6, -(q5 + q6), 6.0 - (r5 + r6), p4 + p6, q4 - q6, r4 - r6, -(p4 + p5), q4 - q5, r4 - r5;
-	Hx_eta_eta << 2.0 * p5, -2.0 * q5, 6.0 - 2.0 * r5, 0, 0, 0, -2.0 * p5, -2.0 * q5, 6.0 - 2.0 * r5;
-
-	Eigen::Vector<double, 9> Hy_xi_x, Hy_xi_y, Hy_eta_x, Hy_eta_y;
-	Hy_xi_x = Jinv(0, 0) * Hy_xi_xi + Jinv(0, 1) * Hy_xi_eta;
-	Hy_xi_y = Jinv(1, 0) * Hy_xi_xi + Jinv(1, 1) * Hy_xi_eta;
-	Hy_eta_x = Jinv(0, 0) * Hy_eta_xi + Jinv(0, 1) * Hy_eta_eta;
-	Hy_eta_y = Jinv(1, 0) * Hy_eta_xi + Jinv(1, 1) * Hy_eta_eta;
-
-	Eigen::Vector<double, 9> Hx_xi_x, Hx_xi_y, Hx_eta_x, Hx_eta_y;
-	Hx_xi_x = Jinv(0, 0) * Hx_xi_xi + Jinv(0, 1) * Hx_xi_eta;
-	Hx_xi_y = Jinv(1, 0) * Hx_xi_xi + Jinv(1, 1) * Hx_xi_eta;
-	Hx_eta_x = Jinv(0, 0) * Hx_eta_xi + Jinv(0, 1) * Hx_eta_eta;
-	Hx_eta_y = Jinv(1, 0) * Hx_eta_xi + Jinv(1, 1) * Hx_eta_eta;
-
-	Eigen::MatrixXd Bmat_y(3, 9);
-	Bmat_y.row(0) = v31.y * Hx_xi_y + v12.y * Hx_eta_y;
-	Bmat_y.row(1) = -v31.x * Hy_xi_y - v12.x * Hy_eta_y;
-	Bmat_y.row(2) = -v31.x * Hx_xi_y - v12.x * Hx_eta_y + v31.y * Hy_xi_y + v12.y * Hy_eta_y;
-	Bmat_y /= (2.0 * Area());
-
-	Eigen::MatrixXd Bmat_x(3, 9);
-	Bmat_x.row(0) = v31.y * Hx_xi_x + v12.y * Hx_eta_x;
-	Bmat_x.row(1) = -v31.x * Hy_xi_x - v12.x * Hy_eta_x;
-	Bmat_x.row(2) = -v31.x * Hx_xi_x - v12.x * Hx_eta_x + v31.y * Hy_xi_x + v12.y * Hy_eta_x;
-	Bmat_x /= (2.0 * Area());
-
-	Eigen::Matrix3d tr = trans_matrix3(plane);
-	Displacement d0t = d0.translate(tr);
-	Displacement d1t = d1.translate(tr);
-	Displacement d2t = d2.translate(tr);
-
-	Eigen::VectorXd wvec(9);
-	wvec << d0t.Dz(), d0t.Rx(), d0t.Ry(), d1t.Dz(), d1t.Rx(), d1t.Ry(), d2t.Dz(), d2t.Rx(), d2t.Ry();
-	Eigen::Matrix3d Dmat = DMatrix(); // .topLeftCorner<2, 2>();
-
-	Eigen::Vector3d dMdx = Dmat * (Bmat_x * wvec);
-	Eigen::Vector3d dMdy = Dmat * (Bmat_y * wvec);
-	
-	double qx = dMdx(0) + dMdy(2);
-	double qy = dMdy(1) + dMdx(2);
-	// double qy = Dmat.row(1) * (Bmat_y * wvec);
-
-	std::cout << "qx: " << qx << std::endl;
-	std::cout << "qy: " << qy << std::endl;
-}
 
 
 Eigen::Matrix3d TriPlateElement::DMatrix()
@@ -772,10 +699,10 @@ TriPlateElement::trans_matrix()
 {
 	Eigen::Matrix3d tr0 = trans_matrix3(plane);
 
-	// ƒuƒƒbƒN‚Ì”‚ğw’è
+	// ãƒ–ãƒ­ãƒƒã‚¯ã®æ•°ã‚’æŒ‡å®š
 	const int numBlocks = 6;
 
-	// ‘å‚«‚Ès—ñ‚ğì¬‚µA‘ÎŠpƒuƒƒbƒNs—ñ‚Æ‚µ‚Ä“¯‚¶s—ñ‚ğ”z’u
+	// å¤§ããªè¡Œåˆ—ã‚’ä½œæˆã—ã€å¯¾è§’ãƒ–ãƒ­ãƒƒã‚¯è¡Œåˆ—ã¨ã—ã¦åŒã˜è¡Œåˆ—ã‚’é…ç½®
 	LocalMatrixd matrix;
 	matrix.setZero();
 
@@ -892,11 +819,84 @@ PlateStressData TriPlateElement::stress(
 	Displacement d1t = d1.translate(tr);
 	Displacement d2t = d2.translate(tr);
 	
+	// Moments
+	Eigen::Matrix3d Dmat = DMatrix();
 	Eigen::VectorXd wvec(9);
 	wvec << d0t.Dz(), d0t.Rx(), d0t.Ry(), d1t.Dz(), d1t.Rx(), d1t.Ry(), d2t.Dz(), d2t.Rx(), d2t.Ry();
-	Eigen::Vector3d strs = DMatrix() * BMatrix(xi, eta) * wvec;
+	Eigen::Vector3d strs = Dmat * BMatrix(xi, eta) * wvec;
 	
-	return PlateStressData(strs[0], strs[1], strs[2]);
+	// Shear
+	Point p1 = plane.PointToCoord(Nodes[0]->Location);
+	Point p2 = plane.PointToCoord(Nodes[1]->Location);
+	Point p3 = plane.PointToCoord(Nodes[2]->Location);
+
+	Vector v23 = p2 - p3;
+	Vector v31 = p3 - p1;
+	Vector v12 = p1 - p2;
+
+	double p4 = -6 * v23.x / v23.squared_norm();
+	double p5 = -6 * v31.x / v31.squared_norm();
+	double p6 = -6 * v12.x / v12.squared_norm();
+
+	double q4 = 3 * v23.x * v23.y / v23.squared_norm();
+	double q5 = 3 * v31.x * v31.y / v31.squared_norm();
+	double q6 = 3 * v12.x * v12.y / v12.squared_norm();
+
+	double r4 = 3 * v23.y * v23.y / v23.squared_norm();
+	double r5 = 3 * v31.y * v31.y / v31.squared_norm();
+	double r6 = 3 * v12.y * v12.y / v12.squared_norm();
+
+	double t4 = -6 * v23.y / v23.squared_norm();
+	double t5 = -6 * v31.y / v31.squared_norm();
+	double t6 = -6 * v12.y / v12.squared_norm();
+
+	double Jl = v12.y * v31.x - v12.x * v31.y;
+	Eigen::Matrix2d Jinv;
+	Jinv << v31.y / Jl, v12.y / Jl, -v31.x / Jl, -v12.x / Jl;
+
+	Eigen::Vector<double, 9> Hy_xi_xi, Hy_xi_eta, Hy_eta_xi, Hy_eta_eta;
+	Hy_xi_xi << -2.0 * t6, -2.0 * r6, 2.0 * q6, 2.0 * t6, -2.0 * r6, 2.0 * q6, 0, 0, 0;
+	Hy_xi_eta << t5 - t6, -(r5 + r6), q5 + q6, t4 + t6, r4 - r6, -(q4 - q6), -(t4 + t5), r4 - r5, q5 - q4;
+	Hy_eta_xi << t5 - t6, -(r5 + r6), q5 + q6, t4 + t6, r4 - r6, -(q4 - q6), -(t4 + t5), r4 - r5, q5 - q4;
+	Hy_eta_eta << 2.0 * t5, -2.0 * r5, 2.0 * q5, 0, 0, 0, -2.0 * t5, -2.0 * r5, 2.0 * q5;
+
+	Eigen::Vector<double, 9> Hx_xi_xi, Hx_xi_eta, Hx_eta_xi, Hx_eta_eta;
+	Hx_xi_xi << -2.0 * p6, -2.0 * q6, 6.0 - 2.0 * r6, 2.0 * p6, -2.0 * q6, 6.0 - 2.0 * r6, 0, 0, 0;
+	Hx_xi_eta << p5 - p6, -(q5 + q6), 6.0 - (r5 + r6), p4 + p6, q4 - q6, r4 - r6, -(p5 + p4), (q4 - q5), -(r5 - r4);
+	Hx_eta_xi << p5 - p6, -(q5 + q6), 6.0 - (r5 + r6), p4 + p6, q4 - q6, r4 - r6, -(p4 + p5), q4 - q5, r4 - r5;
+	Hx_eta_eta << 2.0 * p5, -2.0 * q5, 6.0 - 2.0 * r5, 0, 0, 0, -2.0 * p5, -2.0 * q5, 6.0 - 2.0 * r5;
+
+	Eigen::Vector<double, 9> Hy_xi_x, Hy_xi_y, Hy_eta_x, Hy_eta_y;
+	Hy_xi_x = Jinv(0, 0) * Hy_xi_xi + Jinv(0, 1) * Hy_xi_eta;
+	Hy_xi_y = Jinv(1, 0) * Hy_xi_xi + Jinv(1, 1) * Hy_xi_eta;
+	Hy_eta_x = Jinv(0, 0) * Hy_eta_xi + Jinv(0, 1) * Hy_eta_eta;
+	Hy_eta_y = Jinv(1, 0) * Hy_eta_xi + Jinv(1, 1) * Hy_eta_eta;
+
+	Eigen::Vector<double, 9> Hx_xi_x, Hx_xi_y, Hx_eta_x, Hx_eta_y;
+	Hx_xi_x = Jinv(0, 0) * Hx_xi_xi + Jinv(0, 1) * Hx_xi_eta;
+	Hx_xi_y = Jinv(1, 0) * Hx_xi_xi + Jinv(1, 1) * Hx_xi_eta;
+	Hx_eta_x = Jinv(0, 0) * Hx_eta_xi + Jinv(0, 1) * Hx_eta_eta;
+	Hx_eta_y = Jinv(1, 0) * Hx_eta_xi + Jinv(1, 1) * Hx_eta_eta;
+
+	Eigen::MatrixXd Bmat_y(3, 9);
+	Bmat_y.row(0) = v31.y * Hx_xi_y + v12.y * Hx_eta_y;
+	Bmat_y.row(1) = -v31.x * Hy_xi_y - v12.x * Hy_eta_y;
+	Bmat_y.row(2) = -v31.x * Hx_xi_y - v12.x * Hx_eta_y + v31.y * Hy_xi_y + v12.y * Hy_eta_y;
+	Bmat_y /= (2.0 * Area());
+
+	Eigen::MatrixXd Bmat_x(3, 9);
+	Bmat_x.row(0) = v31.y * Hx_xi_x + v12.y * Hx_eta_x;
+	Bmat_x.row(1) = -v31.x * Hy_xi_x - v12.x * Hy_eta_x;
+	Bmat_x.row(2) = -v31.x * Hx_xi_x - v12.x * Hx_eta_x + v31.y * Hy_xi_x + v12.y * Hy_eta_x;
+	Bmat_x /= (2.0 * Area());
+
+	Eigen::Vector3d dMdx = Dmat * (Bmat_x * wvec);
+	Eigen::Vector3d dMdy = Dmat * (Bmat_y * wvec);
+
+	double qx = dMdx(0) + dMdy(2);
+	double qy = dMdy(1) + dMdx(2);
+
+	return PlateStressData(strs[0], strs[1], strs[2], qx, qy);
 }
 
 Eigen::Matrix2d QuadPlaneElement::JMatrix(double xi, double eta)
@@ -993,12 +993,12 @@ Eigen::MatrixXd QuadPlaneElement::trans_matrix()
 {
 	Eigen::Matrix3d tr0 = trans_matrix3(plane);
 
-	// ƒuƒƒbƒN‚Ì”‚ğw’è
+	// ãƒ–ãƒ­ãƒƒã‚¯ã®æ•°ã‚’æŒ‡å®š
 	const int numBlocks = node_num;
 
-	// ‘å‚«‚Ès—ñ‚ğì¬‚µA‘ÎŠpƒuƒƒbƒNs—ñ‚Æ‚µ‚Ä“¯‚¶s—ñ‚ğ”z’u
+	// å¤§ããªè¡Œåˆ—ã‚’ä½œæˆã—ã€å¯¾è§’ãƒ–ãƒ­ãƒƒã‚¯è¡Œåˆ—ã¨ã—ã¦åŒã˜è¡Œåˆ—ã‚’é…ç½®
 	Eigen::MatrixXd matrix(node_num * node_dof_local, total_dof);
-	matrix.setZero();  // s—ñ‚ğ0‚Å‰Šú‰»
+	matrix.setZero();  // è¡Œåˆ—ã‚’0ã§åˆæœŸåŒ–
 
 	for (int i = 0; i < numBlocks; ++i)
 		matrix.block(i * 2, i * node_dof, 2, node_dof) = tr0.block(0, 0, 2, node_dof);
@@ -1133,7 +1133,7 @@ Eigen::Matrix2d QuadPlateElement::dJinv_deta(double xi, double eta)
 	return dJinv_deta;
 }
 
-// “ü—ÍŒ`óŠÖ”‚É‰‚¶‚½x,y‚»‚ê‚¼‚ê‚Ì•ûŒü‚Ì—ñƒxƒNƒgƒ‹‚É‚æ‚éHƒxƒNƒgƒ‹s—ñ
+// å…¥åŠ›å½¢çŠ¶é–¢æ•°ã«å¿œã˜ãŸx,yãã‚Œãã‚Œã®æ–¹å‘ã®åˆ—ãƒ™ã‚¯ãƒˆãƒ«ã«ã‚ˆã‚‹Hãƒ™ã‚¯ãƒˆãƒ«è¡Œåˆ—
 Eigen::MatrixXd QuadPlateElement::HVecs(Eigen::VectorXd shape_funcs) {
 	Point p1 = plane.PointToCoord(Nodes[0]->Location);
 	Point p2 = plane.PointToCoord(Nodes[1]->Location);
@@ -1465,10 +1465,10 @@ QuadPlateElement::trans_matrix()
 {
 	Eigen::Matrix3d tr0 = trans_matrix3(plane);
 
-	// ƒuƒƒbƒN‚Ì”‚ğw’è
+	// ãƒ–ãƒ­ãƒƒã‚¯ã®æ•°ã‚’æŒ‡å®š
 	const int numBlocks = 8;
 
-	// ‘å‚«‚Ès—ñ‚ğì¬‚µA‘ÎŠpƒuƒƒbƒNs—ñ‚Æ‚µ‚Ä“¯‚¶s—ñ‚ğ”z’u
+	// å¤§ããªè¡Œåˆ—ã‚’ä½œæˆã—ã€å¯¾è§’ãƒ–ãƒ­ãƒƒã‚¯è¡Œåˆ—ã¨ã—ã¦åŒã˜è¡Œåˆ—ã‚’é…ç½®
 	LocalMatrixd matrix;
 	matrix.setZero();
 
@@ -1569,6 +1569,7 @@ PlateStressData QuadPlateElement::stress(Displacement d0, Displacement d1,
 	Displacement d2, Displacement d3, double xi, double eta)
 {
 	Eigen::Matrix3d tr = trans_matrix3(plane);
+	Eigen::Matrix3d DMat = DMatrix();
 
 	Displacement d0t = d0.translate(tr);
 	Displacement d1t = d1.translate(tr);
@@ -1579,14 +1580,10 @@ PlateStressData QuadPlateElement::stress(Displacement d0, Displacement d1,
 	wvec << d0t.Dz(), d0t.Rx(), d0t.Ry(), d1t.Dz(), d1t.Rx(), d1t.Ry(), 
 		d2t.Dz(), d2t.Rx(), d2t.Ry(), d3t.Dz(), d3t.Rx(), d3t.Ry();
 
-	Eigen::Vector3d strs = DMatrix() * BMatrix(xi, eta) * wvec;
+	// Moment
+	Eigen::Vector3d strs = DMat * BMatrix(xi, eta) * wvec;
 
-	return PlateStressData(strs(0), strs(1), strs(2));
-}
-
-void QuadPlateElement::shearstress(Displacement d0, Displacement d1, 
-	Displacement d2, Displacement d3, double xi, double eta)
-{
+	// Shear
 	Eigen::Matrix2d DJinv_dxi = dJinv_dxi(xi, eta);
 	Eigen::Matrix2d DJinv_deta = dJinv_deta(xi, eta);
 	Eigen::Matrix2d Jinv = JMatrix(xi, eta).inverse();
@@ -1601,7 +1598,7 @@ void QuadPlateElement::shearstress(Displacement d0, Displacement d1,
 	Eigen::MatrixXd dB_dxi(3, 12), dB_deta(3, 12);
 	dB_dxi.row(0) = DJinv_dxi(0, 0) * dH_dxi.row(0) + Jinv(0, 0) * dH_d2xi.row(0)
 		+ DJinv_dxi(0, 1) * dH_deta.row(0) + Jinv(0, 1) * dH_deta_dxi.row(0);
-	dB_dxi.row(1) = DJinv_dxi(1, 0) * dH_dxi.row(1) + Jinv(1, 0) * dH_d2xi.row(1) 
+	dB_dxi.row(1) = DJinv_dxi(1, 0) * dH_dxi.row(1) + Jinv(1, 0) * dH_d2xi.row(1)
 		+ DJinv_dxi(1, 1) * dH_deta.row(1) + Jinv(1, 1) * dH_deta_dxi.row(1);
 	dB_dxi.row(2) = DJinv_dxi(0, 0) * dH_dxi.row(1) + Jinv(0, 0) * dH_d2xi.row(1)
 		+ DJinv_dxi(0, 1) * dH_deta.row(1) + Jinv(0, 1) * dH_deta_dxi.row(1)
@@ -1621,27 +1618,73 @@ void QuadPlateElement::shearstress(Displacement d0, Displacement d1,
 	dB_dx = Jinv(0, 0) * dB_dxi + Jinv(0, 1) * dB_deta;
 	dB_dy = Jinv(1, 0) * dB_dxi + Jinv(1, 1) * dB_deta;
 
-	Eigen::Matrix3d DMat = DMatrix();
-	Eigen::Matrix3d tr = trans_matrix3(plane);
-
-	Displacement d0t = d0.translate(tr);
-	Displacement d1t = d1.translate(tr);
-	Displacement d2t = d2.translate(tr);
-	Displacement d3t = d3.translate(tr);
-
-	Eigen::VectorXd wvec(total_dof_local);
-	wvec << d0t.Dz(), d0t.Rx(), d0t.Ry(), d1t.Dz(), d1t.Rx(), d1t.Ry(),
-		d2t.Dz(), d2t.Rx(), d2t.Ry(), d3t.Dz(), d3t.Rx(), d3t.Ry();
-
-	Eigen::Vector3d dM_dx = DMatrix() * dB_dx * wvec;
-	Eigen::Vector3d dM_dy = DMatrix() * dB_dy * wvec;
+	Eigen::Vector3d dM_dx = DMat * dB_dx * wvec;
+	Eigen::Vector3d dM_dy = DMat * dB_dy * wvec;
 
 	double qx = dM_dx(0) + dM_dy(2);
 	double qy = dM_dy(1) + dM_dx(2);
 
-	// std::cout << "M_x: " << dM_dx << ", M_y: " << dM_dy << std::endl;
-
-	std::cout << "qx: " << qx << ", qy: " << qy << std::endl;
-
-	// return PlateStressData(strs(0), strs(1), strs(2));
+	return PlateStressData(strs(0), strs(1), strs(2), qx, qy);
 }
+
+//void QuadPlateElement::shearstress(Displacement d0, Displacement d1, 
+//	Displacement d2, Displacement d3, double xi, double eta)
+//{
+//	Eigen::Matrix2d DJinv_dxi = dJinv_dxi(xi, eta);
+//	Eigen::Matrix2d DJinv_deta = dJinv_deta(xi, eta);
+//	Eigen::Matrix2d Jinv = JMatrix(xi, eta).inverse();
+//
+//	Eigen::MatrixXd dH_dxi = HVecs(dndxi(xi, eta));
+//	Eigen::MatrixXd dH_deta = HVecs(dndeta(xi, eta));
+//
+//	Eigen::MatrixXd dH_d2xi = HVecs(dn2_dxi2(xi, eta));
+//	Eigen::MatrixXd dH_d2eta = HVecs(dn2_deta2(xi, eta));
+//	Eigen::MatrixXd dH_deta_dxi = HVecs(dn2_dxieta(xi, eta));
+//
+//	Eigen::MatrixXd dB_dxi(3, 12), dB_deta(3, 12);
+//	dB_dxi.row(0) = DJinv_dxi(0, 0) * dH_dxi.row(0) + Jinv(0, 0) * dH_d2xi.row(0)
+//		+ DJinv_dxi(0, 1) * dH_deta.row(0) + Jinv(0, 1) * dH_deta_dxi.row(0);
+//	dB_dxi.row(1) = DJinv_dxi(1, 0) * dH_dxi.row(1) + Jinv(1, 0) * dH_d2xi.row(1) 
+//		+ DJinv_dxi(1, 1) * dH_deta.row(1) + Jinv(1, 1) * dH_deta_dxi.row(1);
+//	dB_dxi.row(2) = DJinv_dxi(0, 0) * dH_dxi.row(1) + Jinv(0, 0) * dH_d2xi.row(1)
+//		+ DJinv_dxi(0, 1) * dH_deta.row(1) + Jinv(0, 1) * dH_deta_dxi.row(1)
+//		+ DJinv_dxi(1, 0) * dH_dxi.row(0) + Jinv(1, 0) * dH_d2xi.row(0)
+//		+ DJinv_dxi(1, 1) * dH_deta.row(0) + Jinv(1, 1) * dH_deta_dxi.row(0);
+//
+//	dB_deta.row(0) = DJinv_deta(0, 0) * dH_dxi.row(0) + Jinv(0, 0) * dH_deta_dxi.row(0)
+//		+ DJinv_deta(0, 1) * dH_deta.row(0) + Jinv(0, 1) * dH_d2eta.row(0);
+//	dB_deta.row(1) = DJinv_deta(1, 0) * dH_dxi.row(1) + Jinv(1, 0) * dH_deta_dxi.row(1)
+//		+ DJinv_deta(1, 1) * dH_deta.row(1) + Jinv(1, 1) * dH_d2eta.row(1);
+//	dB_deta.row(2) = DJinv_deta(0, 0) * dH_dxi.row(1) + Jinv(0, 0) * dH_deta_dxi.row(1)
+//		+ DJinv_deta(0, 1) * dH_deta.row(1) + Jinv(0, 1) * dH_d2eta.row(1)
+//		+ DJinv_deta(1, 0) * dH_dxi.row(0) + Jinv(1, 0) * dH_deta_dxi.row(0)
+//		+ DJinv_deta(1, 1) * dH_deta.row(0) + Jinv(1, 1) * dH_d2eta.row(0);
+//
+//	Eigen::MatrixXd dB_dx(3, 12), dB_dy(3, 12);
+//	dB_dx = Jinv(0, 0) * dB_dxi + Jinv(0, 1) * dB_deta;
+//	dB_dy = Jinv(1, 0) * dB_dxi + Jinv(1, 1) * dB_deta;
+//
+//	Eigen::Matrix3d DMat = DMatrix();
+//	Eigen::Matrix3d tr = trans_matrix3(plane);
+//
+//	Displacement d0t = d0.translate(tr);
+//	Displacement d1t = d1.translate(tr);
+//	Displacement d2t = d2.translate(tr);
+//	Displacement d3t = d3.translate(tr);
+//
+//	Eigen::VectorXd wvec(total_dof_local);
+//	wvec << d0t.Dz(), d0t.Rx(), d0t.Ry(), d1t.Dz(), d1t.Rx(), d1t.Ry(),
+//		d2t.Dz(), d2t.Rx(), d2t.Ry(), d3t.Dz(), d3t.Rx(), d3t.Ry();
+//
+//	Eigen::Vector3d dM_dx = DMatrix() * dB_dx * wvec;
+//	Eigen::Vector3d dM_dy = DMatrix() * dB_dy * wvec;
+//
+//	double qx = dM_dx(0) + dM_dy(2);
+//	double qy = dM_dy(1) + dM_dx(2);
+//
+//	// std::cout << "M_x: " << dM_dx << ", M_y: " << dM_dy << std::endl;
+//
+//	std::cout << "qx: " << qx << ", qy: " << qy << std::endl;
+//
+//	// return PlateStressData(strs(0), strs(1), strs(2));
+//}

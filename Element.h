@@ -17,13 +17,13 @@ enum ElementType
 class ElementBase
 {
 private:
-    static constexpr ElementType type = ElementType::None;
+    //static constexpr ElementType type = ElementType::None;
 public:
     Material* Mat;
     // ElementDataBase *data;
     // int mid;
     // int TotalDOF = 0;
-    // int id = -1;
+    int id = -1;
     ElementBase() {};
     //ElementBase(ElementType t) : type(t) {};
     // ElementBase(int mid, SSModel *model) : mid(mid), Model(model){};
@@ -33,7 +33,8 @@ public:
     // virtual void AssembleMatrix(double *matrix, int *dof_map, int dof_num) = 0;
     // virtual int DOFIdx(int i) = 0;
     virtual bool hasRotate() { return false; }
-    virtual ElementType Type() { return type; }
+    //virtual ElementType Type() { return type; }
+    virtual ElementType Type() { return ElementType::None; }
     virtual int TotalDof() = 0;
     virtual Eigen::MatrixXd StiffnessMatrix() = 0;
     virtual void AssembleStiffMatrix(Eigen::SparseMatrix<double>& mat) = 0;
@@ -68,7 +69,7 @@ std::ostream& operator<<(std::ostream& os, const BeamStress& bsd);
 class TrussElement : public ElementBase
 {
 private:
-    const ElementType type = ElementType::Truss;
+    //static constexpr ElementType type = ElementType::Truss;
     static const int total_dof = 6;
     static const int node_num = 2;
     Eigen::Matrix<double, node_num, total_dof> trans_matrix();
@@ -80,10 +81,15 @@ public:
 
     TrussElement() {}
     TrussElement(Node* n0, Node* n1, Section* sec, Material* mat);
+    TrussElement(int _id, Node* n0, Node* n1, Section* sec, Material* mat)
+        : TrussElement(n0, n1, sec, mat) {
+        id = _id;
+    };
 
     Eigen::MatrixXd StiffnessMatrix();
     bool hasRotate() { return false; }
-    ElementType Type() { return type; }
+    ElementType Type() { return ElementType::Truss; }
+    //ElementType Type() { return type; }
     int TotalDof() { return total_dof; }
     void AssembleStiffMatrix(Eigen::SparseMatrix<double>& mat);
 
@@ -93,7 +99,7 @@ public:
 class BeamElement : public ElementBase
 {
 private:
-    const ElementType type = ElementType::Beam;
+    //static constexpr ElementType type = ElementType::Beam;
     static const int total_dof = 12;
     Eigen::MatrixXd trans_matrix();
     Eigen::MatrixXd stiffness_matrix_local();
@@ -106,10 +112,15 @@ public:
     BeamElement() {}
     //BeamElement() : ElementBase(ElementType::Beam) {}
     BeamElement(Node *n0, Node *n1, Section* sec, Material* mat, double beta=0);
+    BeamElement(int _id, Node* n0, Node* n1, Section* sec, Material* mat, double beta = 0)
+        :BeamElement(n0, n1, sec, mat, beta) {
+        id = _id;
+    };
 
     Eigen::MatrixXd StiffnessMatrix();
     bool hasRotate() { return true; }
-    ElementType Type() { return type; }
+    //ElementType Type() { return type; }
+    ElementType Type() { return ElementType::Beam; }
     int TotalDof() { return total_dof; }
     void AssembleStiffMatrix(Eigen::SparseMatrix<double>& mat);
 
@@ -151,6 +162,10 @@ public:
 
     TriPlaneElement() {};
     TriPlaneElement(Node* n0, Node* n1, Node* n2, double t, Material* mat);
+    TriPlaneElement(int _id, Node* n0, Node* n1, Node* n2, double t, Material* mat)
+        :TriPlaneElement(n0, n1, n2, t, mat) {
+        id = _id;
+    };
 
     double Area();
     ElementType Type() { return type; }
@@ -185,6 +200,10 @@ public:
 
     QuadPlaneElement() {};
     QuadPlaneElement(Node* n0, Node* n1, Node* n2, Node* n3, double t, Material* mat);
+    QuadPlaneElement(int _id, Node* n0, Node* n1, Node* n2, Node* n3, double t, Material* mat) :
+        QuadPlaneElement(n0, n1, n2, n3, t, mat) {
+        id = _id;
+    };
 
     // double Area();
     ElementType Type() { return type; }
@@ -198,10 +217,10 @@ public:
 
 struct PlateStressData {
 public:
-    double Mx, My, Mxy;
+    double Mx, My, Mxy, Qx, Qy;
 
-    PlateStressData(double mx, double my, double mxy) :
-        Mx(mx), My(my), Mxy(mxy) {};
+    PlateStressData(double mx, double my, double mxy, double qx, double qy) :
+        Mx(mx), My(my), Mxy(mxy), Qx(qx), Qy(qy) {};
 
     friend std::ostream& operator<<(std::ostream& os, const PlateStressData& strs);
 };
@@ -237,6 +256,10 @@ public:
 
     TriPlateElement() {};
     TriPlateElement(Node* n0, Node* n1, Node* n2, double t, Material* mat);
+    TriPlateElement(int _id, Node* n0, Node* n1, Node* n2, double t, Material* mat)
+        :TriPlateElement(n0, n1, n2, t, mat) {
+        id = _id;
+    };
 
     double Area();
     ElementType Type() { return type; }
@@ -245,8 +268,7 @@ public:
     void AssembleStiffMatrix(Eigen::SparseMatrix<double>& mat);
     PlateStressData stress(
         Displacement d0, Displacement d1, Displacement d2, double xi, double eta);
-    // void shearstress(Displacement d0, Displacement d1, Displacement d2, double xi, double eta);
-    void shearstress(Displacement d0, Displacement d1, Displacement d2);
+    //void shearstress(Displacement d0, Displacement d1, Displacement d2);
 };
 
 
@@ -289,6 +311,10 @@ public:
 
     QuadPlateElement() {};
     QuadPlateElement(Node* n0, Node* n1, Node* n2, Node* n3, double t, Material* mat);
+    QuadPlateElement(int _id, Node* n0, Node* n1, Node* n2, Node* n3, double t, Material* mat)
+        :QuadPlateElement(n0, n1, n2, n3, t, mat) {
+        id = _id;
+    };
 
     // double Area();
     ElementType Type() { return type; }
@@ -297,8 +323,8 @@ public:
     void AssembleStiffMatrix(Eigen::SparseMatrix<double>& mat);
     PlateStressData stress(
         Displacement d0, Displacement d1, Displacement d2, Displacement d3, double xi, double eta);
-    void shearstress(Displacement d0, Displacement d1, 
-        Displacement d2, Displacement d3, double xi, double eta);
+    //void shearstress(Displacement d0, Displacement d1, 
+    //    Displacement d2, Displacement d3, double xi, double eta);
 
 };
 

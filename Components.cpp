@@ -1,5 +1,5 @@
 #include <Eigen/Dense>
-
+#include <numeric>
 #include "Components.h"
 
 //std::ostream& Material::operator<<(std::ostream& os) {
@@ -87,6 +87,48 @@ Point Point::add(const Point p0, const Point p1)
 Point Point::divide(const Point p0, const double t)
 {
     return Point(p0.x / t, p0.y / t, p0.z / t);
+}
+
+double BeamPolyLoad::R0() {
+    return std::accumulate(traps.begin(), traps.end(), 0.0, [](double sum, BeamTrapezoidalLoad trap) {
+        return sum + trap.R0();
+        });
+}
+
+double BeamPolyLoad::RA() {
+    return std::accumulate(traps.begin(), traps.end(), 0.0, [](double sum, BeamTrapezoidalLoad trap) {
+        return sum + trap.RA();
+        });
+}
+
+double BeamPolyLoad::M0() {
+    return std::accumulate(traps.begin(), traps.end(), 0.0, [](double sum, BeamTrapezoidalLoad trap) {
+        return sum + trap.M0();
+        });
+}
+
+double BeamPolyLoad::MA() {
+    return std::accumulate(traps.begin(), traps.end(), 0.0, [](double sum, BeamTrapezoidalLoad trap) {
+        return sum + trap.MA();
+        });
+}
+
+double BeamPolyLoad::shear_force(double x) {
+    return std::accumulate(traps.begin(), traps.end(), 0.0, [&x](double sum, BeamTrapezoidalLoad trap) {
+        return sum + trap.shear_force(x);
+        });
+}
+
+double BeamPolyLoad::bending_moment(double x) {
+    return std::accumulate(traps.begin(), traps.end(), 0.0, [&x](double sum, BeamTrapezoidalLoad trap) {
+        return sum + trap.bending_moment(x);
+        });
+}
+
+double BeamPolyLoad::deflection(double x, double EI) {
+    return std::accumulate(traps.begin(), traps.end(), 0.0, [&x, &EI](double sum, BeamTrapezoidalLoad trap) {
+        return sum + trap.deflection(x, EI);
+        });
 }
 
 Support::Support(bool ux, bool uy, bool uz, bool rx, bool ry, bool rz)

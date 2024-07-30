@@ -51,6 +51,8 @@ namespace std {
     %template(VectorNode) std::vector<Node>;
     %template(VectorDisp) std::vector<Displacement>;
     %template(VectorElement) std::vector<ElementHandle>;
+    %template(VectorElem) std::vector<ElementBase*>;
+    %template(VectorBeams) std::vector<BeamElement*>;
     %template(VectorMaterial) std::vector<Material>;
 	%template(VectorSection) std::vector<Section>;
 	%template(VectorInt) std::vector<int>;
@@ -65,6 +67,12 @@ namespace std {
    }
 };
 
+%extend BeamElement {
+    Node* getNodes(int index) {
+        return $self->Nodes[index];
+    }
+}
+
 // C#のカスタムコードを追加
 %typemap(cscode) Material %{
     // ToStringメソッドをオーバーライド
@@ -74,14 +82,22 @@ namespace std {
     }
 %}
 
-// %array_class(double, doubleArray);
-
-/* This helper function calls an overloaded operator */
-/*%inline %{
-extern double canti_beam(
-    double length);
-%}*/
+%ignore ElementHandle(ElementBase data);
+%ignore ElementHandle::ElementHandle(ElementBase data);
+%typemap(csin) ElementBaseSetPtr data "getCPtrAndAddReference($csinput)"
+%typemap(cscode) ElementHandle %{
+    private ElementBase elementReference;
+    private global::System.Runtime.InteropServices.HandleRef getCPtrAndAddReference(ElementBase element) {
+        elementReference = element;
+        return ElementBase.getCPtr(element);
+    }
+    public void SetElement(ElementBase element){
+        getCPtrAndAddReference(element);
+        set_element(element);
+    }
+%}
 
 #include "Element.h"
 #include "Components.h"
 #include "Model.h"
+

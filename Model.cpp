@@ -11,10 +11,10 @@ Eigen::SparseMatrix<double> SSModel::extractSubMatrix(
     const std::vector<int>& rowIndices,
     const std::vector<int>& colIndices) {
 
-    // V‚µ‚¢‘as—ñ‚ğì¬
+    // æ–°ã—ã„ç–è¡Œåˆ—ã‚’ä½œæˆ
     Eigen::SparseMatrix<double> subMat(rowIndices.size(), colIndices.size());
 
-    // ƒCƒ“ƒfƒbƒNƒX•ÏŠ·—p‚Ìƒ}ƒbƒv
+    // ã‚¤ãƒ³ãƒ‡ãƒƒã‚¯ã‚¹å¤‰æ›ç”¨ã®ãƒãƒƒãƒ—
     std::unordered_map<int, int> rowMap;
     for (int i = 0; i < rowIndices.size(); ++i)
         rowMap[rowIndices[i]] = i;
@@ -23,7 +23,7 @@ Eigen::SparseMatrix<double> SSModel::extractSubMatrix(
     for (int j = 0; j < colIndices.size(); ++j)
         colMap[colIndices[j]] = j;
 
-    // w’è‚³‚ê‚½s‚Æ—ñ‚Ì—v‘f‚ğV‚µ‚¢‘as—ñ‚ÉƒRƒs[
+    // æŒ‡å®šã•ã‚ŒãŸè¡Œã¨åˆ—ã®è¦ç´ ã‚’æ–°ã—ã„ç–è¡Œåˆ—ã«ã‚³ãƒ”ãƒ¼
     for (int k = 0; k < mat.outerSize(); ++k) {
         for (Eigen::SparseMatrix<double>::InnerIterator it(mat, k); it; ++it) {
             auto rowMapItem = rowMap.find(it.row());
@@ -51,37 +51,38 @@ std::vector<int> SSModel::FreeIndices()
 
 void SSModel::add_element(ElementBase* data) {
     Elements.push_back(ElementHandle(data));
+    Elems.push_back(data);
 }
 
-void SSModel::add_element(BeamElement *data){
-
-    Elements.push_back(ElementHandle(data));
-}
-
-void SSModel::add_element(TrussElement* data)
-{
-    Elements.push_back(ElementHandle(data));
-}
-
-void SSModel::add_element(TriPlaneElement* data)
-{
-    Elements.push_back(ElementHandle(data));
-}
-
-void SSModel::add_element(TriPlateElement* data)
-{
-    Elements.push_back(ElementHandle(data));
-}
-
-void SSModel::add_element(QuadPlaneElement* data)
-{
-    Elements.push_back(ElementHandle(data));
-}
-
-void SSModel::add_element(QuadPlateElement* data)
-{
-    Elements.push_back(ElementHandle(data));
-}
+//void SSModel::add_element(BeamElement *data){
+//
+//    Elements.push_back(ElementHandle(data));
+//}
+//
+//void SSModel::add_element(TrussElement* data)
+//{
+//    Elements.push_back(ElementHandle(data));
+//}
+//
+//void SSModel::add_element(TriPlaneElement* data)
+//{
+//    Elements.push_back(ElementHandle(data));
+//}
+//
+//void SSModel::add_element(TriPlateElement* data)
+//{
+//    Elements.push_back(ElementHandle(data));
+//}
+//
+//void SSModel::add_element(QuadPlaneElement* data)
+//{
+//    Elements.push_back(ElementHandle(data));
+//}
+//
+//void SSModel::add_element(QuadPlateElement* data)
+//{
+//    Elements.push_back(ElementHandle(data));
+//}
 
 Eigen::SparseMatrix<double> SSModel::AssembleMatrix()
 {
@@ -134,6 +135,17 @@ std::vector<Displacement> SSModel::Solve(std::list<Load> loads)
     }
     
     return disp;
+}
+
+std::vector<BeamElement*> SSModel::beam_elements()
+{
+    std::vector<BeamElement*> beams;
+    for each (ElementBase* e in Elems)
+    {
+        if (e->Type() == ElementType::Beam)
+            beams.push_back(dynamic_cast<BeamElement*>(e));
+    }
+    return beams;
 }
 
 

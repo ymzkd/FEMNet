@@ -74,7 +74,7 @@ void TestMethod2() {
 	std::cout << ms << std::endl;
 }
 
-void TestMethod3() {
+void TestBeamMethod() {
 
 	SSModel model;
 
@@ -164,11 +164,6 @@ void TestMethod4() {
 
 	std::cout << "OUTPUT Plate STRESS" << std::endl;
 	std::cout << ms << std::endl;
-
-	std::cout << "check shear stress" << std::endl;
-	// tpe0.shearstress(disp[0], disp[1], disp[4], 0, 0);
-	tpe0.shearstress(disp[0], disp[1], disp[4]);
-
 }
 
 // Quad Plane
@@ -307,14 +302,6 @@ void TestMethodQuadPlate() {
 
 	std::cout << "OUTPUT Plate STRESS" << std::endl;
 	std::cout << ms << std::endl;
-
-
-	std::cout << "Shear Stress" << std::endl;
-	//tpe0.shearstress(disp[0], disp[1], disp[4], disp[3], 0.0, 0.0);
-	tpe0.shearstress(disp[0], disp[1], disp[4], disp[3], 1.0, 1.0);
-	//std::cout << "check shear stress" << std::endl;
-	// tpe0.shearstress(disp[0], disp[1], disp[4], 0, 0);
-	//tpe0.shearstress(disp[0], disp[1], disp[4]);
 }
 
 // Truss Test
@@ -374,6 +361,202 @@ void TestTrussMethod() {
 
 }
 
+
+// TestGHTestCase Test
+void TestGHTestCaseMethod() {
+
+	SSModel model;
+
+	model.Nodes.push_back(Node(0, 0, 0, 0));
+	model.Nodes.push_back(Node(1, 1000, 0, 0));
+
+	model.Nodes[0].Fix = Support(1, 1, 1, 1, 1, 1);
+	
+	model.Sections.push_back(Section(526.299, 291072.461, 291072.461, 500.0));
+	
+	model.Materials.push_back(Material(2.05 * 10000, 0.2));
+
+	model.add_element(
+		&BeamElement(&model.Nodes[0], &model.Nodes[1],
+			&model.Sections[0], &model.Materials[0]));
+
+	std::list<Load> loads;
+	loads.push_back(Load(1, 0, 0, -5, 0, 0, 0));
+
+	std::vector<Displacement> disp = model.Solve(loads);
+	for (size_t i = 0; i < disp.size(); i++)
+	{
+		std::cout << "id: " << i << std::endl;
+		std::cout << disp[i] << std::endl;
+	}
+
+	std::cout << "Test Cast" << std::endl;
+	BeamElement* elem = static_cast<BeamElement*>(model.Elements[0].data);
+
+	std::cout << *elem->Mat << std::endl;
+	// BeamStress bs = b0.stress(disp[0], disp[4]);
+
+}
+
+void TestTrapLoad() {
+	BeamTrapezoidalLoad beam(10, 20, 2, 2, 2);
+
+	std::cout << "R0: " << beam.R0() << std::endl;
+	std::cout << "RA: " << beam.RA() << std::endl;
+	std::cout << "M0: " << beam.M0() << std::endl;
+	std::cout << "MA: " << beam.MA() << std::endl;
+
+	double EI = 27333.33333;  // kN*m^2 (—á)
+	std::cout << "Shear Force at x=3: " << beam.shear_force(3) << std::endl;
+	std::cout << "Bending Moment at x=3: " << beam.bending_moment(3) << std::endl;
+	std::cout << "Deflection at x=3: " << beam.deflection(3, EI) << std::endl;
+}
+
+
+void TestPolyLoad() {
+	std::vector<double> w = { 10, 8.5, 30 };
+	std::vector<double> params = { 0.2, 0.5, 0.85 };
+	double length = 6;
+	double EI = 27333.33333;
+
+	BeamPolyLoad beam_poly(w, params, length);
+
+	std::cout << "R0: " << beam_poly.R0() << std::endl;
+	std::cout << "RA: " << beam_poly.RA() << std::endl;
+	std::cout << "M0: " << beam_poly.M0() << std::endl;
+	std::cout << "MA: " << beam_poly.MA() << std::endl;
+	std::cout << "Shear Force at x=3: " << beam_poly.shear_force(3) << std::endl;
+	std::cout << "Bending Moment at x=3: " << beam_poly.bending_moment(3) << std::endl;
+	std::cout << "Deflection at x=3: " << beam_poly.deflection(3, EI) << std::endl;
+}
+
+void TestPolyLoadFrame() {
+	std::vector<double> w = { 10, 8.5, 30 };
+	std::vector<double> params = { 0.2, 0.5, 0.85 };
+	double length = 6;
+	double EI = 27333.33333;
+
+	BeamPolyLoad beam_poly(w, params, length);
+
+	Node n0(0, 0, 0, 0); n0.Fix.FixAll();
+	Node n1(1, 0, 0, 4);
+	Node n2(2, 6, 0, 4);
+	Node n3(3, 6, 0, 0); n3.Fix.FixAll();
+
+	Material m0(2.05 * 100000 * 1000, 0.2);
+	Section s0(4.000000e-02, 1.333333e-04, 1.333333e-04, 2.250000e-04);
+	
+	BeamElement b0(&n0, &n1, &s0, &m0);
+	BeamElement b1(&n1, &n2, &s0, &m0);
+	BeamElement b2(&n2, &n3, &s0, &m0);
+	
+	SSModel model;
+	model.Nodes.push_back(n0);
+	model.Nodes.push_back(n1);
+	model.Nodes.push_back(n2);
+	model.Nodes.push_back(n3);
+	model.add_element(&b0);
+	model.add_element(&b1);
+	model.add_element(&b2);
+
+	std::list<Load> loads;
+	// loads.push_back(Load(1, 10, 0, 0, 0, 0, 0));
+	loads.push_back(Load(1, 0, 0, beam_poly.R0(), 0, -beam_poly.M0(), 0));
+	loads.push_back(Load(2, 0, 0, beam_poly.RA(), 0, beam_poly.MA(), 0));
+
+	std::vector<Displacement> disp = model.Solve(loads);
+	for (size_t i = 0; i < disp.size(); i++)
+	{
+		std::cout << "id: " << i << std::endl;
+		std::cout << disp[i] << std::endl;
+	}
+
+	BeamStress bs0 = b0.stress(disp[0], disp[1]);
+	BeamStress bs = b1.stress(disp[1], disp[2]);
+	BeamStress bs1 = b2.stress(disp[2], disp[3]);
+
+	std::cout << "OUTPUT BEAM STRESS" << std::endl;
+	std::cout << "R0: " << beam_poly.R0() << std::endl;
+	std::cout << "RA: " << beam_poly.RA() << std::endl;
+	std::cout << "M0: " << beam_poly.M0() << std::endl;
+	std::cout << "MA: " << beam_poly.MA() << std::endl;
+	std::cout << bs0 << std::endl;
+	std::cout << bs << std::endl;
+	std::cout << bs1 << std::endl;
+	//std::cout << "R0: " << beam_poly.R0() << std::endl;
+	//std::cout << "RA: " << beam_poly.RA() << std::endl;
+	//std::cout << "M0: " << beam_poly.M0() << std::endl;
+	//std::cout << "MA: " << beam_poly.MA() << std::endl;
+	//std::cout << "Shear Force at x=3: " << beam_poly.shear_force(3) << std::endl;
+	//std::cout << "Bending Moment at x=3: " << beam_poly.bending_moment(3) << std::endl;
+	//std::cout << "Deflection at x=3: " << beam_poly.deflection(3, EI) << std::endl;
+}
+
+
+void TestPolyLoadFrame2() {
+	std::vector<double> w = { 10, 30 };
+	std::vector<double> params = { 0.0, 1.0 };
+	double length = 6;
+	double EI = 27333.33333;
+
+	BeamPolyLoad beam_poly(w, params, length);
+
+	Node n0(0, 0, 0, 0); n0.Fix.FixAll();
+	Node n1(1, 0, 0, 4);
+	Node n2(2, 6, 0, 4);
+	Node n3(3, 6, 0, 0); n3.Fix.FixAll();
+
+	Material m0(2.05 * 100000 * 1000, 0.2);
+	Section s0(4.000000e-02, 1.333333e-04, 1.333333e-04, 2.250000e-04);
+
+	BeamElement b0(&n0, &n1, &s0, &m0);
+	BeamElement b1(&n1, &n2, &s0, &m0);
+	//BeamElement b2(&n3, &n2, &s0, &m0);
+	BeamElement b2(&n2, &n3, &s0, &m0);
+
+	SSModel model;
+	model.Nodes.push_back(n0);
+	model.Nodes.push_back(n1);
+	model.Nodes.push_back(n2);
+	model.Nodes.push_back(n3);
+	model.add_element(&b0);
+	model.add_element(&b1);
+	model.add_element(&b2);
+
+	std::list<Load> loads;
+	// loads.push_back(Load(1, 10, 0, 0, 0, 0, 0));
+	loads.push_back(Load(1, 0, 0, beam_poly.R0(), 0, -beam_poly.M0(), 0));
+	loads.push_back(Load(2, 0, 0, beam_poly.RA(), 0, beam_poly.MA(), 0));
+
+	std::vector<Displacement> disp = model.Solve(loads);
+	for (size_t i = 0; i < disp.size(); i++)
+	{
+		std::cout << "id: " << i << std::endl;
+		std::cout << disp[i] << std::endl;
+	}
+
+	BeamStress bs0 = b0.stress(disp[0], disp[1]);
+	BeamStress bs = b1.stress(disp[1], disp[2]);
+	//BeamStress bs1 = b2.stress(disp[3], disp[2]);
+	BeamStress bs1 = b2.stress(disp[2], disp[3]);
+
+	std::cout << "OUTPUT BEAM STRESS" << std::endl;
+	std::cout << "R0: " << beam_poly.R0() << std::endl;
+	std::cout << "RA: " << beam_poly.RA() << std::endl;
+	std::cout << "M0: " << beam_poly.M0() << std::endl;
+	std::cout << "MA: " << beam_poly.MA() << std::endl;
+	std::cout << bs0 << std::endl;
+	std::cout << bs << std::endl;
+	std::cout << bs1 << std::endl;
+	//std::cout << "R0: " << beam_poly.R0() << std::endl;
+	//std::cout << "RA: " << beam_poly.RA() << std::endl;
+	//std::cout << "M0: " << beam_poly.M0() << std::endl;
+	//std::cout << "MA: " << beam_poly.MA() << std::endl;
+	//std::cout << "Shear Force at x=3: " << beam_poly.shear_force(3) << std::endl;
+	//std::cout << "Bending Moment at x=3: " << beam_poly.bending_moment(3) << std::endl;
+	//std::cout << "Deflection at x=3: " << beam_poly.deflection(3, EI) << std::endl;
+}
+
 int main(void) {
 	//TestMethod1();
 	
@@ -383,7 +566,15 @@ int main(void) {
 	
 	// TestMethodQuadPlate();
 	
-	TestTrussMethod();
+	// TestTrussMethod();
 	
+	//TestGHTestCaseMethod();
+
+	//TestTrapLoad();
+	//TestPolyLoad();
+	//TestPolyLoadFrame();
+	TestPolyLoadFrame2();
+
+
 	//TestMethod2();
 }

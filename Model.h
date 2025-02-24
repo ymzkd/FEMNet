@@ -6,91 +6,165 @@
 #include <map>
 #include <array>
 
-#include <Eigen/Sparse>
+
 // #include <Eigen/Dense>
+
+#ifdef EIGEN_USE_MKL_ALL
+    //#define EIGEN_USE_MKL_ALL
+    #include <Eigen/Sparse>
+    #include <Eigen/PardisoSupport>
+#else
+    #include <Eigen/Sparse>
 #endif
 
-class ElementHandle {
-public:
-    typedef ElementBase* ElementBaseSetPtr;
-    ElementBase* data;
-    ElementHandle() : data(0) {};
-    ElementHandle(ElementBase* data) : data(data) {};
-    //ElementHandle(ElementBase* data) : data(data) {};
+#endif
+#include "LoadComponent.h"
 
-    // operator-> „ÅÆ„Ç™„Éº„Éê„Éº„É≠„Éº„Éâ
-    ElementBase* operator->() {
-        return data;
-    }
-
-    const ElementBase* operator->() const {
-        return data;
-    }
-
-    void set_element(ElementBaseSetPtr item) {
-        data = item;
-    }
-
-    BeamElement* GetBeam() {
-        return dynamic_cast<BeamElement*>(data);
-    }
-};
-
-
-class SSModel
+class FEModel
 {
 private:
-    std::vector<double> displacement;
-    // Eigen::MatrixXd stiff_matrix_xd(BeamElementData data);
-    // Eigen::MatrixXd stiff_matrix_xd(TrussElementData data);
+    const double GRAVACCEL = 9806.6;
     std::vector<int> FreeIndices();
-    Eigen::SparseMatrix<double> AssembleMatrix();
+    std::vector<int> FixIndices();
+    
+    /// <summary>
+    /// èWíÜéøó É}ÉgÉäÉNÉXÇÃëŒè€Ç≈Ç»Ç¢(ï¿êià»äOÇÃâÒì]é©óRìxìô)Ç‹ÇΩÇÕå≈íËé©óRìxÇÃ
+    /// ëSëÃé©óRìxÇ…Ç®ÇØÇÈÉCÉìÉfÉbÉNÉXÇäiî[ÇµÇΩîzóÒÇï‘Ç∑ä÷êî
+    /// </summary>
+    /// <returns></returns>
+    std::vector<int> UnLumpedFixIndices();
+
+    Eigen::SparseMatrix<double> AssembleStiffnessMatrix();
+    
+    /// <summary>
+    /// 
+    /// </summary>
+    /// <param name="A"></param>
+    /// <param name="fixed_indices"></param>
+    /// <param name="free_matrix"></param>
+    /// <param name="free_fixed_matrix"></param>
+    /// <param name="fixed_matrix"></param>
+    static void splitMatrixWithResize(
+        const Eigen::SparseMatrix<double>& A, 
+        const std::vector<int>& fixed_indices, 
+        Eigen::SparseMatrix<double>& free_matrix, 
+        Eigen::SparseMatrix<double>& free_fixed_matrix, 
+        Eigen::SparseMatrix<double>& fixed_matrix);
+
+    /// <summary>
+    /// Ñ°      Ñ¢
+    /// Ñ† A  B Ñ†
+    /// Ñ† C  D Ñ†
+    /// Ñ§      Ñ£
+
+    /// Ñ† A  B Ñ†
+    /// Ñ† C  D Ñ†
+
+    /// </summary>
+    /// <param name="A"></param>
+    /// <param name="fixed_indices"></param>
+    /// <param name="free_matrix"></param>
+    static void splitMatrixWithResize(
+        const Eigen::SparseMatrix<double>& A, 
+        const std::vector<int>& fixed_indices, 
+        Eigen::SparseMatrix<double>& free_matrix);
+    
     static Eigen::SparseMatrix<double> extractSubMatrix(
         const Eigen::SparseMatrix<double>& mat,
         const std::vector<int>& rowIndices,
         const std::vector<int>& colIndices);
 
 public:
-    int NodeNum = 0;
+    
+
+    int NodeNum() { return Nodes.size(); }
+    int DOFNum() { return NodeNum() * 6; }
+
     std::vector<Node> Nodes;
     std::vector<Material> Materials;
     std::vector<Section> Sections;
-    std::vector<ElementHandle> Elements;
-    std::vector<ElementBase*> Elems;
+    
+    std::vector<std::shared_ptr<ElementBase>> Elements;
+    
+    // template<>
+    // void add_element(ElementBase* data);
+    //void add_element(ElementBase data);
+    void add_element(BeamElement data);
+    void add_element(ComplexBeamElement data);
+    void add_element(TrussElement data);
+    void add_element(TriPlaneElement data);
+    void add_element(TriPlateElement data);
+    void add_element(QuadPlaneElement data);
+    void add_element(QuadPlateElement data);
 
-    void add_element(ElementBase* data);
-    //void add_element(BeamElement *data);
-    //void add_element(TrussElement *data);
-    //void add_element(TriPlaneElement *data);
-    //void add_element(TriPlateElement *data);
-    //void add_element(QuadPlaneElement *data);
-    //void add_element(QuadPlateElement *data);
+    // index based element addition
+    void add_truss_element(int id, int n1_id, int n2_id, int sec_id, int mat_id);
+    void add_beam_element(int id, int n1_id, int n2_id, int sec_id, int mat_id, double beta);
+    //void add_tri_plane_element(int id, int n1_id, int n2_id, int n3_id, int mat_id, int sec_id);
+    void add_tri_plate_element(int id, int n1_id, int n2_id, int n3_id, double thickness, int mat_id);
+    //void add_quad_plane_element(int id, int n1_id, int n2_id, int n3_id, int n4_id, int mat_id, int sec_id);
+    void add_quad_plate_element(int id, int n1_id, int n2_id, int n3_id, int n4_id, double thickness, int mat_id);
+    
+    BarElementBase* GetBarElement(int id);
+    BeamElement* GetBeamElement(int id);
+    TrussElement* GetTrussElement(int id);
 
-    std::vector<Displacement> Solve(std::list<Load> loads);
+    [[deprecated("This function is deprecated. Please use SolveLinearStatic instead.")]]
+    void Solve(
+        std::vector<std::shared_ptr<LoadBase>>& loads,
+        std::vector<Displacement>& disp,
+        std::vector<NodeLoad>& react);
 
-    std::vector<BeamElement*> beam_elements();
-    // void sample_function1();
-    // Eigen::MatrixXd sample_function2();
-    // std::map<int, std::array<bool, 6>> Supports;
-    // std::map<int, std::array<double, 6>> Loads;
+    void SolveLinearStatic(
+        std::vector<std::shared_ptr<LoadBase>>& loads,
+        std::vector<Displacement>& disp,
+        std::vector<NodeLoad>& react);
 
-    // std::vector<int> DOFMap;
+    //void SolveVibrationTest();
 
-    // int MatrixDim();
+    int SolveVibration(const int nev, std::vector<double>& eigen_values,
+        std::vector<std::vector<Displacement>>& mode_vectors);
 
-    // SSModel(){};
-    // SSModel(int node_num);
+};
 
-    // void check_model();
+typedef FEModel FEModel;
 
-    // void Analysis(double *result);
-    // void AnalysisXd(double *result);
-    // void AnalysisSparse(double *result);
-    // void Solve();
+// Static Solver Package
+class FEStaticResult {
+public:
+    std::shared_ptr<FEModel> model;
+    std::vector<std::shared_ptr<LoadBase>> loads;
+    std::vector<Displacement> displace;
+    std::vector<NodeLoad> react_force;
 
-    // void SolveSparse();
+    FEStaticResult(
+        std::shared_ptr<FEModel> model,
+        std::vector<std::shared_ptr<LoadBase>> loads,
+        std::vector<Displacement> displace,
+        std::vector<NodeLoad> react_force)
+        : model(model), loads(loads),
+        displace(displace), react_force(react_force) {};
 
-    // std::array<double, 6> getNodeDisp(int idx);
+    BeamStressData GetBeamStress(int eid, double p);
+
+    Displacement GetBeamDisplace(int eid, double p);
+};
+
+class FEVibrateResult {
+public:
+    std::shared_ptr<FEModel> model;
+    
+    int modes_num() { return eigs.size(); };
+    std::vector<double> eigs;
+    std::vector<std::vector<Displacement>> mode_vectors;
+
+    FEVibrateResult(
+        std::shared_ptr<FEModel> model,
+        std::vector<std::vector<Displacement>> mode_vectors,
+        std::vector<double> eigs)
+        : model(model), mode_vectors(mode_vectors),
+        eigs(eigs) {};
+
 };
 
 #endif

@@ -6,6 +6,7 @@
 #include <cmath>
 #include <vector>
 #include <numeric>
+#include <algorithm>
 #endif
 
 struct Vector {
@@ -79,15 +80,26 @@ struct Displacement {
     Displacement() :Displacement(0, 0, 0, 0, 0, 0) {};
     Displacement(double dx, double dy, double dz, double rx, double ry, double rz);
     double displace[6];
-    double Dx() { return displace[0]; }
-    double Dy() { return displace[1]; }
-    double Dz() { return displace[2]; }
-    double Rx() { return displace[3]; }
-    double Ry() { return displace[4]; }
-    double Rz() { return displace[5]; }
+    double Dx() const { return displace[0]; }
+    double Dy() const { return displace[1]; }
+    double Dz() const { return displace[2]; }
+    double Rx() const { return displace[3]; }
+    double Ry() const { return displace[4]; }
+    double Rz() const { return displace[5]; }
 
     friend std::ostream& operator<<(std::ostream& os, const Displacement& m);
     Displacement translate(Eigen::Matrix3d transmat);
+    
+    Displacement operator+(const Displacement& other) const {
+        return Displacement(
+            this->Dx() + other.Dx(),
+            this->Dy() + other.Dy(),
+            this->Dz() + other.Dz(),
+            this->Rx() + other.Rx(),
+            this->Ry() + other.Ry(),
+            this->Rz() + other.Rz()
+        );
+    }
 };
 
 std::ostream& operator<<(std::ostream& os, const Displacement& m);
@@ -105,156 +117,98 @@ public:
         : A(A), Iy(Iy), Iz(Iz), K(K){};
 };
 
-struct Load {
-    Load() : Load(-1, 0, 0, 0, 0, 0, 0) {};
-    Load(int _id, double px, double py, double pz);
-    Load(int _id, double px, double py, double pz, double mx, double my, double mz);
+//struct Load {
+//    Load() : Load(-1, 0, 0, 0, 0, 0, 0) {};
+//    Load(int _id, double px, double py, double pz);
+//    Load(int _id, double px, double py, double pz, double mx, double my, double mz);
+//
+//    int id = -1;
+//    double loads[6];
+//    double& Px() { return loads[0]; }
+//    double& Py() { return loads[1]; }
+//    double& Pz() { return loads[2]; }
+//    double& Mx() { return loads[3]; }
+//    double& My() { return loads[4]; }
+//    double& Mz() { return loads[5]; }
+//};
 
-    int id = -1;
-    double loads[6];
-    double& Px() { return loads[0]; }
-    double& Py() { return loads[1]; }
-    double& Pz() { return loads[2]; }
-    double& Mx() { return loads[3]; }
-    double& My() { return loads[4]; }
-    double& Mz() { return loads[5]; }
-};
+//__declspec(deprecated("Use NodeFix class instead."))
+//struct __declspec(deprecated("Use NodeFix class instead.")) Support {
 
-// 梁の台形分布荷重
-class BeamTrapezoidalLoad {
+// True if Fixed
+//struct Support {
+class Support {
 public:
-    double w1, w2, L1, L2, L3, L;
+    static const bool Fix = true;
+    static const bool Free = false;
+    static const bool Unlock = false;
+    static const bool Lock = true;
 
-    BeamTrapezoidalLoad(double w1, double w2, double L1, double L2, double L3)
-        : w1(w1), w2(w2), L1(L1), L2(L2), L3(L3) {
-        L = L1 + L2 + L3;
-    }
-
-    double R0() {
-        double R0_EQ = (w1 * L2 / 2) * (2 * L3 / L + L2 / L - (L1 / L - L3 / L) * (2 * L1 * L3 / (L * L) + L2 * L3 / (L * L) + L1 * L2 / (L * L)));
-        double R0_TR = ((w2 - w1) * L2 / 6) * (-3.0 / 5 * std::pow(L2, 3) / std::pow(L, 3) + 3.0 / 2 * std::pow(L2, 2) / std::pow(L, 2) * (1 - 2 * L3 / L) + 6 * L2 * L3 / std::pow(L, 2) * (1 - L3 / L) + 3 * std::pow(L3, 2) / std::pow(L, 2) * (3 - 2 * L3 / L));
-        return R0_EQ + R0_TR;
-    }
-
-    double RA() {
-        return L2 * (w1 + w2) / 2 - R0();
-    }
-
-    double M0() {
-        double M0_EQ = (w1 * L2 * L / 8) * (std::pow((L2 / L + 2 * L3 / L), 2) * (2 * L1 / L + L2 / L) + 1.0 / 3 * std::pow((L2 / L), 2) * (2 - 6 * L3 / L - 3 * L2 / L));
-        double M0_TR = ((w2 - w1) * L2 / 6) * ((std::pow((3 * L3 + L2), 2) / L / 3 + std::pow(L2, 2) / 6 / L - std::pow((3 * L3 + L2), 3) / (9 * std::pow(L, 2)) - 17.0 / 90 * std::pow(L2, 3) / std::pow(L, 2) - std::pow(L2, 2) * L3 / 2 / std::pow(L, 2)));
-        return M0_EQ + M0_TR;
-    }
-
-    double MA() {
-        double MA_EQ = (w1 * L * L2 / 8) * (std::pow((2 * L1 / L + L2 / L), 2) * (L2 / L + 2 * L3 / L) + 1.0 / 3 * std::pow((L2 / L), 2) * (2 - 6 * L1 / L - 3 * L2 / L));
-        double MA_TR = ((w2 - w1) * L2 / 6) * (1.0 / 9 * std::pow((3 * L3 + L2), 3) / std::pow(L, 2) + 17.0 / 90 * std::pow(L2, 3) / std::pow(L, 2) + std::pow(L2, 2) * L3 / 2 / std::pow(L, 2) - 2 * std::pow((3 * L3 + L2), 2) / 3 / L - std::pow(L2, 2) / 3 / L + 3 * L3 + L2);
-        return MA_EQ + MA_TR;
-    }
-
-    double shear_force(double x) {
-        double R0 = this->R0();
-        double RA = this->RA();
-        double S;
-
-        if (x < this->L1) {
-            S = R0;
-        }
-        else if (this->L1 <= x && x <= this->L1 + this->L2) {
-            S = R0 - (this->w1 * (x - this->L1) + ((this->w2 - this->w1) / 2 / this->L2) * pow((x - this->L1), 2));
-        }
-        else {
-            S = -RA;
-        }
-
-        return S;
-    }
-
-    double bending_moment(double x) {
-        double r0 = R0();
-        double rA = RA();
-        double m0 = M0();
-        double mA = MA();
-        double M;
-
-        if (x < L1) {
-            M = r0 * x - m0;
-        }
-        else if (L1 <= x && x <= L1 + L2) {
-            M = r0 * x - m0 - (w1 / 2 * pow(x - L1, 2) + (w2 - w1) / 6 / L2 * pow(x - L1, 3));
-        }
-        else {
-            M = rA * (L - x) - mA;
-        }
-        return M;
-    }
-
-    double deflection(double x, double EI) {
-        double R0 = this->R0();
-        double RA = this->RA();
-        double M0 = this->M0();
-        double MA = this->MA();
-        double delta;
-
-        if (x < L1) {
-            delta = (1.0 / 6.0 / EI) * (3.0 * M0 * x * x - R0 * x * x * x);
-        }
-        else if (L1 <= x && x <= L1 + L2) {
-            delta = (1.0 / 60.0 / EI) * (30.0 * M0 * x * x - 10.0 * R0 * x * x * x + ((w2 - w1) / 2.0 / L2) * pow(x - L1, 5) + 5.0 * w1 / 2.0 * pow(x - L1, 4));
-        }
-        else {
-            delta = (1.0 / 6.0 / EI) * (3.0 * MA * pow(L - x, 2) - RA * pow(L - x, 3));
-        }
-        return delta;
-    }
-
-};
-
-// 梁の多角形分布荷重
-class BeamPolyLoad {
-private:
-    std::vector<BeamTrapezoidalLoad> traps;
-public:
-    std::vector<double> w;
-    std::vector<double> params;
-    double length;
-
-    BeamPolyLoad(const std::vector<double>& w, const std::vector<double>& params, double length)
-        : w(w), params(params), length(length) {
-        for (int i = 0; i < w.size() - 1; i++) {
-            double L1 = params[i] * length;
-            double L2 = params[i + 1] * length - L1;
-            double L3 = length - L1 - L2;
-            traps.push_back(BeamTrapezoidalLoad(w[i], w[i + 1], L1, L2, L3));
-        }
-    }
-
-    double R0();
-    double RA();
-    double M0();
-    double MA();
-    double shear_force(double x);
-    double bending_moment(double x);
-    double deflection(double x, double EI);
-};
-
-struct Support {
-    bool flags[6];
-    Support() : Support(false, false, false, false, false, false) {};
+    bool lockflags[6];
+    bool fixflags[6];
+    Support() : Support(Free, Free, Free, Free, Free, Free) {};
     Support(bool ux, bool uy, bool uz, bool rx, bool ry, bool rz);
 
-    bool& Ux() { return flags[0]; }
-    bool& Uy() { return flags[1]; }
-    bool& Uz() { return flags[2]; }
-    bool& Rx() { return flags[3]; }
-    bool& Ry() { return flags[4]; }
-    bool& Rz() { return flags[5]; }
+    bool& Ux() { return fixflags[0]; }
+    bool& Uy() { return fixflags[1]; }
+    bool& Uz() { return fixflags[2]; }
+    bool& Rx() { return fixflags[3]; }
+    bool& Ry() { return fixflags[4]; }
+    bool& Rz() { return fixflags[5]; }
+
+    std::array<bool, 6> isdof_fixed() {
+        std::array<bool, 6> fixed;
+        fixed[0] = fixflags[0] || lockflags[0];
+        fixed[1] = fixflags[1] || lockflags[1];
+        fixed[2] = fixflags[2] || lockflags[2];
+        fixed[3] = fixflags[3] || lockflags[3];
+        fixed[4] = fixflags[4] || lockflags[4];
+        fixed[5] = fixflags[5] || lockflags[5];
+
+        return fixed;
+    }
 
     void FixAll();
     void PinFix();
     void ReleaseAll();
-    
+
+    void UnlockAllRot() {
+        lockflags[3] = Unlock;
+        lockflags[4] = Unlock;
+        lockflags[5] = Unlock;
+    }
+
+    bool IsAnyFix() {
+        for each (bool f in isdof_fixed()) {
+            if (f) return true;
+        }
+        return false;
+        //return std::any_of(fixflags, fixflags + 6, [](bool x) { return x; });
+    };
 };
+
+//struct NodeFix {
+//    int id;
+//    bool flags[6];
+//    NodeFix() : NodeFix(false, false, false, false, false, false) {};
+//    NodeFix(bool ux, bool uy, bool uz, bool rx, bool ry, bool rz);
+//    NodeFix(int _id, bool ux, bool uy, bool uz, bool rx, bool ry, bool rz)
+//        : NodeFix(ux, uy, uz, rx, ry, rz) {id = _id;};
+//
+//    bool& Ux() { return flags[0]; }
+//    bool& Uy() { return flags[1]; }
+//    bool& Uz() { return flags[2]; }
+//    bool& Rx() { return flags[3]; }
+//    bool& Ry() { return flags[4]; }
+//    bool& Rz() { return flags[5]; }
+//
+//    void FixAll();
+//    void PinFix();
+//    void ReleaseAll();
+//    bool IsAnyFix() {
+//        return std::any_of(flags, flags + 6, [](bool x) { return x; });
+//    };
+//};
 
 struct Node {
 public:
@@ -276,8 +230,12 @@ public:
     double Young;
     double Poisson;
     double G() { return Young * 0.5 / (1 + Poisson); }
+    double dense = 0;
 
+    Material() : Young(205e3), Poisson(0.2) {};
     Material(double young, double poisson) : Young(young), Poisson(poisson) {};
+    Material(double young, double poisson, double dense) : 
+        Young(young), Poisson(poisson), dense(dense) {};
 
     friend std::ostream& operator<<(std::ostream& os, const Material& m);
 };

@@ -1,3 +1,6 @@
+//#ifdef USE_MKL
+//#define EIGEN_USE_MKL_ALL
+//#endif
 #include <Eigen/Sparse>
 
 #include "Components.h"
@@ -22,7 +25,7 @@ Eigen::Matrix<double, 2, 6> TrussElement::trans_matrix()
 Eigen::MatrixXd TrussElement::stiffness_matrix_local()
 {
 	double l = (Nodes[1]->Location - Nodes[0]->Location).norm();
-	double EAl = Mat->Young * Sec->A / l;
+	double EAl = Mat.Young * Sec->A / l;
 	//double alpha = vij * Vector::XAxis() / l;
 	//double beta = vij * Vector::YAxis() / l;
 	//double gamma = vij * Vector::ZAxis() / l;
@@ -33,7 +36,7 @@ Eigen::MatrixXd TrussElement::stiffness_matrix_local()
 	return local_stiffMat;
 }
 
-TrussElement::TrussElement(Node* n0, Node* n1, Section* sec, Material* mat)
+TrussElement::TrussElement(Node* n0, Node* n1, Section* sec, Material mat)
 {
 	Nodes[0] = n0;
 	Nodes[1] = n1;
@@ -96,13 +99,13 @@ BeamStress TrussElement::stress(Displacement d0, Displacement d1)
 
 	Eigen::Vector2d force = stiffness_matrix_local() * trans_matrix()* disp;
 	
-	BeamStressData str0(force(0), 0, 0, 0, 0, 0);
+	BeamStressData str0(-force(0), 0, 0, 0, 0, 0);
 	BeamStressData str1(force(1), 0, 0, 0, 0, 0);
 	return BeamStress(str0, str1);
 }
 
 
-BeamElement::BeamElement(Node* n0, Node* n1, Section* sec, Material* mat, double beta):
+BeamElement::BeamElement(Node* n0, Node* n1, Section* sec, Material mat, double beta):
 	BeamElement()
 {
 	Nodes[0] = n0;
@@ -158,9 +161,37 @@ BeamStress BeamElement::stress(Displacement d0, Displacement d1)
 	wvec = stiffness_matrix_local() * wvec;
 	//wvec = StiffnessMatrix() * wvec;
 
-	BeamStressData s0(wvec(0), wvec(1), wvec(2), wvec(3), wvec(4), wvec(5));
-	BeamStressData s1(wvec(6), wvec(7), wvec(8), wvec(9), wvec(10), wvec(11));
+	// N, Qy, Qz, Mx, My, Mz
+	BeamStressData s0(-wvec(0), -wvec(1), -wvec(2), -wvec(3), -wvec(4), wvec(5));
+	BeamStressData s1(wvec(6), wvec(7), wvec(8), wvec(9), wvec(10), -wvec(11));
 	return BeamStress(s0, s1);
+}
+
+Displacement BeamElement::DisplaceAt(Displacement d0, Displacement d1, double p)
+{
+	Eigen::VectorXd wvec(12);
+	wvec.segment(0, 6) = Eigen::Map<Eigen::VectorXd>(d0.displace, 6);
+	wvec.segment(6, 6) = Eigen::Map<Eigen::VectorXd>(d1.displace, 6);
+
+	Eigen::MatrixXd T = trans_matrix();
+	wvec = T * wvec;
+	Eigen::Matrix<double, 6, total_dof> m;
+	double l = length();
+	double x = p * l;
+	double p2 = p * p;
+	double p3 = p * p * p;
+	
+	m << 1 - p, 0, 0, 0, 0, 0, p, 0, 0, 0, 0, 0,
+		0, 1-3*p2+2*p3, 0, 0, 0, (1-2*p+p2)*x, 0, 3*p2-2*p3, 0, 0, 0, (-p+p2)*x,
+		0, 0, 1-3*p2+2*p3, 0, (-1+2*p-p2)*x, 0, 0, 0, 3*p2-2*p3, 0, (p-p2)*x, 0,
+		0, 0, 0, 1 - p, 0, 0, 0, 0, 0, p, 0, 0,
+		0, 0, (-6*p+6*p2)/l, 0, -1+4*p-3*p2, 0, 0, 0, (6*p-6*p2)/l, 0, 2*p-3*p2, 0,
+		0, (-6*p+6*p2)/l, 0, 0, 0, 1-4*p+3*p2, 0, (6*p-6*p2)/l, 0, 0, 0, 3*p2-2*p;
+
+	// wvec = stiffness_matrix_local() * wvec;
+	Eigen::VectorXd d = T.block(0, 0, 6, 6).transpose()* m* wvec;
+
+	return Displacement(d(0), d(1), d(2), d(3), d(4), d(5));
 }
 
 double BeamElement::element_length()
@@ -172,8 +203,8 @@ double BeamElement::element_length()
 }
 
 Eigen::MatrixXd BeamElement::stiffness_matrix_local() {
-	double E = Mat->Young;
-	double G = Mat->G();
+	double E = Mat.Young;
+	double G = Mat.G();
 	double l = element_length();
 	double A = Sec->A;
 	double Iy = Sec->Iy;
@@ -196,15 +227,15 @@ Eigen::MatrixXd BeamElement::stiffness_matrix_local() {
 	Eigen::Matrix<double, total_dof, total_dof> m;
 	m << EAl, 0, 0, 0, 0, 0, -EAl, 0, 0, 0, 0, 0,
 		0, EIz12, 0, 0, 0, EIz6, 0, -EIz12, 0, 0, 0, EIz6,
-		0, 0, EIy12, 0, EIy6, 0, 0, 0, -EIy12, 0, EIy6, 0,
+		0, 0, EIy12, 0, -EIy6, 0, 0, 0, -EIy12, 0, -EIy6, 0,
 		0, 0, 0, GKl, 0, 0, 0, 0, 0, -GKl, 0, 0,
-		0, 0, EIy6, 0, EIy4, 0, 0, 0, -EIy6, 0, EIy2, 0,
+		0, 0, -EIy6, 0, EIy4, 0, 0, 0, EIy6, 0, EIy2, 0,
 		0, EIz6, 0, 0, 0, EIz4, 0, -EIz6, 0, 0, 0, EIz2,
 		-EAl, 0, 0, 0, 0, 0, EAl, 0, 0, 0, 0, 0,
 		0, -EIz12, 0, 0, 0, -EIz6, 0, EIz12, 0, 0, 0, -EIz6,
-		0, 0, -EIy12, 0, -EIy6, 0, 0, 0, EIy12, 0, -EIy6, 0,
+		0, 0, -EIy12, 0, EIy6, 0, 0, 0, EIy12, 0, EIy6, 0,
 		0, 0, 0, -GKl, 0, 0, 0, 0, 0, GKl, 0, 0,
-		0, 0, EIy6, 0, EIy2, 0, 0, 0, -EIy6, 0, EIy4, 0,
+		0, 0, -EIy6, 0, EIy2, 0, 0, 0, EIy6, 0, EIy4, 0,
 		0, EIz6, 0, 0, 0, EIz2, 0, -EIz6, 0, 0, 0, EIz4;
 
 	return m;
@@ -351,7 +382,7 @@ std::ostream& operator<<(std::ostream& os, const PlateStressData& strs)
 }
 
 TriPlaneElement::TriPlaneElement(Node* n0, Node* n1, Node* n2, 
-	double t, Material* mat)
+	double t, Material mat)
 {
 	Nodes[0] = n0;
 	Nodes[1] = n1;
@@ -421,6 +452,18 @@ void TriPlaneElement::AssembleStiffMatrix(Eigen::SparseMatrix<double>& mat)
 	}
 }
 
+void TriPlaneElement::AssembleMassMatrix(Eigen::SparseMatrix<double>& mat)
+{
+	Eigen::VectorXd mass = NodeLumpedMass();
+	for (size_t ni = 0; ni < node_num; ni++)
+	{
+		for (size_t i = 0; i < 3; i++) {
+			int idx = Nodes[ni]->id * 6 + i;
+			mat.coeffRef(idx, idx) += mass[ni];
+		}
+	}
+}
+
 MembraneStressData TriPlaneElement::stress(
 	Displacement d0, Displacement d1, Displacement d2)
 {
@@ -451,10 +494,10 @@ Eigen::MatrixXd TriPlaneElement::BMatrix()
 Eigen::Matrix3d TriPlaneElement::DMatrix()
 {
 	Eigen::Matrix3d mat;
-	mat << 1, Mat->Poisson, 0,
-		Mat->Poisson, 1, 0,
-		0, 0, (1 - Mat->Poisson) / 2;
-	return Mat->Young / (1 - Mat->Poisson * Mat->Poisson) * mat;
+	mat << 1, Mat.Poisson, 0,
+		Mat.Poisson, 1, 0,
+		0, 0, (1 - Mat.Poisson) / 2;
+	return Mat.Young / (1 - Mat.Poisson * Mat.Poisson) * mat;
 }
 
 Eigen::MatrixXd TriPlaneElement::localStiffnessMatrix()
@@ -655,10 +698,10 @@ Eigen::MatrixXd TriPlateElement::BMatrix(double xi, double eta)
 Eigen::Matrix3d TriPlateElement::DMatrix()
 {
 	Eigen::Matrix3d mat;
-	mat << 1, Mat->Poisson, 0,
-		Mat->Poisson, 1, 0,
-		0, 0, (1 - Mat->Poisson) / 2;
-	return Mat->Young * pow(thickness, 3) / 12 / (1 - Mat->Poisson * Mat->Poisson) * mat;
+	mat << 1, Mat.Poisson, 0,
+		Mat.Poisson, 1, 0,
+		0, 0, (1 - Mat.Poisson) / 2;
+	return Mat.Young * pow(thickness, 3) / 12 / (1 - Mat.Poisson * Mat.Poisson) * mat;
 }
 
 Eigen::MatrixXd TriPlateElement::localStiffnessMatrix()
@@ -679,7 +722,7 @@ Eigen::MatrixXd TriPlateElement::localStiffnessMatrix()
 	return a2 * weight * mat;
 }
 
-TriPlateElement::TriPlateElement(Node* n0, Node* n1, Node* n2, double t, Material* mat) 
+TriPlateElement::TriPlateElement(Node* n0, Node* n1, Node* n2, double t, Material mat) 
 	: plane_element(n0, n1, n2, t, mat)
 {
 	Nodes[0] = n0;
@@ -806,6 +849,18 @@ void TriPlateElement::AssembleStiffMatrix(Eigen::SparseMatrix<double>& mat)
 				rj = indices[i];
 			}
 			mat.coeffRef(rj, ci) += smat(i, j);
+		}
+	}
+}
+
+void TriPlateElement::AssembleMassMatrix(Eigen::SparseMatrix<double>& mat)
+{
+	Eigen::VectorXd mass = NodeLumpedMass();
+	for (size_t ni = 0; ni < node_num; ni++)
+	{
+		for (size_t i = 0; i < 3; i++) {
+			int idx = Nodes[ni]->id * 6 + i;
+			mat.coeffRef(idx, idx) += mass[ni];
 		}
 	}
 }
@@ -946,10 +1001,10 @@ Eigen::MatrixXd QuadPlaneElement::BMatrix(double xi, double eta)
 Eigen::Matrix3d QuadPlaneElement::DMatrix()
 {
 	Eigen::Matrix3d mat;
-	mat << 1, Mat->Poisson, 0,
-		Mat->Poisson, 1, 0,
-		0, 0, (1 - Mat->Poisson) / 2.0;
-	return Mat->Young / (1.0 - Mat->Poisson * Mat->Poisson) * mat;
+	mat << 1, Mat.Poisson, 0,
+		Mat.Poisson, 1, 0,
+		0, 0, (1 - Mat.Poisson) / 2.0;
+	return Mat.Young / (1.0 - Mat.Poisson * Mat.Poisson) * mat;
 }
 
 Eigen::MatrixXd QuadPlaneElement::localStiffnessMatrix()
@@ -971,7 +1026,7 @@ Eigen::MatrixXd QuadPlaneElement::localStiffnessMatrix()
 	return K;
 }
 
-QuadPlaneElement::QuadPlaneElement(Node* n0, Node* n1, Node* n2, Node* n3, double t, Material* mat)
+QuadPlaneElement::QuadPlaneElement(Node* n0, Node* n1, Node* n2, Node* n3, double t, Material mat)
 {
 	Nodes[0] = n0;
 	Nodes[1] = n1;
@@ -1006,6 +1061,18 @@ Eigen::MatrixXd QuadPlaneElement::trans_matrix()
 	return matrix;
 }
 
+double QuadPlaneElement::Area()
+{
+	Vector v01 = Nodes[1]->Location - Nodes[0]->Location;
+	Vector v03 = Nodes[3]->Location - Nodes[0]->Location;
+	Vector vn13 = Vector::cross(v01, v03);
+
+	Vector v23 = Nodes[3]->Location - Nodes[2]->Location;
+	Vector v21 = Nodes[1]->Location - Nodes[2]->Location;
+	Vector vn31 = Vector::cross(v01, v03);
+	return (vn13.norm() + vn31.norm()) / 2;
+}
+
 Eigen::MatrixXd QuadPlaneElement::StiffnessMatrix()
 {
 	Eigen::MatrixXd K = localStiffnessMatrix();
@@ -1035,6 +1102,18 @@ void QuadPlaneElement::AssembleStiffMatrix(Eigen::SparseMatrix<double>& mat)
 				rj = indices[i];
 			}
 			mat.coeffRef(rj, ci) += smat(i, j);
+		}
+	}
+}
+
+void QuadPlaneElement::AssembleMassMatrix(Eigen::SparseMatrix<double>& mat)
+{
+	Eigen::VectorXd mass = NodeLumpedMass();
+	for (size_t ni = 0; ni < node_num; ni++)
+	{
+		for (size_t i = 0; i < 3; i++) {
+			int idx = Nodes[ni]->id * 6 + i;
+			mat.coeffRef(idx, idx) += mass[ni];
 		}
 	}
 }
@@ -1417,10 +1496,10 @@ Eigen::MatrixXd QuadPlateElement::BMatrix(double xi, double eta)
 Eigen::Matrix3d QuadPlateElement::DMatrix()
 {
 	Eigen::Matrix3d mat;
-	mat << 1, Mat->Poisson, 0,
-		Mat->Poisson, 1, 0,
-		0, 0, (1.0 - Mat->Poisson) / 2.0;
-	return Mat->Young * pow(thickness, 3) / 12 / (1 - Mat->Poisson * Mat->Poisson) * mat;
+	mat << 1, Mat.Poisson, 0,
+		Mat.Poisson, 1, 0,
+		0, 0, (1.0 - Mat.Poisson) / 2.0;
+	return Mat.Young * pow(thickness, 3) / 12 / (1 - Mat.Poisson * Mat.Poisson) * mat;
 }
 
 Eigen::MatrixXd QuadPlateElement::localStiffnessMatrix()
@@ -1442,7 +1521,7 @@ Eigen::MatrixXd QuadPlateElement::localStiffnessMatrix()
 	return K;
 }
 
-QuadPlateElement::QuadPlateElement(Node* n0, Node* n1, Node* n2, Node* n3, double t, Material* mat)
+QuadPlateElement::QuadPlateElement(Node* n0, Node* n1, Node* n2, Node* n3, double t, Material mat)
 	: plane_element(n0, n1, n2, n3, t, mat)
 {
 	Nodes[0] = n0;
@@ -1476,6 +1555,18 @@ QuadPlateElement::trans_matrix()
 		matrix.block(i * tr0.rows(), i * tr0.cols(), tr0.rows(), tr0.cols()) = tr0;
 
 	return matrix;
+}
+
+double QuadPlateElement::Area()
+{
+	Vector v01 = Nodes[1]->Location - Nodes[0]->Location;
+	Vector v03 = Nodes[3]->Location - Nodes[0]->Location;
+	Vector vn13 = Vector::cross(v01, v03);
+
+	Vector v23 = Nodes[3]->Location - Nodes[2]->Location;
+	Vector v21 = Nodes[1]->Location - Nodes[2]->Location;
+	Vector vn31 = Vector::cross(v01, v03);
+	return (vn13.norm() + vn31.norm()) / 2;
 }
 
 Eigen::MatrixXd QuadPlateElement::StiffnessMatrix()
@@ -1561,6 +1652,18 @@ void QuadPlateElement::AssembleStiffMatrix(Eigen::SparseMatrix<double>& mat)
 				rj = indices[i];
 			}
 			mat.coeffRef(rj, ci) += smat(i, j);
+		}
+	}
+}
+
+void QuadPlateElement::AssembleMassMatrix(Eigen::SparseMatrix<double>& mat)
+{
+	Eigen::VectorXd mass = NodeLumpedMass();
+	for (size_t ni = 0; ni < node_num; ni++)
+	{
+		for (size_t i = 0; i < 3; i++) {
+			int idx = Nodes[ni]->id * 6 + i;
+			mat.coeffRef(idx, idx) += mass[ni];
 		}
 	}
 }
@@ -1688,3 +1791,386 @@ PlateStressData QuadPlateElement::stress(Displacement d0, Displacement d1,
 //
 //	// return PlateStressData(strs(0), strs(1), strs(2));
 //}
+
+
+// compute_Kprime_partial 関数
+// 
+// 引数
+//   Kz        : 4x4 の対称行列 (Eigen::Matrix4d)
+//   lambda_s  : float (double)
+//   lambda_z  : float (double)
+//   lambda_s_ : float (double)  // λ_s'
+//   lambda_z_ : float (double)  // λ_z'
+//
+// 戻り値
+//   Kp        : 4x4 の対称行列 (Eigen::Matrix4d)
+//
+Eigen::Matrix4d compute_Kprime_partial(const Eigen::Matrix4d& Kz,
+	double lambda_s, double lambda_z,
+	double lambda_s_, double lambda_z_)
+{
+	// --- 1) Kz の各要素を取り出す ---
+	double k11 = Kz(0, 0);
+	double k12 = Kz(0, 1);
+	double k13 = Kz(0, 2);
+	double k14 = Kz(0, 3);
+	double k22 = Kz(1, 1);
+	double k23 = Kz(1, 2);
+	double k24 = Kz(1, 3);
+	double k33 = Kz(2, 2);
+	double k34 = Kz(2, 3);
+	double k44 = Kz(3, 3);
+
+	// --- 2) Lambda|D| の計算 ---
+	double LambdaD =
+		k11 * k22 * k33 * k44
+		+ 2.0 * k11 * k23 * k24 * k34 * (1.0 - lambda_s_) * (1.0 - lambda_z) * (1.0 - lambda_z_)
+		- k11 * (k24 * k24) * k33 * (1.0 - lambda_z) * (1.0 - lambda_z_)
+		- k11 * (k23 * k23) * k44 * (1.0 - lambda_s_) * (1.0 - lambda_z)
+		- k11 * k22 * (k34 * k34) * (1.0 - lambda_s_) * (1.0 - lambda_z_)
+		- (k12 * k12) * k33 * k44 * (1.0 - lambda_s) * (1.0 - lambda_z)
+		- 2.0 * k12 * k13 * k24 * k34 * (1.0 - lambda_s) * (1.0 - lambda_s_) * (1.0 - lambda_z) * (1.0 - lambda_z_)
+		- 2.0 * k12 * k14 * k23 * k34 * (1.0 - lambda_s) * (1.0 - lambda_s_) * (1.0 - lambda_z) * (1.0 - lambda_z_)
+		+ 2.0 * k12 * k14 * k24 * k33 * (1.0 - lambda_s) * (1.0 - lambda_z) * (1.0 - lambda_z_)
+		+ 2.0 * k12 * k13 * k23 * k44 * (1.0 - lambda_s) * (1.0 - lambda_s_) * (1.0 - lambda_z)
+		+ (k12 * k12) * (k34 * k34) * (1.0 - lambda_s) * (1.0 - lambda_s_) * (1.0 - lambda_z) * (1.0 - lambda_z_)
+		+ (k13 * k13) * (k24 * k24) * (1.0 - lambda_s) * (1.0 - lambda_s_) * (1.0 - lambda_z) * (1.0 - lambda_z_)
+		+ 2.0 * k13 * k14 * k22 * k34 * (1.0 - lambda_s) * (1.0 - lambda_s_) * (1.0 - lambda_z_)
+		- (k13 * k13) * k22 * k44 * (1.0 - lambda_s) * (1.0 - lambda_s_)
+		- 2.0 * k13 * k14 * k23 * k24 * (1.0 - lambda_s) * (1.0 - lambda_s_) * (1.0 - lambda_z) * (1.0 - lambda_z_)
+		- (k14 * k14) * k22 * k33 * (1.0 - lambda_s) * (1.0 - lambda_z_)
+		+ (k14 * k14) * (k23 * k23) * (1.0 - lambda_s) * (1.0 - lambda_s_) * (1.0 - lambda_z) * (1.0 - lambda_z_);
+
+	// --- 3) K' 用の 4x4 行列を 0 で初期化 ---
+	Eigen::Matrix4d Kp = Eigen::Matrix4d::Zero();
+
+	// ---------------------------------------------------------------------
+	// 上三角 (i <= j) の要素を計算し，下三角へコピー (対称行列を構築)
+	// ---------------------------------------------------------------------
+
+	// === (A) K_{11}' ===
+	Kp(0, 0) =
+		((lambda_s * k11) / LambdaD) * (
+			k11 * k22 * k33 * k44
+			+ 2.0 * k11 * k23 * k24 * k34 * (1.0 - lambda_s_) * (1.0 - lambda_z) * (1.0 - lambda_z_)
+			- k11 * (k24 * k24) * k33 * (1.0 - lambda_z) * (1.0 - lambda_z_)
+			- k11 * (k23 * k23) * k44 * (1.0 - lambda_s_) * (1.0 - lambda_z)
+			- k11 * k22 * (k34 * k34) * (1.0 - lambda_s_) * (1.0 - lambda_z_)
+			- (k12 * k12) * k33 * k44 * (1.0 - lambda_z)
+			- 2.0 * k12 * k13 * k24 * k34 * (1.0 - lambda_s_) * (1.0 - lambda_z) * (1.0 - lambda_z_)
+			- 2.0 * k12 * k14 * k23 * k34 * (1.0 - lambda_s_) * (1.0 - lambda_z) * (1.0 - lambda_z_)
+			+ 2.0 * k12 * k14 * k24 * k33 * (1.0 - lambda_z) * (1.0 - lambda_z_)
+			+ 2.0 * k12 * k13 * k23 * k44 * (1.0 - lambda_s_) * (1.0 - lambda_z)
+			+ (k12 * k12) * (k34 * k34) * (1.0 - lambda_s_) * (1.0 - lambda_z) * (1.0 - lambda_z_)
+			+ (k13 * k13) * (k24 * k24) * (1.0 - lambda_s_) * (1.0 - lambda_z) * (1.0 - lambda_z_)
+			+ 2.0 * k13 * k14 * k22 * k34 * (1.0 - lambda_s_) * (1.0 - lambda_z_)
+			- (k13 * k13) * k22 * k44 * (1.0 - lambda_s_)
+			- 2.0 * k13 * k14 * k23 * k24 * (1.0 - lambda_s_) * (1.0 - lambda_z) * (1.0 - lambda_z_)
+			- (k14 * k14) * k22 * k33 * (1.0 - lambda_z_)
+			+ (k14 * k14) * (k23 * k23) * (1.0 - lambda_s_) * (1.0 - lambda_z) * (1.0 - lambda_z_)
+			);
+
+	// === (B) K_{12}' ===
+	Kp(0, 1) =
+		-(lambda_s * lambda_z * k11 * k22 / LambdaD) * (
+			-k12 * k33 * k44
+			- k13 * k34 * k24 * (1.0 - lambda_s_) * (1.0 - lambda_z_)
+			- k14 * k23 * k34 * (1.0 - lambda_s_) * (1.0 - lambda_z_)
+			+ k14 * k33 * k24 * (1.0 - lambda_z_)
+			+ k13 * k23 * k44 * (1.0 - lambda_s_)
+			+ k12 * (k34 * k34) * (1.0 - lambda_s_) * (1.0 - lambda_z_)
+			);
+
+	// === (C) K_{13}' ===
+	Kp(0, 2) =
+		-(lambda_s * lambda_s_ * k11 * k33 / LambdaD) * (
+			(1.0 - lambda_z) * k12 * k23 * k44
+			+ (1.0 - lambda_z) * (1.0 - lambda_z_) * k13 * (k24 * k24)
+			+ (1.0 - lambda_z_) * k14 * k22 * k34
+			- (1.0 - lambda_z) * (1.0 - lambda_z_) * k14 * k23 * k24
+			- k13 * k22 * k44
+			- (1.0 - lambda_z) * (1.0 - lambda_z_) * k12 * k24 * k34
+			);
+
+	// === (D) K_{14}' ===
+	Kp(0, 3) =
+		-(lambda_s * lambda_z_ * k11 * k44 / LambdaD) * (
+			-(1.0 - lambda_s_) * (1.0 - lambda_z) * k12 * k23 * k34
+			- (1.0 - lambda_s_) * (1.0 - lambda_z) * k13 * k24 * k23
+			- k14 * k22 * k33
+			+ (1.0 - lambda_s_) * (1.0 - lambda_z) * k14 * (k23 * k23)
+			+ (1.0 - lambda_s_) * k13 * k22 * k34
+			+ (1.0 - lambda_z) * k12 * k24 * k33
+			);
+
+	// === (E) K_{22}' ===
+	Kp(1, 1) =
+		((lambda_z * k22) / LambdaD) * (
+			k11 * k22 * k33 * k44
+			+ 2.0 * k11 * k23 * k24 * k34 * (1.0 - lambda_s_) * (1.0 - lambda_z_)
+			- k11 * (k24 * k24) * k33 * (1.0 - lambda_z_)
+			- k11 * (k23 * k23) * k44 * (1.0 - lambda_s_)
+			- k11 * k22 * (k34 * k34) * (1.0 - lambda_s_) * (1.0 - lambda_z_)
+			- (k12 * k12) * k33 * k44 * (1.0 - lambda_s)
+			- 2.0 * k12 * k13 * k24 * k34 * (1.0 - lambda_s) * (1.0 - lambda_s_) * (1.0 - lambda_z_)
+			- 2.0 * k12 * k14 * k23 * k34 * (1.0 - lambda_s) * (1.0 - lambda_s_) * (1.0 - lambda_z_)
+			+ 2.0 * k12 * k14 * k24 * k33 * (1.0 - lambda_s) * (1.0 - lambda_z_)
+			+ 2.0 * k12 * k13 * k23 * k44 * (1.0 - lambda_s) * (1.0 - lambda_s_)
+			+ (k12 * k12) * (k34 * k34) * (1.0 - lambda_s) * (1.0 - lambda_s_) * (1.0 - lambda_z_)
+			+ (k13 * k13) * (k24 * k24) * (1.0 - lambda_s) * (1.0 - lambda_s_) * (1.0 - lambda_z_)
+			+ 2.0 * k13 * k14 * k22 * k34 * (1.0 - lambda_s) * (1.0 - lambda_s_) * (1.0 - lambda_z_)
+			- (k13 * k13) * k22 * k44 * (1.0 - lambda_s) * (1.0 - lambda_s_)
+			- 2.0 * k13 * k14 * k23 * k24 * (1.0 - lambda_s) * (1.0 - lambda_s_) * (1.0 - lambda_z_)
+			- (k14 * k14) * k22 * k33 * (1.0 - lambda_s) * (1.0 - lambda_z_)
+			+ (k14 * k14) * (k23 * k23) * (1.0 - lambda_s) * (1.0 - lambda_s_) * (1.0 - lambda_z_)
+			);
+
+	// === (F) K_{23}' ===
+	Kp(1, 2) =
+		-(lambda_z * lambda_s_ * k22 * k33 / LambdaD) * (
+			-k11 * k23 * k44
+			- (1.0 - lambda_s) * (1.0 - lambda_z_) * k13 * k24 * k14
+			- (1.0 - lambda_s) * (1.0 - lambda_z_) * k14 * k12 * k34
+			+ (1.0 - lambda_s) * (1.0 - lambda_z_) * (k14 * k14) * k23
+			+ (1.0 - lambda_s) * k13 * k12 * k44
+			+ (1.0 - lambda_z_) * k11 * k24 * k34
+			);
+
+	// === (G) K_{24}' ===
+	Kp(1, 3) =
+		-(lambda_z * lambda_z_ * k22 * k44 / LambdaD) * (
+			(1.0 - lambda_s_) * k11 * k23 * k34
+			+ (1.0 - lambda_s) * (1.0 - lambda_s_) * (k13 * k13) * k24
+			+ (1.0 - lambda_s) * k14 * k12 * k33
+			- (1.0 - lambda_s) * (1.0 - lambda_s_) * k14 * k23 * k13
+			- (1.0 - lambda_s) * (1.0 - lambda_s_) * k13 * k12 * k34
+			- k11 * k24 * k33
+			);
+
+	// === (H) K_{33}' ===
+	Kp(2, 2) =
+		((lambda_s_ * k33) / LambdaD) * (
+			k11 * k22 * k33 * k44
+			+ 2.0 * k11 * k23 * k24 * k34 * (1.0 - lambda_z) * (1.0 - lambda_z_)
+			- k11 * (k24 * k24) * k33 * (1.0 - lambda_z) * (1.0 - lambda_z_)
+			- k11 * (k23 * k23) * k44 * (1.0 - lambda_z)
+			- k11 * k22 * (k34 * k34) * (1.0 - lambda_z_)
+			- (k12 * k12) * k33 * k44 * (1.0 - lambda_s) * (1.0 - lambda_z)
+			- 2.0 * k12 * k13 * k24 * k34 * (1.0 - lambda_s) * (1.0 - lambda_z) * (1.0 - lambda_z_)
+			- 2.0 * k12 * k14 * k23 * k34 * (1.0 - lambda_s) * (1.0 - lambda_z) * (1.0 - lambda_z_)
+			+ 2.0 * k12 * k14 * k24 * k33 * (1.0 - lambda_s) * (1.0 - lambda_z) * (1.0 - lambda_z_)
+			+ 2.0 * k12 * k13 * k23 * k44 * (1.0 - lambda_s) * (1.0 - lambda_z)
+			+ (k12 * k12) * (k34 * k34) * (1.0 - lambda_s) * (1.0 - lambda_z) * (1.0 - lambda_z_)
+			+ (k13 * k13) * (k24 * k24) * (1.0 - lambda_s) * (1.0 - lambda_z) * (1.0 - lambda_z_)
+			+ 2.0 * k13 * k14 * k22 * k34 * (1.0 - lambda_s) * (1.0 - lambda_z_)
+			- (k13 * k13) * k22 * k44 * (1.0 - lambda_s)
+			- 2.0 * k13 * k14 * k23 * k24 * (1.0 - lambda_s) * (1.0 - lambda_z) * (1.0 - lambda_z_)
+			- (k14 * k14) * k22 * k33 * (1.0 - lambda_s) * (1.0 - lambda_z_)
+			+ (k14 * k14) * (k23 * k23) * (1.0 - lambda_s) * (1.0 - lambda_z) * (1.0 - lambda_z_)
+			);
+
+	// === (I) K_{34}' ===
+	Kp(2, 3) =
+		-(lambda_s_ * lambda_z_ * k33 * k44 / LambdaD) * (
+			-k11 * k22 * k34
+			- (1.0 - lambda_s) * (1.0 - lambda_z) * k12 * k24 * k13
+			- (1.0 - lambda_s) * (1.0 - lambda_z) * k14 * k12 * k23
+			+ (1.0 - lambda_s) * k14 * k22 * k13
+			+ (1.0 - lambda_s) * (1.0 - lambda_z) * (k12 * k12) * k34
+			+ (1.0 - lambda_z) * k11 * k24 * k23
+			);
+
+	// === (J) K_{44}' ===
+	Kp(3, 3) =
+		((lambda_z_ * k44) / LambdaD) * (
+			k11 * k22 * k33 * k44
+			+ 2.0 * k11 * k23 * k24 * k34 * (1.0 - lambda_s_) * (1.0 - lambda_z)
+			- k11 * (k24 * k24) * k33 * (1.0 - lambda_z)
+			- k11 * (k23 * k23) * k44 * (1.0 - lambda_s_) * (1.0 - lambda_z)
+			- k11 * k22 * (k34 * k34) * (1.0 - lambda_s_)
+			- (k12 * k12) * k33 * k44 * (1.0 - lambda_s) * (1.0 - lambda_z)
+			- 2.0 * k12 * k13 * k24 * k34 * (1.0 - lambda_s) * (1.0 - lambda_s_) * (1.0 - lambda_z)
+			- 2.0 * k12 * k14 * k23 * k34 * (1.0 - lambda_s) * (1.0 - lambda_s_) * (1.0 - lambda_z)
+			+ 2.0 * k12 * k14 * k24 * k33 * (1.0 - lambda_s) * (1.0 - lambda_z)
+			+ 2.0 * k12 * k13 * k23 * k44 * (1.0 - lambda_s) * (1.0 - lambda_s_) * (1.0 - lambda_z)
+			+ (k12 * k12) * (k34 * k34) * (1.0 - lambda_s) * (1.0 - lambda_s_) * (1.0 - lambda_z)
+			+ (k13 * k13) * (k24 * k24) * (1.0 - lambda_s) * (1.0 - lambda_s_) * (1.0 - lambda_z)
+			+ 2.0 * k13 * k14 * k22 * k34 * (1.0 - lambda_s) * (1.0 - lambda_s_)
+			- (k13 * k13) * k22 * k44 * (1.0 - lambda_s) * (1.0 - lambda_s_)
+			- 2.0 * k13 * k14 * k23 * k24 * (1.0 - lambda_s) * (1.0 - lambda_s_) * (1.0 - lambda_z)
+			- (k14 * k14) * k22 * k33 * (1.0 - lambda_s)
+			+ (k14 * k14) * (k23 * k23) * (1.0 - lambda_s) * (1.0 - lambda_s_) * (1.0 - lambda_z)
+			);
+
+	// --- 4) 上三角を計算したので，下三角へコピーして対称行列を完成 ---
+	for (int i = 0; i < 4; i++)
+	{
+		for (int j = i + 1; j < 4; j++)
+		{
+			Kp(j, i) = Kp(i, j);
+		}
+	}
+
+	return Kp;
+}
+
+// Beam Rotation around z
+Eigen::Matrix4d stiffness_matrix_beam_rot_z(double E, double Iz, double L)
+{
+	Eigen::Matrix4d matrix;
+	double EI = E * Iz;
+	double L2 = L * L;
+	double L3 = L2 * L;
+
+	matrix << 12.0 / L3, 6.0 / L2, -12.0 / L3, 6.0 / L2,
+		6.0 / L2, 4.0 / L, -6.0 / L2, 2.0 / L,
+		-12.0 / L3, -6.0 / L2, 12.0 / L3, -6.0 / L2,
+		6.0 / L2, 2.0 / L, -6.0 / L2, 4.0 / L;
+	return EI * matrix;
+}
+
+// Beam Rotation around y
+Eigen::Matrix4d stiffness_matrix_beam_rot_y(double E, double Iy, double L)
+{
+	Eigen::Matrix4d matrix;
+	double EI = E * Iy;
+	double L2 = L * L;
+	double L3 = L2 * L;
+
+	matrix << 12.0 / L3, -6.0 / L2, -12.0 / L3, -6.0 / L2,
+		-6.0 / L2, 4.0 / L, 6.0 / L2, 2.0 / L,
+		-12.0 / L3, 6.0 / L2, 12.0 / L3, 6.0 / L2,
+		-6.0 / L2, 2.0 / L, 6.0 / L2, 4.0 / L;
+
+	return EI * matrix;
+}
+
+// Axis
+Eigen::Matrix2d stiffness_matrix_truss(double E, double A, double L)
+{
+	Eigen::Matrix2d matrix;
+	double EA_L = E * A / L;
+
+	matrix << EA_L, -EA_L,
+		-EA_L, EA_L;
+	return matrix;
+}
+
+// Beam Torsion
+Eigen::Matrix2d stiffness_matrix_beam_rot_x(double G, double K, double L)
+{
+	Eigen::Matrix2d matrix;
+	double GKl = G * K / L;
+
+	matrix << GKl, -GKl,
+		-GKl, GKl;
+	return matrix;
+}
+
+Eigen::MatrixXd ComplexBeamElement::stiffness_matrix_local()
+{
+	double l = length();
+	double lz_ = l - lzi - lzj;
+	double ly_ = l - lyi - lyj;
+
+	Eigen::Matrix4d Kbz = stiffness_matrix_beam_rot_z(Mat.Young, Sec->Iz, lz_);
+	Eigen::Matrix4d Tbz = Eigen::Matrix4d::Identity();
+	Tbz(0, 1) = lzi; Tbz(2, 3) = -lzj;
+
+	Eigen::Matrix4d Kby = stiffness_matrix_beam_rot_y(Mat.Young, Sec->Iy, ly_);
+	Eigen::Matrix4d Tby = Eigen::Matrix4d::Identity();
+	Tby(0, 1) = -lzi; Tby(2, 3) = lzj;
+
+	Eigen::Matrix2d Kx = stiffness_matrix_truss(Mat.Young, Sec->A, l);
+
+	Eigen::Matrix2d Kt = stiffness_matrix_beam_rot_x(Mat.G(), Sec->K, l);
+
+	// 端部バネの考慮
+	Kbz = compute_Kprime_partial(Kbz, Lambda_sy, Lambda_bz, Lambda_sy_, Lambda_bz_);
+	Kby = compute_Kprime_partial(Kby, Lambda_sz, Lambda_by, Lambda_sz_, Lambda_by_);
+
+	// 剛域の考慮
+	Kbz = Tbz.transpose() * Kbz * Tbz;
+	Kby = Tby.transpose() * Kby * Tby;
+
+	Eigen::MatrixXd K = Eigen::MatrixXd::Zero(12, 12);
+	K(0, 0) = Kx(0, 0); K(0, 6) = Kx(0, 1);
+	K(6, 0) = Kx(1, 0); K(6, 6) = Kx(1, 1);
+	
+	K(1, 1) = Kbz(0, 0); K(1, 5) = Kbz(0, 1); K(1, 7) = Kbz(0, 2); K(1, 11) = Kbz(0, 3);
+	K(5, 1) = Kbz(1, 0); K(5, 5) = Kbz(1, 1); K(5, 7) = Kbz(1, 2); K(5, 11) = Kbz(1, 3);
+	K(7, 1) = Kbz(2, 0); K(7, 5) = Kbz(2, 1); K(7, 7) = Kbz(2, 2); K(7, 11) = Kbz(2, 3);
+	K(11, 1) = Kbz(3, 0); K(11, 5) = Kbz(3, 1); K(11, 7) = Kbz(3, 2); K(11, 11) = Kbz(3, 3);
+	
+	K(2, 2) = Kby(0, 0); K(2, 4) = Kby(0, 1); K(2, 8) = Kby(0, 2); K(1, 10) = Kby(0, 3);
+	K(4, 2) = Kby(1, 0); K(4, 4) = Kby(1, 1); K(4, 8) = Kby(1, 2); K(4, 10) = Kby(1, 3);
+	K(8, 2) = Kby(2, 0); K(8, 4) = Kby(2, 1); K(8, 8) = Kby(2, 2); K(8, 10) = Kby(2, 3);
+	K(10, 2) = Kby(3, 0); K(10, 4) = Kby(3, 1); K(10, 8) = Kby(3, 2); K(10, 10) = Kby(3, 3);
+
+	K(3, 3) = Kt(0, 0); K(3, 9) = Kt(0, 1);
+	K(9, 3) = Kt(1, 0); K(9, 9) = Kt(1, 1);
+	
+	return K;
+}
+
+ComplexBeamElement::ComplexBeamElement()
+{
+	Lambda_bz = 1; Lambda_bz_ = 1;
+	Lambda_sy = 1; Lambda_sy_ = 1;
+	Lambda_by = 1; Lambda_by_ = 1;
+	Lambda_sz = 1; Lambda_sz_ = 1;
+	
+	lzi = 0; lzj = 0;
+	lyi = 0; lyj = 0;
+}
+
+ComplexBeamElement::ComplexBeamElement(Node* n0, Node* n1, Section* sec, Material mat, double beta)
+	:BeamElement(n0, n1, sec, mat, beta)
+{
+	Lambda_bz = 1; Lambda_bz_ = 1;
+	Lambda_sy = 1; Lambda_sy_ = 1;
+	Lambda_by = 1; Lambda_by_ = 1;
+	Lambda_sz = 1; Lambda_sz_ = 1;
+
+	lzi = 0; lzj = 0;
+	lyi = 0; lyj = 0;
+}
+
+ComplexBeamElement::ComplexBeamElement(int _id, Node* n0, Node* n1, Section* sec, Material mat, double beta)
+	:ComplexBeamElement(n0, n1, sec, mat, beta)
+{
+	id = _id;
+
+	Lambda_bz = 1; Lambda_bz_ = 1;
+	Lambda_sy = 1; Lambda_sy_ = 1;
+	Lambda_by = 1; Lambda_by_ = 1;
+	Lambda_sz = 1; Lambda_sz_ = 1;
+
+	lzi = 0; lzj = 0;
+	lyi = 0; lyj = 0;
+}
+
+Eigen::MatrixXd ComplexBeamElement::StiffnessMatrix() {
+	Eigen::MatrixXd tr = trans_matrix();
+	Eigen::MatrixXd k = stiffness_matrix_local();
+	return tr.transpose() * k * tr;
+}
+
+double BarElementBase::length()
+{
+	return Nodes[0]->Location.distance_to(Nodes[1]->Location);
+}
+
+void BarElementBase::AssembleMassMatrix(Eigen::SparseMatrix<double>& mat)
+{
+	int indices[6];
+	Eigen::VectorXd mass = NodeLumpedMass();
+	for (size_t i = 0; i < 3; i++) {
+		int idx = Nodes[0]->id * 6 + i;
+		mat.coeffRef(idx, idx) += mass[0];
+	}
+	for (size_t i = 0; i < 3; i++) {
+		int idx = Nodes[1]->id * 6 + i;
+		mat.coeffRef(idx, idx) += mass[1];
+	}
+}

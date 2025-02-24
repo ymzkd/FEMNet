@@ -1,5 +1,10 @@
-#include <Eigen/Dense>
+//#ifdef USE_MKL
+//#define EIGEN_USE_MKL_ALL
+//#endif
 #include <numeric>
+
+#include <Eigen/Dense>
+
 #include "Components.h"
 
 //std::ostream& Material::operator<<(std::ostream& os) {
@@ -89,88 +94,59 @@ Point Point::divide(const Point p0, const double t)
     return Point(p0.x / t, p0.y / t, p0.z / t);
 }
 
-double BeamPolyLoad::R0() {
-    return std::accumulate(traps.begin(), traps.end(), 0.0, [](double sum, BeamTrapezoidalLoad trap) {
-        return sum + trap.R0();
-        });
-}
-
-double BeamPolyLoad::RA() {
-    return std::accumulate(traps.begin(), traps.end(), 0.0, [](double sum, BeamTrapezoidalLoad trap) {
-        return sum + trap.RA();
-        });
-}
-
-double BeamPolyLoad::M0() {
-    return std::accumulate(traps.begin(), traps.end(), 0.0, [](double sum, BeamTrapezoidalLoad trap) {
-        return sum + trap.M0();
-        });
-}
-
-double BeamPolyLoad::MA() {
-    return std::accumulate(traps.begin(), traps.end(), 0.0, [](double sum, BeamTrapezoidalLoad trap) {
-        return sum + trap.MA();
-        });
-}
-
-double BeamPolyLoad::shear_force(double x) {
-    return std::accumulate(traps.begin(), traps.end(), 0.0, [&x](double sum, BeamTrapezoidalLoad trap) {
-        return sum + trap.shear_force(x);
-        });
-}
-
-double BeamPolyLoad::bending_moment(double x) {
-    return std::accumulate(traps.begin(), traps.end(), 0.0, [&x](double sum, BeamTrapezoidalLoad trap) {
-        return sum + trap.bending_moment(x);
-        });
-}
-
-double BeamPolyLoad::deflection(double x, double EI) {
-    return std::accumulate(traps.begin(), traps.end(), 0.0, [&x, &EI](double sum, BeamTrapezoidalLoad trap) {
-        return sum + trap.deflection(x, EI);
-        });
-}
-
 Support::Support(bool ux, bool uy, bool uz, bool rx, bool ry, bool rz)
 {
-    flags[0] = ux;
-    flags[1] = uy;
-    flags[2] = uz;
-    flags[3] = rx;
-    flags[4] = ry;
-    flags[5] = rz;
+    fixflags[0] = ux; fixflags[1] = uy; fixflags[2] = uz;
+    fixflags[3] = rx; fixflags[4] = ry; fixflags[5] = rz;
+
+    lockflags[0] = Unlock; lockflags[1] = Unlock;
+    lockflags[2] = Unlock; lockflags[3] = Lock;
+    lockflags[4] = Lock; lockflags[5] = Lock;
 }
 
 // Constrain translational movement and rotation.
 void Support::FixAll()
 {
-    Ux() = true;
-    Uy() = true;
-    Uz() = true;
-    Rx() = true;
-    Ry() = true;
-    Rz() = true;
+    Ux() = true; Uy() = true; Uz() = true;
+    Rx() = true; Ry() = true; Rz() = true;
 }
 
 void Support::PinFix()
 {
-    Ux() = true;
-    Uy() = true;
-    Uz() = true;
-    Rx() = false;
-    Ry() = false;
-    Rz() = false;
+    Ux() = true; Uy() = true; Uz() = true;
+    Rx() = false; Ry() = false; Rz() = false;
 }
 
 void Support::ReleaseAll()
 {
-    Ux() = false;
-    Uy() = false;
-    Uz() = false;
-    Rx() = false;
-    Ry() = false;
-    Rz() = false;
+    Ux() = false; Uy() = false; Uz() = false;
+    Rx() = false; Ry() = false; Rz() = false;
 }
+
+//NodeFix::NodeFix(bool ux, bool uy, bool uz, bool rx, bool ry, bool rz)
+//{
+//    flags[0] = ux; flags[1] = uy; flags[2] = uz;
+//    flags[3] = rx; flags[4] = ry; flags[5] = rz;
+//}
+//
+//// Constrain translational movement and rotation.
+//void NodeFix::FixAll()
+//{
+//    Ux() = true; Uy() = true; Uz() = true;
+//    Rx() = true; Ry() = true; Rz() = true;
+//}
+//
+//void NodeFix::PinFix()
+//{
+//    Ux() = true; Uy() = true; Uz() = true;
+//    Rx() = false; Ry() = false; Rz() = false;
+//}
+//
+//void NodeFix::ReleaseAll()
+//{
+//    Ux() = false; Uy() = false; Uz() = false;
+//    Rx() = false; Ry() = false; Rz() = false;
+//}
 
 Displacement::Displacement(double dx, double dy, double dz, double rx, double ry, double rz)
 {
@@ -192,27 +168,27 @@ Displacement Displacement::translate(Eigen::Matrix3d transmat)
     return Displacement(dvec(0), dvec(1), dvec(2), rvec(0), rvec(1), rvec(2));
 }
 
-Load::Load(int _id, double px, double py, double pz)
-{
-    id = _id;
-    loads[0] = px;
-    loads[1] = py;
-    loads[2] = pz;
-    loads[3] = 0;
-    loads[4] = 0;
-    loads[5] = 0;
-}
-
-Load::Load(int _id, double px, double py, double pz, double mx, double my, double mz)
-{
-    id = _id;
-    loads[0] = px;
-    loads[1] = py;
-    loads[2] = pz;
-    loads[3] = mx;
-    loads[4] = my;
-    loads[5] = mz;
-}
+//Load::Load(int _id, double px, double py, double pz)
+//{
+//    id = _id;
+//    loads[0] = px;
+//    loads[1] = py;
+//    loads[2] = pz;
+//    loads[3] = 0;
+//    loads[4] = 0;
+//    loads[5] = 0;
+//}
+//
+//Load::Load(int _id, double px, double py, double pz, double mx, double my, double mz)
+//{
+//    id = _id;
+//    loads[0] = px;
+//    loads[1] = py;
+//    loads[2] = pz;
+//    loads[3] = mx;
+//    loads[4] = my;
+//    loads[5] = mz;
+//}
 
 Point Plane::PointToCoord(Point p)
 {

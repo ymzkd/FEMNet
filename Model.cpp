@@ -305,10 +305,17 @@ int FEModel::SolveVibration(const int nev, std::vector<double>& eigen_values,
     Eigen::SparseMatrix<double> mass_mat(NodeNum() * 6, NodeNum() * 6);
     mass_mat.setFromTriplets(tripletList.begin(), tripletList.end());
     // Construct MassMatrix
-    for each (std::shared_ptr<ElementBase> eh in Elements) {
-        //Eigen::VectorXd nw = eh->NodeLumpedMass();
+    for each (std::shared_ptr<ElementBase> eh in Elements)
         eh->AssembleMassMatrix(mass_mat);
-    }
+    
+	for each(Node n in Nodes)
+	{
+		int i = n.id * 6;
+		mass_mat.coeffRef(i, i) += n.Mass;
+		mass_mat.coeffRef(i + 1, i + 1) += n.Mass;
+		mass_mat.coeffRef(i + 2, i + 2) += n.Mass;
+	}
+
     mass_mat *= (1.0 / GRAVACCEL);
 
     //std::cout << "Mass Matrix: \n" << mass_mat << std::endl;
@@ -340,6 +347,9 @@ int FEModel::SolveVibration(const int nev, std::vector<double>& eigen_values,
     solver.compute(k_shd);
     Eigen::SparseMatrix<double> tmp_mat = k_shb * solver.solve(k_shc);
     k_sha -= tmp_mat.triangularView<Eigen::Upper>();
+
+    // Checkようにm_shの対角項を出力
+	//std::cout << "Mass Matrix: \n" << m_sh.diagonal() << std::endl;
 
     // A_op: 行列 A に対する作用素
     Spectra::SparseSymMatProd<double, Eigen::Upper> A_op(m_sh);
@@ -392,15 +402,10 @@ int FEModel::SolveVibration(const int nev, std::vector<double>& eigen_values,
             }
             mode_vectors.push_back(v);
         }
-        //std::cout << "converged eigen vector ::\n"
-        //    << mode_vectors << "\n\n";
-
-        //std::cout << "Natural Periods :" << nconv << std::endl;
+        
+        // 固有値を元の固有値問題に戻す
         for each (double v in geigs.eigenvalues())
-        {
             eigen_values.push_back(1.0 / sqrt(v));
-            //std::cout << sqrt(v) * (MODEL_PI * 2) << "\n";
-        }
 
     }
     else {
@@ -572,6 +577,18 @@ TrussElement* FEModel::GetTrussElement(int id)
     return be;
 }
 
+QuadPlateElement* FEModel::GetQuadPlateElement(int id)
+{
+    QuadPlateElement* be = dynamic_cast<QuadPlateElement*>(Elements[id].get());
+    return be;
+}
+
+TriPlateElement* FEModel::GetTriPlateElement(int id)
+{
+    TriPlateElement* be = dynamic_cast<TriPlateElement*>(Elements[id].get());
+    return be;
+}
+
 Eigen::SparseMatrix<double> FEModel::AssembleStiffnessMatrix()
 {
     int mat_size = Nodes.size() * 6;
@@ -589,13 +606,28 @@ void FEModel::Solve(std::vector<std::shared_ptr<LoadBase>> &loads,
     SolveLinearStatic(loads, disp, react);
 }
 
-void FEModel::SolveLinearStatic(std::vector<std::shared_ptr<LoadBase>>& loads, std::vector<Displacement>& disp, std::vector<NodeLoad>& react)
+void FEModel::SolveLinearStatic(std::vector<std::shared_ptr<LoadBase>>& loads, 
+    std::vector<Displacement>& disp, std::vector<NodeLoad>& react)
 {
     Eigen::VectorXd f(Nodes.size() * 6);
     f.setZero();
-    for each (auto & l in loads)
+    for each (auto & load in loads)
     {
-        for each (auto & nl in l->NodeLoads()) {
+
+        std::vector<NodeLoadData> node_loads;
+        if (std::shared_ptr<InertialForce> inertial = std::dynamic_pointer_cast<InertialForce>(load)) {
+            for each(auto & e in Elements)
+            {
+				std::vector<NodeLoadData> elem_loads = 
+                    e->InertialForceToNodeLoadData(Eigen::Vector3d(inertial->accels.x, inertial->accels.y, inertial->accels.z));
+                node_loads.insert(node_loads.end(), elem_loads.begin(), elem_loads.end());
+            }
+        }
+        else {
+			node_loads = load->NodeLoads();
+        }
+
+        for each (auto & nl in node_loads) {
             if (nl.id < 0) continue;
 
             int pos = nl.id * 6;
@@ -667,6 +699,7 @@ BeamStressData FEStaticResult::GetBeamStress(int eid, double p)
     BeamStress b_strs = be->stress(displace[be->Nodes[0]->id], displace[be->Nodes[1]->id]);
     BeamStressData strs = b_strs.Interpolate(p);
 
+    // Add beam stresses due to beam loads
     BeamElement *beamElement = dynamic_cast<BeamElement *>(be);
     if (beamElement != nullptr)
     {
@@ -688,6 +721,22 @@ BeamStressData FEStaticResult::GetBeamStress(int eid, double p)
         }
     }
     return strs;
+}
+
+PlateStressData FEStaticResult::GetPlateStressData(int eid, double xi, double eta)
+{
+    PlateStressData data;
+    if (model->Elements[eid]->Type() == ElementType::DKT) {
+        TriPlateElement* el = dynamic_cast<TriPlateElement*>(model->Elements[eid].get());
+        data = el->stress(displace[el->Nodes[0]->id], displace[el->Nodes[1]->id],
+            displace[el->Nodes[2]->id],xi, eta);
+    }
+    else if (model->Elements[eid]->Type() == ElementType::DKQ) {
+        QuadPlateElement* el = dynamic_cast<QuadPlateElement*>(model->Elements[eid].get());
+        data = el->stress(displace[el->Nodes[0]->id], displace[el->Nodes[1]->id],
+            displace[el->Nodes[2]->id], displace[el->Nodes[3]->id], xi, eta);
+    }
+    return data;
 }
 
 Displacement FEStaticResult::GetBeamDisplace(int eid, double p)
@@ -717,4 +766,609 @@ Displacement FEStaticResult::GetBeamDisplace(int eid, double p)
         );
     }
     return disp;
+}
+
+DynamicAnalysis::DynamicAnalysis(std::shared_ptr<FEModel> model, DynamicAccelLoad accel_load, FEDynamicDampInitializer* damp)
+    : model(model), accel_load(accel_load)
+{
+    if (!damp_initializer) {
+        // デフォルトの減衰初期化子を用意
+        static FEDynamicStiffDampInitializer defaultDamp;
+        damp_initializer = &defaultDamp;
+    }
+}
+
+bool DynamicAnalysis::Initialize()
+{
+    // 値を初期化
+    current_step = 0;
+    //current_disp.resize(model->FreeDOFNum());
+    //current_vel.resize(model->FreeDOFNum());
+    //current_accel.resize(model->FreeDOFNum());
+    current_disp = Eigen::VectorXd::Zero(model->FreeDOFNum());
+    current_vel = Eigen::VectorXd::Zero(model->FreeDOFNum());
+    current_accel = Eigen::VectorXd::Zero(model->FreeDOFNum());
+
+    // マトリクスの組み立て
+
+	// StiffnessMatrixの組み立て
+    free_indices = model->FreeIndices();
+    fixed_indices = model->FixIndices();
+    Eigen::SparseMatrix<double> ka; //, kb, kc;
+    FEModel::splitMatrixWithResize(model->AssembleStiffnessMatrix(), fixed_indices, ka);
+    stiffness_mat = ka;
+
+    // MassMatrixの組み立て
+    std::vector<Eigen::Triplet<double>> tripletList;
+    for (int i = 0; i < model->NodeNum(); ++i) {
+        tripletList.push_back(Eigen::Triplet<double>(i * 6, i * 6, 0.0));
+        tripletList.push_back(Eigen::Triplet<double>(i * 6 + 1, i * 6 + 1, 0.0));
+        tripletList.push_back(Eigen::Triplet<double>(i * 6 + 2, i * 6 + 2, 0.0));
+    }
+    Eigen::SparseMatrix<double> mass_mat_full(model->NodeNum() * 6, model->NodeNum() * 6);
+    //mass_mat.resize(model->NodeNum() * 6, model->NodeNum() * 6);
+    mass_mat_full.setFromTriplets(tripletList.begin(), tripletList.end());
+    // Construct MassMatrix
+    for each(std::shared_ptr<ElementBase> eh in model->Elements)
+        eh->AssembleMassMatrix(mass_mat_full);
+
+    for each(Node n in model->Nodes)
+    {
+        int i = n.id * 6;
+        mass_mat_full.coeffRef(i, i) += n.Mass;
+        mass_mat_full.coeffRef(i + 1, i + 1) += n.Mass;
+        mass_mat_full.coeffRef(i + 2, i + 2) += n.Mass;
+    }
+    
+    mass_mat_full *= (1.0 / model->GRAVACCEL);
+    Eigen::SparseMatrix<double> ma;
+    FEModel::splitMatrixWithResize(mass_mat_full, fixed_indices, ma);
+	mass_mat = ma;
+
+    // 減衰マトリクスの組み立て
+    bool damp_init = damp_initializer->Initialize(this);
+	if (!damp_init) {
+		std::cerr << "Failed to initialize damping matrix." << std::endl;
+		return false;
+	}
+
+    // 因数分解しておく
+	double dt = accel_load.timestep;
+	compute_mat = mass_mat + 0.5 * dt * damping_mat + beta * dt * dt * stiffness_mat;
+	solver.compute(compute_mat);
+    return true;
+}
+
+void DynamicAnalysis::ComputeStep()
+{
+	// ステップ数が最大に達した場合は終了 
+    // Note: 加速度をゼロとして続けるという選択肢もある,,,
+	if (current_step >= accel_load.Accels.size()) {
+		std::cout << "Dynamic analysis completed." << std::endl;
+		return;
+	}
+
+	double dt = accel_load.timestep;
+    Vector gacc = accel_load.Direction * accel_load.Accels[current_step];
+
+    // gaccの値を出力
+	//std::cout << "gacc: " << gacc.x << ", " << gacc.y << ", " << gacc.z << std::endl;
+
+	std::vector<int> free_indices = model->FreeIndices();
+	Eigen::VectorXd post_accel0 = Eigen::VectorXd::Zero(free_indices.size());
+    for (size_t i = 0; i < free_indices.size(); i++)
+    {
+		int fi = free_indices[i] % NODE_DOF;
+		if (fi == 0) post_accel0[i] = gacc.x;
+		else if (fi == 1) post_accel0[i] = gacc.y;
+		else if (fi == 2) post_accel0[i] = gacc.z;
+		else if (fi == 3) post_accel0[i] = 0.0;
+		else if (fi == 4) post_accel0[i] = 0.0;
+		else if (fi == 5) post_accel0[i] = 0.0;
+    }
+
+	// post_accel0の値を出力
+	//std::cout << "post_accel0: " << post_accel0.transpose() << std::endl;
+
+    // current_accelの値を出力
+    //std::cout << "current_accel: " << current_accel.transpose() << std::endl;
+    //std::cout << "current_vel: " << current_vel.transpose() << std::endl;
+    //std::cout << "current_disp: " << current_disp.transpose() << std::endl;
+
+    // 次ステップの変位、速度、加速度を取得	
+	Eigen::VectorXd post_accel = mass_mat.selfadjointView<Eigen::Upper>() * (-post_accel0)
+        - damping_mat.selfadjointView<Eigen::Upper>() * (current_vel + 0.5 * dt * current_accel)
+        - stiffness_mat.selfadjointView<Eigen::Upper>() * (current_disp + dt * current_vel + (0.5 - beta) * dt * dt * current_accel);
+    post_accel = solver.solve(post_accel);
+	Eigen::VectorXd post_vel = current_vel + 0.5 * (current_accel + post_accel) * dt;
+	Eigen::VectorXd post_disp = current_disp + dt * current_vel + (0.5 - beta) * dt * dt * current_accel + beta * dt * dt * post_accel;
+
+	// post_accelの値を出力
+	//std::cout << "post_accel: " << post_accel.transpose() << std::endl;
+	//std::cout << "post_vel: " << post_vel.transpose() << std::endl;
+	//std::cout << "post_disp: " << post_disp.transpose() << std::endl;
+
+    // Update
+	current_accel = post_accel;
+	current_vel = post_vel;
+	current_disp = post_disp;
+	current_step++;
+}
+
+void DynamicAnalysis::ComputeSteps(int steps)
+{
+	// ステップ数が最大に達した場合は終了
+	if (current_step >= steps) {
+		std::cout << "Dynamic analysis completed." << std::endl;
+		return;
+	}
+
+    // ステップ数がデータ数を超えた場合も終了
+	if (current_step + steps >= accel_load.Accels.size()) {
+		std::cout << "Dynamic analysis completed." << std::endl;
+		return;
+	}
+
+	// ステップ数分計算
+	for (int i = current_step; i < steps; i++)
+		ComputeStep();
+}
+
+std::vector<Displacement> DynamicAnalysis::GetDisplacements()
+{
+    std::vector<Displacement> disp;
+
+    // 変形データ整理
+    Eigen::VectorXd d = Eigen::VectorXd::Zero(model->Nodes.size() * 6);
+    //Eigen::VectorXd d(Nodes.size() * 6) = Eigen::VectorXd::;
+    //d.setZero();
+    for (size_t i = 0; i < free_indices.size(); i++) {
+        d(free_indices[i]) = current_disp(i);
+        //std::cout << current_disp(i);
+    }
+
+    for (size_t i = 0; i < model->Nodes.size(); i++)
+    {
+        int pos = i * 6;
+        disp.push_back(Displacement(d[pos], d[pos + 1], d[pos + 2], d[pos + 3], d[pos + 4], d[pos + 5]));
+    }
+
+    return disp;
+}
+
+std::vector<Displacement> DynamicAnalysis::GetVelocities()
+{
+    std::vector<Displacement> vel;
+
+    // 変形データ整理
+    Eigen::VectorXd d = Eigen::VectorXd::Zero(model->Nodes.size() * 6);
+    //Eigen::VectorXd d(Nodes.size() * 6) = Eigen::VectorXd::;
+    //d.setZero();
+    for (size_t i = 0; i < free_indices.size(); i++)
+        d(free_indices[i]) = current_vel(i);
+
+    for (size_t i = 0; i < model->Nodes.size(); i++)
+    {
+        int pos = i * 6;
+        vel.push_back(Displacement(d[pos], d[pos + 1], d[pos + 2], d[pos + 3], d[pos + 4], d[pos + 5]));
+    }
+
+    return vel;
+}
+
+std::vector<Displacement> DynamicAnalysis::GetAccelerations()
+{
+    std::vector<Displacement> acc;
+
+    // 変形データ整理
+    Eigen::VectorXd d = Eigen::VectorXd::Zero(model->Nodes.size() * 6);
+    //Eigen::VectorXd d(Nodes.size() * 6) = Eigen::VectorXd::;
+    //d.setZero();
+    for (size_t i = 0; i < free_indices.size(); i++)
+        d(free_indices[i]) = current_accel(i);
+
+    for (size_t i = 0; i < model->Nodes.size(); i++)
+    {
+        int pos = i * 6;
+        acc.push_back(Displacement(d[pos], d[pos + 1], d[pos + 2], d[pos + 3], d[pos + 4], d[pos + 5]));
+    }
+
+    return acc;
+}
+
+bool FEDynamicStiffDampInitializer::Initialize(DynamicAnalysis* analysis)
+{
+	// 解析モデルの固有振動数を計算
+	std::vector<double> eigen_values;
+	std::vector<std::vector<Displacement>> mode_vectors;
+	int nconv = analysis->model->SolveVibration(1, eigen_values, mode_vectors);
+	if (nconv < 0) {
+		std::cout << "Eigenvalue calculations did not converge." << std::endl;
+		return false;
+	}
+
+	natural_angle_velocity = eigen_values[0];
+    analysis->damping_mat = analysis->stiffness_mat * (2.0 * damp_rate / natural_angle_velocity);
+
+	return true;
+}
+
+std::vector<double> FEVibrateResult::ParticipationFactors()
+{
+    // MassMatrixの組み立て
+    std::vector<Eigen::Triplet<double>> tripletList;
+    for (int i = 0; i < model->NodeNum(); ++i) {
+        tripletList.push_back(Eigen::Triplet<double>(i * 6, i * 6, 0.0));
+        tripletList.push_back(Eigen::Triplet<double>(i * 6 + 1, i * 6 + 1, 0.0));
+        tripletList.push_back(Eigen::Triplet<double>(i * 6 + 2, i * 6 + 2, 0.0));
+    }
+    Eigen::SparseMatrix<double> mass_mat(model->NodeNum() * 6, model->NodeNum() * 6);
+    mass_mat.setFromTriplets(tripletList.begin(), tripletList.end());
+    // Construct MassMatrix
+    for each(std::shared_ptr<ElementBase> eh in model->Elements)
+        eh->AssembleMassMatrix(mass_mat);
+
+    for each(Node n in model->Nodes)
+    {
+        int i = n.id * 6;
+        mass_mat.coeffRef(i, i) += n.Mass;
+        mass_mat.coeffRef(i + 1, i + 1) += n.Mass;
+        mass_mat.coeffRef(i + 2, i + 2) += n.Mass;
+    }
+
+    mass_mat *= (1.0 / FEModel::GRAVACCEL);
+
+	std::vector<double> participation_factors;
+
+    for (size_t i = 0; i < modes_num(); i++)
+    {
+		Eigen::VectorXd v = Eigen::VectorXd::Zero(model->NodeNum() * 6);
+		for (size_t j = 0; j < model->NodeNum(); j++)
+		{
+			int p = j * 6;
+			v(p) = mode_vectors[i][j].Dx();
+			v(p + 1) = mode_vectors[i][j].Dy();
+			v(p + 2) = mode_vectors[i][j].Dz();
+			v(p + 3) = mode_vectors[i][j].Rx();
+			v(p + 4) = mode_vectors[i][j].Ry();
+			v(p + 5) = mode_vectors[i][j].Rz();
+		}
+
+        Eigen::VectorXd vM = mass_mat.selfadjointView<Eigen::Upper>() * v;
+        double beta_i = Eigen::VectorXd::Ones(v.size()).dot(vM) / v.dot(vM);
+
+		participation_factors.push_back(beta_i);
+    }
+
+	return participation_factors;
+}
+
+std::vector<Displacement> FEVibrateResult::ParticipationDirectedFactors()
+{
+    // MassMatrixの組み立て
+    std::vector<Eigen::Triplet<double>> tripletList;
+    for (int i = 0; i < model->NodeNum(); ++i) {
+        tripletList.push_back(Eigen::Triplet<double>(i * 6, i * 6, 0.0));
+        tripletList.push_back(Eigen::Triplet<double>(i * 6 + 1, i * 6 + 1, 0.0));
+        tripletList.push_back(Eigen::Triplet<double>(i * 6 + 2, i * 6 + 2, 0.0));
+    }
+    Eigen::SparseMatrix<double> mass_mat(model->NodeNum() * 6, model->NodeNum() * 6);
+    mass_mat.setFromTriplets(tripletList.begin(), tripletList.end());
+    // Construct MassMatrix
+    for each(std::shared_ptr<ElementBase> eh in model->Elements)
+        eh->AssembleMassMatrix(mass_mat);
+
+    for each(Node n in model->Nodes)
+    {
+        int i = n.id * 6;
+        mass_mat.coeffRef(i, i) += n.Mass;
+        mass_mat.coeffRef(i + 1, i + 1) += n.Mass;
+        mass_mat.coeffRef(i + 2, i + 2) += n.Mass;
+    }
+
+    mass_mat *= (1.0 / FEModel::GRAVACCEL);
+
+    std::vector<Displacement> participation_factors;
+
+    for (size_t i = 0; i < modes_num(); i++)
+    {
+        Eigen::VectorXd v = Eigen::VectorXd::Zero(model->NodeNum() * 6);
+        for (size_t j = 0; j < model->NodeNum(); j++)
+        {
+            int p = j * 6;
+            v(p) = mode_vectors[i][j].Dx();
+            v(p + 1) = mode_vectors[i][j].Dy();
+            v(p + 2) = mode_vectors[i][j].Dz();
+            v(p + 3) = mode_vectors[i][j].Rx();
+            v(p + 4) = mode_vectors[i][j].Ry();
+            v(p + 5) = mode_vectors[i][j].Rz();
+        }
+
+        Eigen::VectorXd vM = mass_mat.selfadjointView<Eigen::Upper>() * v;
+        //double beta_i = Eigen::VectorXd::Ones(v.size()).dot(vM) / v.dot(vM);
+        vM /= v.dot(vM);
+        Displacement facs;
+		for (size_t j = 0; j < model->NodeNum(); j++)
+		{
+			int p = j * 6;
+            // 方向別足し合わせ
+            Displacement dj(
+				vM(p), vM(p + 1), vM(p + 2),
+				vM(p + 3), vM(p + 4), vM(p + 5));
+			facs += dj;
+		}
+        participation_factors.push_back(facs);
+    }
+
+    return participation_factors;
+}
+
+std::vector<double> FEVibrateResult::EffectiveMassRates()
+{
+    // MassMatrixの組み立て
+    std::vector<Eigen::Triplet<double>> tripletList;
+    for (int i = 0; i < model->NodeNum(); ++i) {
+        tripletList.push_back(Eigen::Triplet<double>(i * 6, i * 6, 0.0));
+        tripletList.push_back(Eigen::Triplet<double>(i * 6 + 1, i * 6 + 1, 0.0));
+        tripletList.push_back(Eigen::Triplet<double>(i * 6 + 2, i * 6 + 2, 0.0));
+    }
+    Eigen::SparseMatrix<double> mass_mat(model->NodeNum() * 6, model->NodeNum() * 6);
+    mass_mat.setFromTriplets(tripletList.begin(), tripletList.end());
+    // Construct MassMatrix
+    for each(std::shared_ptr<ElementBase> eh in model->Elements)
+        eh->AssembleMassMatrix(mass_mat);
+
+    for each(Node n in model->Nodes)
+    {
+        int i = n.id * 6;
+        mass_mat.coeffRef(i, i) += n.Mass;
+        mass_mat.coeffRef(i + 1, i + 1) += n.Mass;
+        mass_mat.coeffRef(i + 2, i + 2) += n.Mass;
+    }
+
+    mass_mat *= (1.0 / FEModel::GRAVACCEL);
+	double total_mass = mass_mat.diagonal().sum();
+
+    std::vector<double> mass_rates;
+
+    for (size_t i = 0; i < modes_num(); i++)
+    {
+        Eigen::VectorXd v = Eigen::VectorXd::Zero(model->NodeNum() * 6);
+        for (size_t j = 0; j < model->NodeNum(); j++)
+        {
+            int p = j * 6;
+            v(p) = mode_vectors[i][j].Dx();
+            v(p + 1) = mode_vectors[i][j].Dy();
+            v(p + 2) = mode_vectors[i][j].Dz();
+            v(p + 3) = mode_vectors[i][j].Rx();
+            v(p + 4) = mode_vectors[i][j].Ry();
+            v(p + 5) = mode_vectors[i][j].Rz();
+        }
+
+        Eigen::VectorXd vM = mass_mat.selfadjointView<Eigen::Upper>() * v;
+        double mi = v.dot(vM);
+        double beta_i = Eigen::VectorXd::Ones(v.size()).dot(vM) / mi;
+
+        mass_rates.push_back(beta_i * beta_i * mi / total_mass);
+    }
+
+    return mass_rates;
+}
+
+std::vector<Displacement> FEVibrateResult::EffectiveDirectedMassRates()
+{
+    // MassMatrixの組み立て
+    std::vector<Eigen::Triplet<double>> tripletList;
+    for (int i = 0; i < model->NodeNum(); ++i) {
+        tripletList.push_back(Eigen::Triplet<double>(i * 6, i * 6, 0.0));
+        tripletList.push_back(Eigen::Triplet<double>(i * 6 + 1, i * 6 + 1, 0.0));
+        tripletList.push_back(Eigen::Triplet<double>(i * 6 + 2, i * 6 + 2, 0.0));
+    }
+    Eigen::SparseMatrix<double> mass_mat(model->NodeNum() * 6, model->NodeNum() * 6);
+    mass_mat.setFromTriplets(tripletList.begin(), tripletList.end());
+    // Construct MassMatrix
+    for each(std::shared_ptr<ElementBase> eh in model->Elements)
+        eh->AssembleMassMatrix(mass_mat);
+
+    for each(Node n in model->Nodes)
+    {
+        int i = n.id * 6;
+        mass_mat.coeffRef(i, i) += n.Mass;
+        mass_mat.coeffRef(i + 1, i + 1) += n.Mass;
+        mass_mat.coeffRef(i + 2, i + 2) += n.Mass;
+    }
+
+    mass_mat *= (1.0 / FEModel::GRAVACCEL);
+
+    double total_mass = mass_mat.diagonal().sum();
+    std::vector<Displacement> mass_rates;
+	//Eigen::VectorXd mass_lists = Eigen::VectorXd::Zero(modes_num());
+
+    for (size_t i = 0; i < modes_num(); i++)
+    {
+        Eigen::VectorXd v = Eigen::VectorXd::Zero(model->NodeNum() * 6);
+        for (size_t j = 0; j < model->NodeNum(); j++)
+        {
+            int p = j * 6;
+            v(p) = mode_vectors[i][j].Dx();
+            v(p + 1) = mode_vectors[i][j].Dy();
+            v(p + 2) = mode_vectors[i][j].Dz();
+            v(p + 3) = mode_vectors[i][j].Rx();
+            v(p + 4) = mode_vectors[i][j].Ry();
+            v(p + 5) = mode_vectors[i][j].Rz();
+        }
+
+        Eigen::VectorXd vM = mass_mat.selfadjointView<Eigen::Upper>() * v;
+        //double beta_i = Eigen::VectorXd::Ones(v.size()).dot(vM) / v.dot(vM);
+        double vMv = v.dot(vM);
+        //mass_lists(i) = v.dot(vM);
+        //vM /= mass_lists(i);
+        Displacement facs;
+        for (size_t j = 0; j < model->NodeNum(); j++)
+        {
+            int p = j * 6;
+            // 方向別足し合わせ
+            Displacement dj(
+                vM(p), vM(p + 1), vM(p + 2),
+                vM(p + 3), vM(p + 4), vM(p + 5));
+            facs += dj;
+        }
+
+		facs = Displacement(
+			facs.Dx() * facs.Dx() / vMv,
+			facs.Dy() * facs.Dy() / vMv,
+            facs.Dz() * facs.Dz() / vMv,
+            facs.Rx() * facs.Rx() / vMv,
+            facs.Ry() * facs.Ry() / vMv,
+            facs.Rz() * facs.Rz() / vMv);
+
+        facs = facs / (total_mass / 3.0);
+        mass_rates.push_back(facs);
+    }
+    
+    return mass_rates;
+}
+
+std::vector<Displacement> ResponseSpectrumMethod::GetDisplacementsCQC()
+{
+    std::vector<double> part_facs = VibrateResult.ParticipationFactors();
+    std::vector<double> periods = VibrateResult.NaturalPeriods();
+    std::vector<double> spectrums(periods.size());
+    for (size_t i = 0; i < periods.size(); i++)
+        spectrums[i] = SpectrumFunction->Displacement(periods[i]);
+
+    std::vector<Displacement> responses(Model->NodeNum());
+    for (size_t j = 0; j < part_facs.size(); j++)
+    {
+        std::vector<Displacement> uj = VibrateResult.mode_vectors[j];
+        for (size_t k = 0; k < part_facs.size(); k++)
+        {
+            std::vector<Displacement> uk = VibrateResult.mode_vectors[k];
+
+            double rjk = periods[k] / periods[j];
+			double correlation = 8.0 * damping_rate * damping_rate * (1.0 + rjk) * pow(rjk, 1.5) /
+				(pow((1.0 - rjk * rjk), 2.0) + 4.0 * damping_rate * damping_rate * rjk * pow(1.0 + rjk, 2.0));
+            double fac = spectrums[j] * spectrums[k] * part_facs[j] * part_facs[k] * correlation;
+
+            for (size_t i = 0; i < Model->NodeNum(); i++)
+            {
+                Displacement idj = uj[i];
+                Displacement idk = uk[i];
+
+				Displacement d = Displacement(
+                    idj.Dx() * idk.Dx(), idj.Dy() * idk.Dy(), idj.Dz() * idk.Dz(),
+					idj.Rx() * idk.Rx(), idj.Ry() * idk.Ry(), idj.Rz() * idk.Rz());
+
+				responses[i] += fac * d;
+            }
+        }
+    }
+
+    // 平方根を取る
+    for (size_t j = 0; j < responses.size(); j++) {
+        responses[j] = Displacement(
+            sqrt(responses[j].Dx()), sqrt(responses[j].Dy()), sqrt(responses[j].Dz()),
+            sqrt(responses[j].Rx()), sqrt(responses[j].Ry()), sqrt(responses[j].Rz()));
+    }
+
+    return responses;
+}
+
+
+std::vector<Displacement> ResponseSpectrumMethod::GetDisplacementsSRSS()
+{
+    std::vector<double> part_facs = VibrateResult.ParticipationFactors();
+    std::vector<double> periods = VibrateResult.NaturalPeriods();
+    std::vector<double> spectrums(periods.size());
+    for (size_t i = 0; i < periods.size(); i++)
+        spectrums[i] = SpectrumFunction->Displacement(periods[i]);
+
+    std::vector<Displacement> responses(Model->NodeNum());
+    for (size_t i = 0; i < part_facs.size(); i++)
+    {
+        std::vector<Displacement> mode_vector = VibrateResult.mode_vectors[i];
+        //double sd = SpectrumFunction->Displacement(periods[i]);
+        // | sd x vector x beta_i |
+
+        // SRSS Method
+        for (size_t j = 0; j < mode_vector.size(); j++) {
+            Displacement d2 = spectrums[i] * part_facs[i] * mode_vector[j];
+            // 変位の二乗和を計算
+            d2 = Displacement(d2.Dx() * d2.Dx(), d2.Dy() * d2.Dy(), d2.Dz() * d2.Dz(),
+                d2.Rx() * d2.Rx(), d2.Ry() * d2.Ry(), d2.Rz() * d2.Rz());
+            responses[j] += d2;
+            //responses[j] += pow(spectrums[i] * part_facs[i], 2) * d2;
+        }
+    }
+
+    // SRSS Methodの結果を平方根で正規化
+    for (size_t j = 0; j < responses.size(); j++) {
+        responses[j] = Displacement(
+            sqrt(responses[j].Dx()), sqrt(responses[j].Dy()), sqrt(responses[j].Dz()),
+            sqrt(responses[j].Rx()), sqrt(responses[j].Ry()), sqrt(responses[j].Rz()));
+    }
+
+    return responses;
+}
+
+std::vector<Displacement> ResponseSpectrumMethod::GetDisplacementsABS()
+{
+    std::vector<double> part_facs = VibrateResult.ParticipationFactors();
+    std::vector<double> periods = VibrateResult.NaturalPeriods();
+    std::vector<double> spectrums(periods.size());
+    for (size_t i = 0; i < periods.size(); i++)
+        spectrums[i] = SpectrumFunction->Displacement(periods[i]);
+
+    std::vector<Displacement> responses(Model->NodeNum());
+    for (size_t i = 0; i < part_facs.size(); i++)
+    {
+        std::vector<Displacement> mode_vector = VibrateResult.mode_vectors[i];
+        //double sd = SpectrumFunction->Displacement(periods[i]);
+        // | sd x vector x beta_i |
+
+        // ABS Method
+        for (size_t j = 0; j < mode_vector.size(); j++) {
+            // 変位の絶対値を計算
+            Displacement d = spectrums[i] * part_facs[i] * mode_vector[j];
+            responses[j] += Displacement(abs(d.Dx()), abs(d.Dy()), abs(d.Dz()),
+                abs(d.Rx()), abs(d.Ry()), abs(d.Rz()));
+        }
+
+    }
+
+    return responses;
+}
+
+std::vector<Displacement> ResponseSpectrumMethod::GetDisplacements()
+{
+	std::vector<Displacement> displacements(Model->NodeNum());
+	if (MethodType == ResponseSpectrumMethodType::CQC)
+		displacements = GetDisplacementsCQC();
+	else if (MethodType == ResponseSpectrumMethodType::SRSS)
+		displacements = GetDisplacementsSRSS();
+	else // MethodType == ResponseSpectrumMethodType::ABS
+		displacements = GetDisplacementsABS();
+
+    return displacements;
+}
+
+std::vector<Displacement> ResponseSpectrumMethod::GetAccelerations()
+{
+    std::vector<double> part_facs = VibrateResult.ParticipationFactors();
+    std::vector<double> periods = VibrateResult.NaturalPeriods();
+	std::vector<double> spectrums(periods.size());
+	for (size_t i = 0; i < periods.size(); i++)
+		spectrums[i] = SpectrumFunction->Acceleration(periods[i]);
+
+    std::vector<Displacement> accels(Model->NodeNum());
+    for (size_t i = 0; i < part_facs.size(); i++)
+    {
+        std::vector<Displacement> mode_vector = VibrateResult.mode_vectors[i];
+        //double sa = SpectrumFunction->Acceleration(periods[i]);
+        // | sd x vector x beta_i |
+        for (size_t j = 0; j < mode_vector.size(); j++)
+            accels[j] += spectrums[i] * part_facs[i] * mode_vector[j];
+
+    }
+    return accels;
 }

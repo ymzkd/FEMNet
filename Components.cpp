@@ -204,6 +204,39 @@ double Plane::DistanceTo(Point p)
     return (p - origin)* ez;
 }
 
+void Plane::Rotate(double angle, Vector axis)
+{
+    Eigen::Matrix3d rotationMatrix;
+    double cosAngle = cos(angle);
+    double sinAngle = sin(angle);
+    double oneMinusCos = 1.0 - cosAngle;
+
+    rotationMatrix(0, 0) = cosAngle + axis.x * axis.x * oneMinusCos;
+    rotationMatrix(0, 1) = axis.x * axis.y * oneMinusCos - axis.z * sinAngle;
+    rotationMatrix(0, 2) = axis.x * axis.z * oneMinusCos + axis.y * sinAngle;
+
+    rotationMatrix(1, 0) = axis.y * axis.x * oneMinusCos + axis.z * sinAngle;
+    rotationMatrix(1, 1) = cosAngle + axis.y * axis.y * oneMinusCos;
+    rotationMatrix(1, 2) = axis.y * axis.z * oneMinusCos - axis.x * sinAngle;
+
+    rotationMatrix(2, 0) = axis.z * axis.x * oneMinusCos - axis.y * sinAngle;
+    rotationMatrix(2, 1) = axis.z * axis.y * oneMinusCos + axis.x * sinAngle;
+    rotationMatrix(2, 2) = cosAngle + axis.z * axis.z * oneMinusCos;
+
+    // VectorをEigenのVectorに変換するようにする。
+    Eigen::Vector3d ex_eigen(ex.x, ex.y, ex.z);
+    Eigen::Vector3d ey_eigen(ey.x, ey.y, ey.z);
+    Eigen::Vector3d ez_eigen(ez.x, ez.y, ez.z);
+
+    ex_eigen = rotationMatrix * ex_eigen;
+    ey_eigen = rotationMatrix * ey_eigen;
+    ez_eigen = rotationMatrix * ez_eigen;
+
+    ex = Vector(ex_eigen.x(), ex_eigen.y(), ex_eigen.z());
+    ey = Vector(ey_eigen.x(), ey_eigen.y(), ey_eigen.z());
+    ez = Vector(ez_eigen.x(), ez_eigen.y(), ez_eigen.z());
+}
+
 Plane Plane::CreateFromPoints(Point p0, Point p1, Point p2)
 {
     Vector v01 = p1 - p0;

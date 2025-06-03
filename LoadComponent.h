@@ -7,36 +7,26 @@
 //#include <numeric>
 #endif
 
+#include "Components.h"
 #include "Element.h"
-
-struct NodeLoadData {
-public:
-    NodeLoadData() : NodeLoadData(-1, 0, 0, 0, 0, 0, 0) {};
-    NodeLoadData(int _id, double px, double py, double pz);
-    NodeLoadData(int _id, double px, double py, double pz, double mx, double my, double mz);
-
-    int id = -1;
-    double loads[6];
-    double& Px() { return loads[0]; }
-    double& Py() { return loads[1]; }
-    double& Pz() { return loads[2]; }
-    double& Mx() { return loads[3]; }
-    double& My() { return loads[4]; }
-    double& Mz() { return loads[5]; }
-
-    double Px() const { return loads[0]; }
-    double Py() const { return loads[1]; }
-    double Pz() const { return loads[2]; }
-    double Mx() const { return loads[3]; }
-    double My() const { return loads[4]; }
-    double Mz() const { return loads[5]; }
-};
 
 class LoadBase {
 public:
     LoadBase(){};
     
     virtual std::vector<NodeLoadData> NodeLoads() = 0;
+};
+
+class InertialForce: public LoadBase {
+public:
+	Vector accels;
+	InertialForce() : InertialForce(0, 0, 0) {};
+	InertialForce(double x, double y, double z) : accels(x, y, z) {};
+	InertialForce(Vector v) : accels(v) {};
+	
+	std::vector<NodeLoadData> NodeLoads() override {
+		return std::vector<NodeLoadData>();
+	}
 };
 
 class NodeLoad : public LoadBase {
@@ -66,6 +56,67 @@ public:
         os << "Mx: " << nodeLoad.data.Mx() << ", My: " << nodeLoad.data.My() << ", Mz: " << nodeLoad.data.Mz() << "\n";
         return os;
     }
+};
+
+
+// 面荷重(WIP)
+class PlateLoad : public LoadBase {
+public:
+	PlaneElementBase* element;
+	std::vector<Vector> load_vecs;
+
+    PlateLoad() {};
+    
+    PlateLoad(ElementBase* el, double px, double py, double pz) {
+
+        element = dynamic_cast<PlaneElementBase*>(el);
+        //if (!element) {
+        //    throw std::runtime_error("Failed to cast ElementBase* to PlaneElementBase*");
+        //}
+        load_vecs.push_back(Vector(px, py, pz));
+        load_vecs.push_back(Vector(px, py, pz));
+        load_vecs.push_back(Vector(px, py, pz));
+        if (element->NodeNum() == 4)
+            load_vecs.push_back(Vector(px, py, pz));
+
+    }
+
+    PlateLoad(PlaneElementBase* el, double px, double py, double pz){ 
+		element = el;
+        load_vecs.push_back(Vector(px, py, pz));
+        load_vecs.push_back(Vector(px, py, pz));
+        load_vecs.push_back(Vector(px, py, pz));
+        if (element->NodeNum() == 4)
+            load_vecs.push_back(Vector(px, py, pz));
+        
+    }
+	
+    PlateLoad(PlaneElementBase* el, Vector v) {
+		element = el;
+		load_vecs.push_back(v);
+		load_vecs.push_back(v);
+		load_vecs.push_back(v);
+
+        if (element->NodeNum() == 4)
+            load_vecs.push_back(v);
+	}
+	
+    PlateLoad(PlaneElementBase* el, Vector p1, Vector p2, Vector p3) {
+		element = el;
+		load_vecs.push_back(p1);
+		load_vecs.push_back(p2);
+		load_vecs.push_back(p3);
+	}
+
+    PlateLoad(PlaneElementBase* el, Vector p1, Vector p2, Vector p3, Vector p4) {
+        element = el;
+        load_vecs.push_back(p1);
+        load_vecs.push_back(p2);
+        load_vecs.push_back(p3);
+        load_vecs.push_back(p4);
+    }
+
+    std::vector<NodeLoadData> NodeLoads() override;
 };
 
 
@@ -311,6 +362,23 @@ public:
 
     BeamStressData GetBeamStress(double p) override;
     Displacement GetDisplacement(double p) override;
+};
+
+class DynamicAccelLoad {
+public:
+    double timestep;
+    Vector Direction;
+	std::vector<double> Accels;
+
+	DynamicAccelLoad(double timestep, Vector Direction, std::vector<double> Accels)
+		: timestep(timestep), Direction(Direction), Accels(Accels) {
+	}
+	DynamicAccelLoad(double timestep, double x, double y, double z, std::vector<double> Accels)
+		: timestep(timestep), Direction(x, y, z), Accels(Accels) {
+	}
+	DynamicAccelLoad(double timestep, double x, double y, double z)
+		: timestep(timestep), Direction(x, y, z) {
+	}
 };
 
 

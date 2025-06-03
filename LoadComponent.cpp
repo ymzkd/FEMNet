@@ -188,3 +188,9 @@ NodeLoad::NodeLoad(int _id, double px, double py, double pz, double mx, double m
     id = _id;
     data = NodeLoadData(_id, px, py, pz, mx, my, mz);
 }
+
+std::vector<NodeLoadData> PlateLoad::NodeLoads()
+{
+	return element->AreaForceToNodeLoadData(load_vecs);
+    //return std::vector<NodeLoadData>();
+}

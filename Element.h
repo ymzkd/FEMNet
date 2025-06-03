@@ -12,13 +12,14 @@
 #endif
 
 #include "Components.h"
+//#include "LoadComponent.h"
 // #include "Model.h"
 
 Eigen::Matrix3d trans_matrix3(const Point p0, const Point p1, const double beta);
 
 enum ElementType
 {
-    None, Beam, Truss, Membrane, Plate
+    None, Beam, Truss, Membrane, Plate, DKT, DKQ
 };
 
 class ElementBase
@@ -40,7 +41,9 @@ public:
     // virtual void AssembleMatrix(double *matrix, int *dof_map, int dof_num) = 0;
     // virtual int DOFIdx(int i) = 0;
 
+	virtual std::vector<NodeLoadData> InertialForceToNodeLoadData(Eigen::Vector3d accel_vec) = 0;
     virtual Eigen::VectorXd NodeLumpedMass() = 0;
+    virtual Eigen::MatrixXd NodeConsistentMass() = 0;
     virtual bool hasRotate() { return false; }
     //virtual ElementType Type() { return type; }
     virtual ElementType Type() { return ElementType::None; }
@@ -99,6 +102,9 @@ private:
 public:
     Node* Nodes[2];
     Section* Sec;
+
+	Node* ni() { return Nodes[0]; }
+	Node* nj() { return Nodes[1]; }
     double length();
     Eigen::VectorXd NodeLumpedMass() {
         return Eigen::VectorXd::Constant(node_num, Sec->A * length() * Mat.dense / node_num);
@@ -134,6 +140,10 @@ public:
     //ElementType Type() { return type; }
     int TotalDof() { return total_dof; }
     void AssembleStiffMatrix(Eigen::SparseMatrix<double>& mat);
+
+    Eigen::MatrixXd NodeConsistentMass() override;
+
+    std::vector<NodeLoadData> InertialForceToNodeLoadData(Eigen::Vector3d accel_vec) override;
 
     BeamStress stress(Displacement d0, Displacement d1);
 };
@@ -187,6 +197,8 @@ public:
     int TotalDof() { return total_dof; }
     void AssembleStiffMatrix(Eigen::SparseMatrix<double>& mat);
     
+    std::vector<NodeLoadData> InertialForceToNodeLoadData(Eigen::Vector3d accel_vec) override;
+    Eigen::MatrixXd NodeConsistentMass() override;
 
     // double length();
     BeamStress stress(Displacement d0, Displacement d1);
@@ -210,6 +222,8 @@ public:
     ComplexBeamElement(int _id, Node* n0, Node* n1, Section* sec, Material mat, double beta = 0);
 
     Eigen::MatrixXd StiffnessMatrix() override;
+
+    //Eigen::MatrixXd NodeConsistentMass();
 };
 
 
@@ -225,7 +239,21 @@ public:
 
 std::ostream& operator<<(std::ostream& os, const MembraneStressData& strs);
 
-class TriPlaneElement : public ElementBase
+
+class PlaneElementBase : public ElementBase
+{
+public:
+    double Beta = 0;
+    Plane plane;
+    Thickness thickness;
+
+    virtual int NodeNum() = 0;
+    virtual std::vector<NodeLoadData> AreaForceToNodeLoadData(std::vector<Vector> load_vecs) = 0;
+
+};
+
+
+class TriPlaneElement : public PlaneElementBase
 {
     friend class TriPlateElement;
 private:
@@ -242,21 +270,36 @@ private:
 
 public:
     Node* Nodes[3];
-    Plane plane;
-    double thickness;
 
     TriPlaneElement() {};
-    TriPlaneElement(Node* n0, Node* n1, Node* n2, double t, Material mat);
-    TriPlaneElement(int _id, Node* n0, Node* n1, Node* n2, double t, Material mat)
-        :TriPlaneElement(n0, n1, n2, t, mat) {
+    TriPlaneElement(Node* n0, Node* n1, Node* n2, double t, Material mat, double beta = 0);
+    TriPlaneElement(Node* n0, Node* n1, Node* n2, Thickness t, Material mat, double beta = 0);
+    TriPlaneElement(int _id, Node* n0, Node* n1, Node* n2, double t, Material mat, double beta = 0)
+        :TriPlaneElement(n0, n1, n2, t, mat, beta) {
+        id = _id;
+    };
+    TriPlaneElement(int _id, Node* n0, Node* n1, Node* n2, Thickness t, Material mat, double beta = 0)
+        :TriPlaneElement(n0, n1, n2, t, mat, beta) {
         id = _id;
     };
 
+    /**
+     * Calculates the node lumped mass for an element.
+     *
+     * @return A vector containing the lumped mass values for each node.
+     */
     Eigen::VectorXd NodeLumpedMass() {
-        return Eigen::VectorXd::Constant(node_num, Area() * thickness * Mat.dense / node_num);
+        return Eigen::VectorXd::Constant(node_num, Area() * thickness.weight_thick * Mat.dense / node_num);
     }
+
+	std::vector<NodeLoadData> AreaForceToNodeLoadData(std::vector<Vector> load_vecs) override;
+
+    std::vector<NodeLoadData> InertialForceToNodeLoadData(Eigen::Vector3d accel_vec) override;
+    Eigen::MatrixXd NodeConsistentMass() override;
+
     double Area();
     ElementType Type() { return type; }
+    int NodeNum() override { return 3; }
     int TotalDof() { return total_dof; }
     Eigen::MatrixXd StiffnessMatrix(); 
     void AssembleStiffMatrix(Eigen::SparseMatrix<double>& mat);
@@ -265,7 +308,7 @@ public:
     MembraneStressData stress(Displacement d0, Displacement d1, Displacement d2);
 };
 
-class QuadPlaneElement : public ElementBase
+class QuadPlaneElement : public PlaneElementBase
 {
     friend class QuadPlateElement;
 private:
@@ -284,21 +327,33 @@ private:
 
 public:
     Node* Nodes[4];
-    Plane plane;
-    double thickness;
+    //Plane plane;
+    //Thickness thickness;
 
     QuadPlaneElement() {};
     QuadPlaneElement(Node* n0, Node* n1, Node* n2, Node* n3, double t, Material mat);
+    QuadPlaneElement(Node* n0, Node* n1, Node* n2, Node* n3, Thickness t, Material mat);
     QuadPlaneElement(int _id, Node* n0, Node* n1, Node* n2, Node* n3, double t, Material mat) :
+        QuadPlaneElement(n0, n1, n2, n3, t, mat) {
+        id = _id;
+    };
+    QuadPlaneElement(int _id, Node* n0, Node* n1, Node* n2, Node* n3, Thickness t, Material mat) :
         QuadPlaneElement(n0, n1, n2, n3, t, mat) {
         id = _id;
     };
 
     Eigen::VectorXd NodeLumpedMass() {
-        return Eigen::VectorXd::Constant(node_num, Area() * thickness * Mat.dense / node_num);
+        return Eigen::VectorXd::Constant(node_num, Area() * thickness.weight_thick * Mat.dense / node_num);
     }
+
+    Eigen::MatrixXd NodeConsistentMass();
+
+    std::vector<NodeLoadData> InertialForceToNodeLoadData(Eigen::Vector3d accel_vec);
+    std::vector<NodeLoadData> AreaForceToNodeLoadData(std::vector<Vector> load_vecs) override;
+
     double Area();
     ElementType Type() { return type; }
+    int NodeNum() override { return 4; }
     int TotalDof() { return total_dof; }
     Eigen::MatrixXd StiffnessMatrix();
     void AssembleStiffMatrix(Eigen::SparseMatrix<double>& mat);
@@ -310,12 +365,28 @@ public:
 
 struct PlateStressData {
 public:
-    double Mx, My, Mxy, Qx, Qy;
+    double Mx = 0, My = 0, Mxy = 0, Qx = 0, Qy = 0;
+    double Nx = 0, Ny = 0, Qxy = 0;
 
-    PlateStressData(double mx, double my, double mxy, double qx, double qy) :
-        Mx(mx), My(my), Mxy(mxy), Qx(qx), Qy(qy) {};
+    PlateStressData() {};
+    PlateStressData(double mx, double my, double mxy, 
+        double qx, double qy, double nx, double ny, double qxy) :
+        Mx(mx), My(my), Mxy(mxy), Qx(qx), Qy(qy), Nx(nx), Ny(ny), Qxy(qxy) {};
 
     friend std::ostream& operator<<(std::ostream& os, const PlateStressData& strs);
+};
+
+struct PlatePrincipalStressData {
+public:
+    double M1 = 0, M2 = 0, theta_m1 = 0;
+    double N1 = 0, N2 = 0, theta_n1 = 0;
+
+    PlatePrincipalStressData(double m1, double m2, double theta_m1,
+        double n1, double n2, double theta_n1)
+        : M1(m1), M2(m2), theta_m1(theta_m1), N1(n1), N2(n2), theta_n1(theta_n1) {};
+
+    PlatePrincipalStressData(PlateStressData psd);
+
 };
 
 std::ostream& operator<<(std::ostream& os, const PlateStressData& strs);
@@ -327,39 +398,56 @@ std::ostream& operator<<(std::ostream& os, const PlateStressData& strs);
 //    PlateStress(Displacement d0, Displacement d1, Displacement d2);
 //};
 
-class TriPlateElement : public ElementBase
+class TriPlateElement : public PlaneElementBase
 {
 private:
     static constexpr int node_num = 3;
     static constexpr int total_dof = 18;
     static constexpr int node_dof = 6;
-    static constexpr ElementType type = ElementType::Plate;
+    static constexpr ElementType type = ElementType::DKT;
     using LocalMatrixd = Eigen::Matrix<double, total_dof, total_dof>;
 
-    Eigen::MatrixXd BMatrix(double xi, double eta);
+    Eigen::MatrixXd HVecs(Eigen::Vector<double, 6> shape_funcs);
+
+    Eigen::MatrixXd BMatrix(double L2, double L3);
     
     Eigen::Matrix3d DMatrix();
+
     Eigen::MatrixXd localStiffnessMatrix();
     LocalMatrixd trans_matrix();
 
 public:
     Node* Nodes[3];
-    Plane plane;
-    double thickness;
+    //Plane plane;
+    //Thickness thickness;
+
     TriPlaneElement plane_element;
 
     TriPlateElement() {};
+    TriPlateElement(Node* n0, Node* n1, Node* n2, Thickness t, Material mat);
     TriPlateElement(Node* n0, Node* n1, Node* n2, double t, Material mat);
+    TriPlateElement(int _id, Node* n0, Node* n1, Node* n2, Thickness t, Material mat)
+        :TriPlateElement(n0, n1, n2, t, mat) {
+        id = _id;
+    };
     TriPlateElement(int _id, Node* n0, Node* n1, Node* n2, double t, Material mat)
         :TriPlateElement(n0, n1, n2, t, mat) {
         id = _id;
     };
 
     Eigen::VectorXd NodeLumpedMass() {
-        return Eigen::VectorXd::Constant(node_num, Area() * thickness * Mat.dense / node_num);
+        return Eigen::VectorXd::Constant(node_num, Area() * thickness.weight_thick * Mat.dense / node_num);
+        //return Eigen::VectorXd::Constant(node_num, Area() * thickness * Mat.dense / node_num);
     }
+
+    std::vector<NodeLoadData> InertialForceToNodeLoadData(Eigen::Vector3d accel_vec) override;
+    std::vector<NodeLoadData> AreaForceToNodeLoadData(std::vector<Vector> load_vecs) override;
+
+    Eigen::MatrixXd NodeConsistentMass() override;
+
     double Area();
     ElementType Type() { return type; }
+    int NodeNum() override { return 3; }
     int TotalDof() { return total_dof; }
     Eigen::MatrixXd StiffnessMatrix();
     void AssembleStiffMatrix(Eigen::SparseMatrix<double>& mat);
@@ -367,11 +455,14 @@ public:
 
     PlateStressData stress(
         Displacement d0, Displacement d1, Displacement d2, double xi, double eta);
+
+  //  PlateStressData stress_save(
+		//Displacement d0, Displacement d1, Displacement d2, double xi, double eta);
     //void shearstress(Displacement d0, Displacement d1, Displacement d2);
 };
 
 
-class QuadPlateElement : public ElementBase
+class QuadPlateElement : public PlaneElementBase
 {
 public:
     // 下のpublicの範囲でこの定数を使っているからこちらもpublicにしておく必要があるらしい。
@@ -385,7 +476,7 @@ private:
 
     using LocalMatrixd = Eigen::Matrix<double, total_dof, total_dof>;
 
-    static constexpr ElementType type = ElementType::Plate;
+    static constexpr ElementType type = ElementType::DKQ;
 
     Eigen::Matrix2d JMatrix(double xi, double eta);
     
@@ -400,25 +491,48 @@ private:
 
     LocalMatrixd trans_matrix();
 
+    // Nastran方式のエッジ補正行列
+    Eigen::MatrixXd WarpCorrectMatrix1a();
+	// エネルギー原理によるエッジ補正行列
+    Eigen::MatrixXd WarpCorrectMatrix1b();
+    // 法線方向モーメント補正行列
+    Eigen::MatrixXd WarpCorrectMatrix2();
+
 public:
     // static constexpr int node_num = 4;
     Node* Nodes[node_num];
-    Plane plane;
-    double thickness;
+    //Plane plane;
+    //Thickness thickness;
     QuadPlaneElement plane_element;
 
     QuadPlateElement() {};
     QuadPlateElement(Node* n0, Node* n1, Node* n2, Node* n3, double t, Material mat);
+    QuadPlateElement(Node* n0, Node* n1, Node* n2, Node* n3, Thickness t, Material mat);
     QuadPlateElement(int _id, Node* n0, Node* n1, Node* n2, Node* n3, double t, Material mat)
         :QuadPlateElement(n0, n1, n2, n3, t, mat) {
         id = _id;
     };
+    QuadPlateElement(int _id, Node* n0, Node* n1, Node* n2, Node* n3, Thickness t, Material mat)
+        :QuadPlateElement(n0, n1, n2, n3, t, mat) {
+        id = _id;
+    };
 
+    /// <summary>
+    /// 集中質量マトリクスを計算
+    /// </summary>
     Eigen::VectorXd NodeLumpedMass() { 
-        return Eigen::VectorXd::Constant(node_num, Area() * thickness * Mat.dense / node_num); 
+        return Eigen::VectorXd::Constant(node_num, Area() * thickness.weight_thick * Mat.dense / node_num); 
     }
+
+    Eigen::MatrixXd NodeConsistentMass();
+    //Eigen::MatrixXd NodeConsistentMass2();
+
+    std::vector<NodeLoadData> InertialForceToNodeLoadData(Eigen::Vector3d accel_vec);
+    std::vector<NodeLoadData> AreaForceToNodeLoadData(std::vector<Vector> load_vecs) override;
+
     double Area();
     ElementType Type() { return type; }
+    int NodeNum() override { return 4; }
     int TotalDof() { return total_dof; }
     Eigen::MatrixXd StiffnessMatrix();
     void AssembleStiffMatrix(Eigen::SparseMatrix<double>& mat);

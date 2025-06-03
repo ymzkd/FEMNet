@@ -7,7 +7,12 @@
 #include <vector>
 #include <numeric>
 #include <algorithm>
+
+#include <Eigen/Dense>
 #endif
+
+//#define PI 3.141592653589793238462643
+#define NODE_DOF 6
 
 struct Vector {
 public:
@@ -33,6 +38,10 @@ public:
     Vector operator-(const Vector v1) { return subtract(*this, v1); }
     double operator*(const Vector v1) { return multiply(*this, v1); }
     Vector operator*(const double v1) { return multiply(*this, v1); }
+
+	Eigen::Vector3d toEigen() const {
+		return Eigen::Vector3d(x, y, z);
+	}
 
     friend std::ostream& operator<<(std::ostream& os, const Vector& m);
 };
@@ -70,10 +79,35 @@ struct Plane {
     Plane() {}
     Plane(Point o, Vector ex, Vector ey, Vector ez) 
         : origin(o), ex(ex), ey(ey), ez(ez) {}
+    Plane(const Plane& other)
+        : origin(other.origin), ex(other.ex), ey(other.ey), ez(other.ez) {}
 
     Point PointToCoord(Point p);
     double DistanceTo(Point p);
+
+    /// @brief 平面を指定された軸周りに回転させる
+    /// @param angle 回転角度（ラジアン）
+    /// @param axis 回転軸ベクトル
+    void Rotate(double angle, Vector axis);
+
+    /**
+     * @brief Creates a plane from three given points.
+     *
+     * This function constructs a plane by defining its coordinate system based on the three input points.
+     * The x-axis is determined by the p0 -> p1 direction, the y-axis is the vector from the p0->p2 direction 
+     * excluding the component parallel to the x-axis, and the z-axis is the direction orthogonal to the two axes. 
+     * The origin is assumed to be p0.
+     *
+     * @param p0 The first point on the plane, which will be used as the origin of the plane's coordinate system.
+     * @param p1 The second point on the plane, used to define the x-axis direction.
+     * @param p2 The third point on the plane, used to define the y-axis direction.
+     *
+     * @return A Plane object representing the plane defined by the three points, including its origin and orthonormal basis vectors.
+     *
+     * @note The function assumes that the three points are not collinear. If they are, the resulting plane may be undefined.
+     */
     static Plane CreateFromPoints(Point p0, Point p1, Point p2);
+
 };
 
 struct Displacement {
@@ -99,6 +133,103 @@ struct Displacement {
             this->Ry() + other.Ry(),
             this->Rz() + other.Rz()
         );
+    }
+
+    // 減算演算子
+    Displacement operator-(const Displacement& other) const {
+        return Displacement(
+            this->Dx() - other.Dx(),
+            this->Dy() - other.Dy(),
+            this->Dz() - other.Dz(),
+            this->Rx() - other.Rx(),
+            this->Ry() - other.Ry(),
+            this->Rz() - other.Rz()
+        );
+    }
+
+    // スカラー乗算
+    Displacement operator*(double scalar) const {
+        return Displacement(
+            this->Dx() * scalar,
+            this->Dy() * scalar,
+            this->Dz() * scalar,
+            this->Rx() * scalar,
+            this->Ry() * scalar,
+            this->Rz() * scalar
+        );
+    }
+
+    // スカラー除算
+    Displacement operator/(double scalar) const {
+        return Displacement(
+            this->Dx() / scalar,
+            this->Dy() / scalar,
+            this->Dz() / scalar,
+            this->Rx() / scalar,
+            this->Ry() / scalar,
+            this->Rz() / scalar
+        );
+    }
+
+    // 単項マイナス（符号反転）
+    Displacement operator-() const {
+        return Displacement(
+            -this->Dx(),
+            -this->Dy(),
+            -this->Dz(),
+            -this->Rx(),
+            -this->Ry(),
+            -this->Rz()
+        );
+    }
+
+    // 複合代入演算子
+    Displacement& operator+=(const Displacement& other) {
+        displace[0] += other.Dx();
+        displace[1] += other.Dy();
+        displace[2] += other.Dz();
+        displace[3] += other.Rx();
+        displace[4] += other.Ry();
+        displace[5] += other.Rz();
+        return *this;
+    }
+
+    Displacement& operator-=(const Displacement& other) {
+        displace[0] -= other.Dx();
+        displace[1] -= other.Dy();
+        displace[2] -= other.Dz();
+        displace[3] -= other.Rx();
+        displace[4] -= other.Ry();
+        displace[5] -= other.Rz();
+        return *this;
+    }
+
+    Displacement& operator*=(double scalar) {
+        for (int i = 0; i < 6; ++i) {
+            displace[i] *= scalar;
+        }
+        return *this;
+    }
+
+    Displacement& operator/=(double scalar) {
+        for (int i = 0; i < 6; ++i) {
+            displace[i] /= scalar;
+        }
+        return *this;
+    }
+
+    // インデックスアクセス演算子
+    double& operator[](int index) {
+        return displace[index];
+    }
+
+    const double& operator[](int index) const {
+        return displace[index];
+    }
+
+    // スカラー × Displacement の順序での乗算（friend関数）
+    friend Displacement operator*(double scalar, const Displacement& disp) {
+        return disp * scalar;
     }
 };
 
@@ -215,6 +346,7 @@ public:
     int id = -1;
     Point Location;
     Support Fix;
+	double Mass = 0;
 
     Node(int id, double x, double y, double z)
         : id(id), Location(x, y, z) {};
@@ -241,5 +373,47 @@ public:
 };
 
 std::ostream& operator<<(std::ostream& os, const Material& m);
+
+struct Thickness {
+public:
+    double plane_thick = 0;
+    double plate_thick = 0;
+    double weight_thick = 0;
+
+    
+    Thickness(double thick)
+     : plane_thick(thick), plate_thick(thick), weight_thick(thick) {};
+    
+    Thickness(double plane, double plate)
+     : plane_thick(plane), plate_thick(plate), weight_thick(plane) {};
+
+    Thickness(double plane, double plate, double weight)
+     : plane_thick(plane), plate_thick(plate), weight_thick(weight) {};
+
+    Thickness() : plane_thick(0), plate_thick(0), weight_thick(0) {};
+};
+
+struct NodeLoadData {
+public:
+    NodeLoadData() : NodeLoadData(-1, 0, 0, 0, 0, 0, 0) {};
+    NodeLoadData(int _id, double px, double py, double pz);
+    NodeLoadData(int _id, double px, double py, double pz, double mx, double my, double mz);
+
+    int id = -1;
+    double loads[6];
+    double& Px() { return loads[0]; }
+    double& Py() { return loads[1]; }
+    double& Pz() { return loads[2]; }
+    double& Mx() { return loads[3]; }
+    double& My() { return loads[4]; }
+    double& Mz() { return loads[5]; }
+
+    double Px() const { return loads[0]; }
+    double Py() const { return loads[1]; }
+    double Pz() const { return loads[2]; }
+    double Mx() const { return loads[3]; }
+    double My() const { return loads[4]; }
+    double Mz() const { return loads[5]; }
+};
 
 #endif

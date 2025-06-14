@@ -370,6 +370,10 @@ public:
     Vector Direction;
 	std::vector<double> Accels;
 
+    size_t DataCount() {
+		return Accels.size();
+    }
+
 	DynamicAccelLoad(double timestep, Vector Direction, std::vector<double> Accels)
 		: timestep(timestep), Direction(Direction), Accels(Accels) {
 	}

@@ -1,11 +1,10 @@
-﻿#ifndef _MODEL_
+#ifndef _MODEL_
 #define _MODEL_
 
 #ifndef SWIGCSHARP
 #include <vector>
 #include <map>
 #include <array>
-
 
 // #include <Eigen/Dense>
 
@@ -22,6 +21,11 @@
 
 #define PI 3.141592653589793238462643
 
+// 前方宣言
+class FEDynamicDampInitializer;
+class FEDynamicStiffDampInitializer;
+class DynamicAnalysis;
+
 class IResponseSpectrum {
 public:
     //IResponseSpectrum() {}
@@ -31,28 +35,27 @@ public:
 	virtual double Displacement(double t) = 0;
 };
 
-// class DASampler {
-// public:
-//     int step;
-//     std::vector<Displacement> velocity, displacement, acceleration;
-//     virtual void Sampling(DynamicAnalysis& analysis) = 0;
-// };
+class DASampler {
+
+public:
+
+    //friend class DynamicAnalysis;
+
+    int step;
+    std::vector<Displacement> velocity, displacement, acceleration;
+    virtual void Sampling(DynamicAnalysis& analysis) = 0;
+};
+
+class DASampler_MaxDisplacement : public DASampler {
+public:
+    double max_displacement = 0.0;
+
+    void Sampling(DynamicAnalysis& da) override;
+};
 
 class FEModel
 {
 private:
-    
-
-    /// <summary>
-	/// 非拘束自由度の全自由度におけるインデックスを格納した配列を返す関数
-    /// </summary>
-    std::vector<int> FreeIndices();
-
-	/// <summary>
-	/// 拘束自由度の全自由度におけるインデックスを格納した配列を返す関数
-	/// </summary>
-    std::vector<int> FixIndices();
-    
     /// <summary>
     /// 集中質量マトリクスの対象でない(並進以外の回転自由度等)または固定自由度の
     /// 全体自由度におけるインデックスを格納した配列を返す関数
@@ -103,7 +106,17 @@ private:
 	friend class DynamicAnalysis;
 
 public:
-    static constexpr double GRAVACCEL = 9806.6;
+    static constexpr double GRAVACCEL = 9806.6;\
+
+    /// <summary>
+    /// 非拘束自由度の全自由度におけるインデックスを格納した配列を返す関数
+    /// </summary>
+    std::vector<int> FreeIndices();
+
+    /// <summary>
+    /// 拘束自由度の全自由度におけるインデックスを格納した配列を返す関数
+    /// </summary>
+    std::vector<int> FixIndices();
 
     int NodeNum() { return Nodes.size(); }
     int DOFNum() { return NodeNum() * 6; }
@@ -230,8 +243,24 @@ public:
 	}
 };
 
-class FEDynamicDampInitializer;
-class FEDynamicStiffDampInitializer;
+class DARecorder {
+public:
+    virtual void Record(DynamicAnalysis& da) = 0;
+};
+
+class DAEnergyRecorder: public DARecorder {
+public:
+	std::vector<double> kinetic_energy, potential_energy, damping_energy, input_energy;
+
+    void Initialize();
+    void RecordKineticEnergy(DynamicAnalysis& da);
+    void RecordPotentialEnergy(DynamicAnalysis& da);
+    void RecordDampingEnergy(DynamicAnalysis& da);
+    void RecordInputEnergy(DynamicAnalysis& da);
+
+    void Record(DynamicAnalysis& da) override;
+		
+};
 
 /// <summary>
 /// 時刻歴応答解析クラス
@@ -256,6 +285,7 @@ private:
 
     friend class FEDynamicDampInitializer;
     friend class FEDynamicStiffDampInitializer;
+	friend class DAEnergyRecorder;
 
 public:
 	std::shared_ptr<FEModel> model;
@@ -265,7 +295,8 @@ public:
 	int current_step = 0;
 	//double damping_rate = 0.05; // 減衰比
 
-    // std::list<DASampler*> samplers;
+    std::list<std::shared_ptr<DASampler>> samplers;
+	DAEnergyRecorder energy_recorder;
 
 	//const double tmp_w1 = 720;
 	//const double tmp_w1 = 4200;

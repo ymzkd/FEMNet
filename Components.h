@@ -231,6 +231,14 @@ struct Displacement {
     friend Displacement operator*(double scalar, const Displacement& disp) {
         return disp * scalar;
     }
+
+	Vector Translation() const {
+		return Vector(displace[0], displace[1], displace[2]);
+	}
+
+	Vector Rotation() const {
+		return Vector(displace[3], displace[4], displace[5]);
+	}
 };
 
 std::ostream& operator<<(std::ostream& os, const Displacement& m);

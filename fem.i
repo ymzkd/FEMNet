@@ -7,6 +7,8 @@
 %include <std_shared_ptr.i>
 
 %shared_ptr(FEModel);
+%shared_ptr(DASampler);
+%shared_ptr(DASampler_MaxDisplacement);
 // %shared_ptr(SSModel);
 
 // Element Pointer
@@ -32,6 +34,7 @@
 
 // Director機能を有効化
 %feature("director") IResponseSpectrum;
+%feature("director") DASampler;
 
 %{
     #include <Eigen/Dense>
@@ -101,6 +104,9 @@ namespace std {
     // List
     // %template(ListLoad) std::list<Load>;
     %template(ListBeamPolyLoad) std::list<BeamPolyLoad>;
+    %template(ListDASampler) std::list<std::shared_ptr<DASampler>>;
+    
+
     
     // Vector
     %template(VectorNode) std::vector<Node>;

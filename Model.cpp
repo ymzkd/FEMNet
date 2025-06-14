@@ -806,7 +806,6 @@ bool DynamicAnalysis::Initialize()
         tripletList.push_back(Eigen::Triplet<double>(i * 6 + 2, i * 6 + 2, 0.0));
     }
     Eigen::SparseMatrix<double> mass_mat_full(model->NodeNum() * 6, model->NodeNum() * 6);
-    //mass_mat.resize(model->NodeNum() * 6, model->NodeNum() * 6);
     mass_mat_full.setFromTriplets(tripletList.begin(), tripletList.end());
     // Construct MassMatrix
     for each(std::shared_ptr<ElementBase> eh in model->Elements)
@@ -836,6 +835,10 @@ bool DynamicAnalysis::Initialize()
 	double dt = accel_load.timestep;
 	compute_mat = mass_mat + 0.5 * dt * damping_mat + beta * dt * dt * stiffness_mat;
 	solver.compute(compute_mat);
+
+    // Recorder初期化
+	energy_recorder.Initialize();
+
     return true;
 }
 
@@ -892,7 +895,14 @@ void DynamicAnalysis::ComputeStep()
 	current_accel = post_accel;
 	current_vel = post_vel;
 	current_disp = post_disp;
-	current_step++;
+    current_step++;
+
+    // Sampling
+    for each(auto sampler in samplers) {
+        sampler->Sampling(*this);
+    }
+    // Recording
+	energy_recorder.Record(*this);
 }
 
 void DynamicAnalysis::ComputeSteps(int steps)
@@ -1371,4 +1381,81 @@ std::vector<Displacement> ResponseSpectrumMethod::GetAccelerations()
 
     }
     return accels;
+}
+
+void DASampler_MaxDisplacement::Sampling(DynamicAnalysis &da)
+{
+    bool updated = false;
+    std::vector<Displacement> disp = da.GetDisplacements();
+
+    //任意�?�節点の変位が最大となるス�?�?プを記録
+    for (int i = 0; i < da.model->Nodes.size(); i++) {
+        double d_length = disp[i].Translation().norm();
+        if (d_length > max_displacement) {
+            max_displacement = d_length;
+            step = da.current_step;
+            updated = true;
+        }
+    }
+
+    if (updated) {
+        velocity = da.GetVelocities();
+        displacement = disp;
+        acceleration = da.GetAccelerations();
+    }
+
+}
+
+void DAEnergyRecorder::Initialize()
+{
+    kinetic_energy.clear();
+    potential_energy.clear();
+    damping_energy.clear();
+    input_energy.clear();
+}
+
+void DAEnergyRecorder::RecordKineticEnergy(DynamicAnalysis& da)
+{
+    double energy = 0.5 * da.current_disp.dot(da.stiffness_mat.selfadjointView<Eigen::Upper>()* da.current_disp);
+	kinetic_energy.push_back(energy);
+}
+
+void DAEnergyRecorder::RecordPotentialEnergy(DynamicAnalysis& da)
+{
+    double energy = 0.5 * da.current_vel.dot(da.mass_mat.selfadjointView<Eigen::Upper>() * da.current_vel);
+	potential_energy.push_back(energy);
+}
+
+void DAEnergyRecorder::RecordDampingEnergy(DynamicAnalysis& da)
+{
+	double energy = da.current_vel.dot(da.damping_mat.selfadjointView<Eigen::Upper>() * da.current_vel);
+	damping_energy.push_back(energy);
+}
+
+void DAEnergyRecorder::RecordInputEnergy(DynamicAnalysis& da)
+{
+    Vector gacc = da.accel_load.Direction * da.accel_load.Accels[da.current_step];
+    std::vector<int> free_indices = da.model->FreeIndices();
+    Eigen::VectorXd post_accel0 = Eigen::VectorXd::Zero(free_indices.size());
+    for (size_t i = 0; i < free_indices.size(); i++)
+    {
+        int fi = free_indices[i] % NODE_DOF;
+        if (fi == 0) post_accel0[i] = gacc.x;
+        else if (fi == 1) post_accel0[i] = gacc.y;
+        else if (fi == 2) post_accel0[i] = gacc.z;
+        else if (fi == 3) post_accel0[i] = 0.0;
+        else if (fi == 4) post_accel0[i] = 0.0;
+        else if (fi == 5) post_accel0[i] = 0.0;
+    }
+
+    Eigen::VectorXd post_accel = da.mass_mat.selfadjointView<Eigen::Upper>() * post_accel0;
+    input_energy.push_back(post_accel.dot(da.current_vel));
+}
+
+void DAEnergyRecorder::Record(DynamicAnalysis& da)
+{
+	RecordKineticEnergy(da);
+	RecordPotentialEnergy(da);
+	RecordDampingEnergy(da);
+	RecordInputEnergy(da);
 }

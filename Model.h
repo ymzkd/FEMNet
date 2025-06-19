@@ -174,10 +174,30 @@ public:
 
 typedef FEModel FEModel;
 
-// Static Solver Package
-class FEStaticResult {
+// 変形ケースを表す基底クラス
+class FEDeformCase {
 public:
     std::shared_ptr<FEModel> model;
+    //std::vector<std::shared_ptr<LoadBase>> loads;
+    //std::vector<Displacement> displace;
+    //std::vector<NodeLoad> react_force;
+
+    FEDeformCase() {};
+	FEDeformCase(std::shared_ptr<FEModel> model) : model(model) {};
+
+    virtual BeamStressData GetBeamStress(int eid, double p) = 0;
+    virtual PlateStressData GetPlateStressData(int eid, double xi, double eta) = 0;
+    virtual Displacement GetBeamDisplace(int eid, double p) = 0;
+    //FEDeformCase(std::shared_ptr<FEModel> model, std::vector<std::shared_ptr<LoadBase>> loads, std::vector<Displacement> displace, std::vector<NodeLoad> react_force)
+    virtual std::vector<Displacement> GetDisplacements() = 0;
+    //virtual std::vector<Displacement> GetVelocities() = 0;
+    //virtual std::vector<Displacement> GetAccelerations() = 0;
+};
+
+// Static Solver Package
+class FEStaticResult : public FEDeformCase {
+public:
+    //std::shared_ptr<FEModel> model;
     std::vector<std::shared_ptr<LoadBase>> loads;
     std::vector<Displacement> displace;
     std::vector<NodeLoad> react_force;
@@ -187,10 +207,10 @@ public:
         std::vector<std::shared_ptr<LoadBase>> loads,
         std::vector<Displacement> displace,
         std::vector<NodeLoad> react_force)
-        : model(model), loads(loads),
+        : FEDeformCase(model), loads(loads),
         displace(displace), react_force(react_force) {};
 
-    BeamStressData GetBeamStress(int eid, double p);
+    BeamStressData GetBeamStress(int eid, double p) override;
 
     /// <summary>
     /// Obtain stress data for plate elements
@@ -205,10 +225,13 @@ public:
     /// area coordinate system in the second parameter.
     /// </param>
     /// <returns>Plate element stress data</returns>
-    PlateStressData GetPlateStressData(int eid, double xi, double eta);
+    PlateStressData GetPlateStressData(int eid, double xi, double eta) override;
 
 
-    Displacement GetBeamDisplace(int eid, double p);
+    Displacement GetBeamDisplace(int eid, double p) override;
+
+    // FEDeformCase を介して継承されました
+    std::vector<Displacement> GetDisplacements() override;
 };
 
 class FEVibrateResult {
@@ -229,6 +252,7 @@ public:
         eigs(eigs) {};
 
     std::vector<double> ParticipationFactors();
+    std::vector<double> ParticipationFactors(Vector direction);
     std::vector<Displacement> ParticipationDirectedFactors();
     std::vector<double> EffectiveMassRates();
     std::vector<Displacement> EffectiveDirectedMassRates();
@@ -265,7 +289,7 @@ public:
 /// <summary>
 /// 時刻歴応答解析クラス
 /// </summary>
-class DynamicAnalysis {
+class DynamicAnalysis : public FEDeformCase {
 private:
 #ifdef EIGEN_USE_MKL_ALL
     Eigen::PardisoLLT<Eigen::SparseMatrix<double>> solver;
@@ -288,7 +312,7 @@ private:
 	friend class DAEnergyRecorder;
 
 public:
-	std::shared_ptr<FEModel> model;
+	//std::shared_ptr<FEModel> model;
 	DynamicAccelLoad accel_load;
 	FEDynamicDampInitializer* damp_initializer = nullptr;
 
@@ -344,6 +368,11 @@ public:
         }
         return bar_elements;
     }
+
+    // FEDeformCase を介して継承されました
+    BeamStressData GetBeamStress(int eid, double p) override;
+    PlateStressData GetPlateStressData(int eid, double xi, double eta) override;
+    Displacement GetBeamDisplace(int eid, double p) override;
 };
 
 /// <summary>
@@ -378,29 +407,37 @@ enum ResponseSpectrumMethodType
 };
 
 
-class ResponseSpectrumMethod {
+class ResponseSpectrumMethod : public FEDeformCase {
 private:
-    std::vector<Displacement> GetDisplacementsCQC();
-    std::vector<Displacement> GetDisplacementsSRSS();
-    std::vector<Displacement> GetDisplacementsABS();
+    std::vector<Displacement> calculate_displacementsCQC();
+    std::vector<Displacement> calculate_displacementsSRSS();
+    std::vector<Displacement> calculate_displacementsABS();
+    std::vector<Displacement> calculate_displacements();
+    std::vector<Displacement> displacements; // 解析結果の変位ベクトル
 
 public:
-	double damping_rate = 0.05; // 減衰比(CQC法の場合のみ計算に影響)
+    
+    double damping_rate = 0.05; // 減衰比(CQC法の場合のみ計算に影響)
+	Vector Direction = Vector(1.0, 1.0, 1.0); // 応答スペクトルの方向
 
-    std::shared_ptr<FEModel> Model;
+    //std::shared_ptr<FEModel> model;
     FEVibrateResult VibrateResult;
     IResponseSpectrum* SpectrumFunction;
 	ResponseSpectrumMethodType MethodType = ResponseSpectrumMethodType::ABS;
 
     ResponseSpectrumMethod() {}
-	ResponseSpectrumMethod(std::shared_ptr<FEModel> model, FEVibrateResult vibrate_result, 
-        IResponseSpectrum* spectrum_function)
-		: Model(model), VibrateResult(vibrate_result), SpectrumFunction(spectrum_function) {
-	}
+    ResponseSpectrumMethod(std::shared_ptr<FEModel> model, FEVibrateResult vibrate_result, Vector direction,
+        IResponseSpectrum* spectrum_function, ResponseSpectrumMethodType type);
+		
 
-    std::vector<Displacement> GetDisplacements();
+    std::vector<Displacement> GetDisplacements() override;
     //std::vector<Displacement> GetVelocities();
     std::vector<Displacement> GetAccelerations();
+
+    // FEDeformCase を介して継承されました
+    BeamStressData GetBeamStress(int eid, double p) override;
+    PlateStressData GetPlateStressData(int eid, double xi, double eta) override;
+    Displacement GetBeamDisplace(int eid, double p) override;
 };
 
 #endif

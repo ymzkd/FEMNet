@@ -768,8 +768,13 @@ Displacement FEStaticResult::GetBeamDisplace(int eid, double p)
     return disp;
 }
 
+std::vector<Displacement> FEStaticResult::GetDisplacements()
+{
+    return this->displace;
+}
+
 DynamicAnalysis::DynamicAnalysis(std::shared_ptr<FEModel> model, DynamicAccelLoad accel_load, FEDynamicDampInitializer* damp)
-    : model(model), accel_load(accel_load)
+    : FEDeformCase(model), accel_load(accel_load)
 {
     if (!damp_initializer) {
         // デフォルトの減衰初期化子を用意
@@ -986,6 +991,44 @@ std::vector<Displacement> DynamicAnalysis::GetAccelerations()
     return acc;
 }
 
+BeamStressData DynamicAnalysis::GetBeamStress(int eid, double p)
+{
+    BarElementBase *be = dynamic_cast<BarElementBase *>(model->Elements[eid].get());
+
+    BeamStress b_strs = be->stress(this->GetDisplacements()[be->Nodes[0]->id], this->GetDisplacements()[be->Nodes[1]->id]);
+    BeamStressData strs = b_strs.Interpolate(p);
+    return strs;
+}
+
+PlateStressData DynamicAnalysis::GetPlateStressData(int eid, double xi, double eta)
+{
+    PlateStressData data;
+    std::vector<Displacement> displace = this->GetDisplacements();
+    if (model->Elements[eid]->Type() == ElementType::DKT)
+    {
+        TriPlateElement *el = dynamic_cast<TriPlateElement *>(model->Elements[eid].get());
+        data = el->stress(displace[el->Nodes[0]->id], displace[el->Nodes[1]->id],
+                          displace[el->Nodes[2]->id], xi, eta);
+    }
+    else if (model->Elements[eid]->Type() == ElementType::DKQ)
+    {
+        QuadPlateElement *el = dynamic_cast<QuadPlateElement *>(model->Elements[eid].get());
+        data = el->stress(displace[el->Nodes[0]->id], displace[el->Nodes[1]->id],
+                          displace[el->Nodes[2]->id], displace[el->Nodes[3]->id], xi, eta);
+    }
+    return data;
+}
+
+Displacement DynamicAnalysis::GetBeamDisplace(int eid, double p)
+{
+    BeamElement *elm = model->GetBeamElement(eid);
+    std::vector<Displacement> displace = this->GetDisplacements();
+    Displacement disp = elm->DisplaceAt(
+        displace[elm->Nodes[0]->id], displace[elm->Nodes[1]->id], p);
+
+    return disp;
+}
+
 bool FEDynamicStiffDampInitializer::Initialize(DynamicAnalysis* analysis)
 {
 	// 解析モデルの固有振動数を計算
@@ -1051,6 +1094,61 @@ std::vector<double> FEVibrateResult::ParticipationFactors()
     }
 
 	return participation_factors;
+}
+
+std::vector<double> FEVibrateResult::ParticipationFactors(Vector direction)
+{
+    // MassMatrixの組み立て
+    std::vector<Eigen::Triplet<double>> tripletList;
+    for (int i = 0; i < model->NodeNum(); ++i) {
+        tripletList.push_back(Eigen::Triplet<double>(i * 6, i * 6, 0.0));
+        tripletList.push_back(Eigen::Triplet<double>(i * 6 + 1, i * 6 + 1, 0.0));
+        tripletList.push_back(Eigen::Triplet<double>(i * 6 + 2, i * 6 + 2, 0.0));
+    }
+    Eigen::SparseMatrix<double> mass_mat(model->NodeNum() * 6, model->NodeNum() * 6);
+    mass_mat.setFromTriplets(tripletList.begin(), tripletList.end());
+    // Construct MassMatrix
+    for each(std::shared_ptr<ElementBase> eh in model->Elements)
+        eh->AssembleMassMatrix(mass_mat);
+
+    for each(Node n in model->Nodes)
+    {
+        int i = n.id * 6;
+        mass_mat.coeffRef(i, i) += n.Mass;
+        mass_mat.coeffRef(i + 1, i + 1) += n.Mass;
+        mass_mat.coeffRef(i + 2, i + 2) += n.Mass;
+    }
+
+    mass_mat *= (1.0 / FEModel::GRAVACCEL);
+
+    std::vector<double> participation_factors;
+
+    for (size_t i = 0; i < modes_num(); i++)
+    {
+        Eigen::VectorXd v = Eigen::VectorXd::Zero(model->NodeNum() * 6);
+        Eigen::VectorXd f = Eigen::VectorXd::Zero(model->NodeNum() * 6);
+        for (size_t j = 0; j < model->NodeNum(); j++)
+        {
+            int p = j * 6;
+            v(p) = mode_vectors[i][j].Dx();
+            v(p + 1) = mode_vectors[i][j].Dy();
+            v(p + 2) = mode_vectors[i][j].Dz();
+            v(p + 3) = mode_vectors[i][j].Rx();
+            v(p + 4) = mode_vectors[i][j].Ry();
+            v(p + 5) = mode_vectors[i][j].Rz();
+
+            f(p) = direction.x;
+            f(p + 1) = direction.y;
+			f(p + 2) = direction.z;
+        }
+
+        Eigen::VectorXd vM = mass_mat.selfadjointView<Eigen::Upper>() * v;
+        double beta_i = f.dot(vM) / v.dot(vM);
+
+        participation_factors.push_back(beta_i);
+    }
+
+    return participation_factors;
 }
 
 std::vector<Displacement> FEVibrateResult::ParticipationDirectedFactors()
@@ -1239,15 +1337,15 @@ std::vector<Displacement> FEVibrateResult::EffectiveDirectedMassRates()
     return mass_rates;
 }
 
-std::vector<Displacement> ResponseSpectrumMethod::GetDisplacementsCQC()
+std::vector<Displacement> ResponseSpectrumMethod::calculate_displacementsCQC()
 {
-    std::vector<double> part_facs = VibrateResult.ParticipationFactors();
+    std::vector<double> part_facs = VibrateResult.ParticipationFactors(Direction);
     std::vector<double> periods = VibrateResult.NaturalPeriods();
     std::vector<double> spectrums(periods.size());
     for (size_t i = 0; i < periods.size(); i++)
         spectrums[i] = SpectrumFunction->Displacement(periods[i]);
 
-    std::vector<Displacement> responses(Model->NodeNum());
+    std::vector<Displacement> responses(model->NodeNum());
     for (size_t j = 0; j < part_facs.size(); j++)
     {
         std::vector<Displacement> uj = VibrateResult.mode_vectors[j];
@@ -1260,7 +1358,7 @@ std::vector<Displacement> ResponseSpectrumMethod::GetDisplacementsCQC()
 				(pow((1.0 - rjk * rjk), 2.0) + 4.0 * damping_rate * damping_rate * rjk * pow(1.0 + rjk, 2.0));
             double fac = spectrums[j] * spectrums[k] * part_facs[j] * part_facs[k] * correlation;
 
-            for (size_t i = 0; i < Model->NodeNum(); i++)
+            for (size_t i = 0; i < model->NodeNum(); i++)
             {
                 Displacement idj = uj[i];
                 Displacement idk = uk[i];
@@ -1285,15 +1383,15 @@ std::vector<Displacement> ResponseSpectrumMethod::GetDisplacementsCQC()
 }
 
 
-std::vector<Displacement> ResponseSpectrumMethod::GetDisplacementsSRSS()
+std::vector<Displacement> ResponseSpectrumMethod::calculate_displacementsSRSS()
 {
-    std::vector<double> part_facs = VibrateResult.ParticipationFactors();
+    std::vector<double> part_facs = VibrateResult.ParticipationFactors(Direction);
     std::vector<double> periods = VibrateResult.NaturalPeriods();
     std::vector<double> spectrums(periods.size());
     for (size_t i = 0; i < periods.size(); i++)
         spectrums[i] = SpectrumFunction->Displacement(periods[i]);
 
-    std::vector<Displacement> responses(Model->NodeNum());
+    std::vector<Displacement> responses(model->NodeNum());
     for (size_t i = 0; i < part_facs.size(); i++)
     {
         std::vector<Displacement> mode_vector = VibrateResult.mode_vectors[i];
@@ -1321,15 +1419,15 @@ std::vector<Displacement> ResponseSpectrumMethod::GetDisplacementsSRSS()
     return responses;
 }
 
-std::vector<Displacement> ResponseSpectrumMethod::GetDisplacementsABS()
+std::vector<Displacement> ResponseSpectrumMethod::calculate_displacementsABS()
 {
-    std::vector<double> part_facs = VibrateResult.ParticipationFactors();
+    std::vector<double> part_facs = VibrateResult.ParticipationFactors(Direction);
     std::vector<double> periods = VibrateResult.NaturalPeriods();
     std::vector<double> spectrums(periods.size());
     for (size_t i = 0; i < periods.size(); i++)
         spectrums[i] = SpectrumFunction->Displacement(periods[i]);
 
-    std::vector<Displacement> responses(Model->NodeNum());
+    std::vector<Displacement> responses(model->NodeNum());
     for (size_t i = 0; i < part_facs.size(); i++)
     {
         std::vector<Displacement> mode_vector = VibrateResult.mode_vectors[i];
@@ -1349,28 +1447,47 @@ std::vector<Displacement> ResponseSpectrumMethod::GetDisplacementsABS()
     return responses;
 }
 
+std::vector<Displacement> ResponseSpectrumMethod::calculate_displacements()
+{
+	std::vector<Displacement> responses(model->NodeNum());
+	if (MethodType == ResponseSpectrumMethodType::CQC)
+        responses = calculate_displacementsCQC();
+	else if (MethodType == ResponseSpectrumMethodType::SRSS)
+        responses = calculate_displacementsSRSS();
+	else // MethodType == ResponseSpectrumMethodType::ABS
+        responses = calculate_displacementsABS();
+
+    return responses;
+}
+
+ResponseSpectrumMethod::ResponseSpectrumMethod(std::shared_ptr<FEModel> model, 
+    FEVibrateResult vibrate_result, Vector direction, IResponseSpectrum* spectrum_function, ResponseSpectrumMethodType type)
+    : FEDeformCase(model), VibrateResult(vibrate_result), SpectrumFunction(spectrum_function), Direction(direction), MethodType(type) {
+
+    displacements = calculate_displacements();
+
+    // std::vector<Displacement> disp = calculate_displacements();
+    // 
+    // for (const auto& d : disp)
+    // {
+    //     displacements.push_back(Displacement(d.Dx(), d.Dy(), d.Dz(), d.Rx(), d.Ry(), d.Rz()));
+    // }
+}
+
 std::vector<Displacement> ResponseSpectrumMethod::GetDisplacements()
 {
-	std::vector<Displacement> displacements(Model->NodeNum());
-	if (MethodType == ResponseSpectrumMethodType::CQC)
-		displacements = GetDisplacementsCQC();
-	else if (MethodType == ResponseSpectrumMethodType::SRSS)
-		displacements = GetDisplacementsSRSS();
-	else // MethodType == ResponseSpectrumMethodType::ABS
-		displacements = GetDisplacementsABS();
-
     return displacements;
 }
 
 std::vector<Displacement> ResponseSpectrumMethod::GetAccelerations()
 {
-    std::vector<double> part_facs = VibrateResult.ParticipationFactors();
+    std::vector<double> part_facs = VibrateResult.ParticipationFactors(Direction);
     std::vector<double> periods = VibrateResult.NaturalPeriods();
 	std::vector<double> spectrums(periods.size());
 	for (size_t i = 0; i < periods.size(); i++)
 		spectrums[i] = SpectrumFunction->Acceleration(periods[i]);
 
-    std::vector<Displacement> accels(Model->NodeNum());
+    std::vector<Displacement> accels(model->NodeNum());
     for (size_t i = 0; i < part_facs.size(); i++)
     {
         std::vector<Displacement> mode_vector = VibrateResult.mode_vectors[i];
@@ -1381,6 +1498,44 @@ std::vector<Displacement> ResponseSpectrumMethod::GetAccelerations()
 
     }
     return accels;
+}
+
+BeamStressData ResponseSpectrumMethod::GetBeamStress(int eid, double p)
+{
+    BarElementBase* be = dynamic_cast<BarElementBase*>(model->Elements[eid].get());
+
+    BeamStress b_strs = be->stress(this->GetDisplacements()[be->Nodes[0]->id], this->GetDisplacements()[be->Nodes[1]->id]);
+    BeamStressData strs = b_strs.Interpolate(p);
+    return strs;
+}
+
+PlateStressData ResponseSpectrumMethod::GetPlateStressData(int eid, double xi, double eta)
+{
+    PlateStressData data;
+    std::vector<Displacement> displace = this->GetDisplacements();
+    if (model->Elements[eid]->Type() == ElementType::DKT)
+    {
+        TriPlateElement* el = dynamic_cast<TriPlateElement*>(model->Elements[eid].get());
+        data = el->stress(displace[el->Nodes[0]->id], displace[el->Nodes[1]->id],
+            displace[el->Nodes[2]->id], xi, eta);
+    }
+    else if (model->Elements[eid]->Type() == ElementType::DKQ)
+    {
+        QuadPlateElement* el = dynamic_cast<QuadPlateElement*>(model->Elements[eid].get());
+        data = el->stress(displace[el->Nodes[0]->id], displace[el->Nodes[1]->id],
+            displace[el->Nodes[2]->id], displace[el->Nodes[3]->id], xi, eta);
+    }
+    return data;
+}
+
+Displacement ResponseSpectrumMethod::GetBeamDisplace(int eid, double p)
+{
+    BeamElement* elm = model->GetBeamElement(eid);
+    std::vector<Displacement> displace = this->GetDisplacements();
+    Displacement disp = elm->DisplaceAt(
+        displace[elm->Nodes[0]->id], displace[elm->Nodes[1]->id], p);
+
+    return disp;
 }
 
 void DASampler_MaxDisplacement::Sampling(DynamicAnalysis &da)

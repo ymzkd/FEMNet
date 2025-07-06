@@ -184,6 +184,34 @@ FEModel CantiBeamModel(double l, int n) {
 	return model;
 }
 
+FEModel CantiColumnModel(double l, int n) {
+	FEModel model;
+	double dl = l / (double)n;
+	model.Nodes.push_back(Node(0, 0, 0, 0));
+	model.Nodes[0].Fix.FixAll();
+	for (size_t i = 0; i < n; i++)
+		model.Nodes.push_back(Node(i + 1, 0, 0, dl * (i + 1)));
+
+	Material m0(5000.0, 0.2);
+	m0.dense = 5.0 / 1000.0 / 1000.0;
+
+	Section s0(100, 833.33, 833.33, 1406.25);
+
+	model.Materials.push_back(m0);
+	model.Sections.push_back(s0);
+
+	for (size_t i = 0; i < n; i++) {
+		std::shared_ptr<BeamElement> b1 =
+			std::make_shared<BeamElement>(i, &model.Nodes[i], &model.Nodes[i + 1],
+				&model.Sections[0], model.Materials[0]);
+		model.Elements.push_back(b1);
+		//model.add_element(BeamElement(i, &model.Nodes[i], &model.Nodes[i + 1], &s0, m0));
+	}
+
+	return model;
+}
+
+
 void CheckCantiBeamVibration() {
 
 	std::cout << "CheckCantiBeamVibration Start" << std::endl;
@@ -313,6 +341,108 @@ void CheckCantiBeamVibration2() {
 	for each (double var in eigen_values)
 	{
 		std::cout << 2 * pi / var << "\n";
+	}
+}
+
+// 座屈検討用の片持ち柱
+void CheckCantiBeamBuckling() {
+
+	std::cout << "CheckCantiBeamBuckling Start" << std::endl;
+	FEModel model = CantiColumnModel(2000, 10);
+	//FEModel model = CantiBeamModel(2000, 10);
+	NodeLoad nl = NodeLoad(model.Nodes.size() - 1, 0, 0, -1.0);
+	//NodeLoad nl = NodeLoad(model.Nodes.size() - 1, -1.0, 0, 0);
+	std::vector<std::shared_ptr<LoadBase>> loads;
+	loads.push_back(std::make_shared<NodeLoad>(nl));
+
+	std::vector<Displacement> disp;
+	std::vector<NodeLoad> react;
+	model.Solve(loads, disp, react);
+
+	FEStaticResult result = FEStaticResult(std::make_shared<FEModel>(model), loads, disp, react);
+
+	std::cout << "Static Result: " << result.displace[model.Nodes.size() - 1] << std::endl;
+	std::cout << "Beam Stress at Node 0 At 0: " << result.GetBeamStress(0, 0) << std::endl;
+
+	FEBucklingAnalysis buckling_analysis(std::make_shared<FEStaticResult>(result));
+	buckling_analysis.mode_num = 6;
+	buckling_analysis.SolveBuckling();
+
+	std::cout << "Buckling Analysis Results:" << std::endl;
+	std::cout << "Mode Number: " << buckling_analysis.mode_num << std::endl;
+	for (size_t i = 0; i < buckling_analysis.eigs.size(); i++)
+	{
+		std::cout << "Mode " << i << ": " << buckling_analysis.eigs[i] << std::endl;
+	}
+}
+
+FEModel PyramidTrussModel(double D, int n, double h)
+{
+	FEModel model;
+	double dl = D / (double)n;
+	model.Nodes.push_back(Node(0, 0, 0, h));
+	// pi / n
+	double theta = 3.14159265358979323846 * 2.0 / n;
+	for (size_t i = 0; i < n; i++)
+	{
+		double x = D * cos(theta * i);
+		double y = D * sin(theta * i);
+		Node ni(i + 1, x, y, 0);
+		ni.Fix.FixAll();
+		model.Nodes.push_back(ni);
+
+	}
+
+	Material m0(5000.0, 0.2);
+	m0.dense = 5.0 / 1000.0 / 1000.0;
+
+	Section s0(100, 833.33, 833.33, 1406.25);
+
+	model.Materials.push_back(m0);
+	model.Sections.push_back(s0);
+
+	for (size_t i = 0; i < n; i++)
+	{
+		std::shared_ptr<TrussElement> t1 =
+			std::make_shared<TrussElement>(i, &model.Nodes[i + 1], &model.Nodes[0],
+				&model.Sections[0], model.Materials[0]);
+		model.Elements.push_back(t1);
+		// model.add_element(BeamElement(i, &model.Nodes[i], &model.Nodes[i + 1], &s0, m0));
+	}
+
+	return model;
+}
+
+// 座屈検討用のピラミッド型トラスサンプル
+void CheckCantiPyramidTrussBuckling(double D, int n, double h)
+{
+
+	std::cout << "CheckCantiPyramidTrussBuckling Start" << std::endl;
+	FEModel model = PyramidTrussModel(1000, 4, 100);
+	// FEModel model = CantiBeamModel(2000, 10);
+	NodeLoad nl = NodeLoad(0, 0, 0, -1.0);
+
+	std::vector<std::shared_ptr<LoadBase>> loads;
+	loads.push_back(std::make_shared<NodeLoad>(nl));
+
+	std::vector<Displacement> disp;
+	std::vector<NodeLoad> react;
+	model.Solve(loads, disp, react);
+
+	FEStaticResult result = FEStaticResult(std::make_shared<FEModel>(model), loads, disp, react);
+
+	std::cout << "Static Result: " << result.displace[model.Nodes.size() - 1] << std::endl;
+	std::cout << "Beam Stress at Node 0 At 0: " << result.GetBeamStress(0, 0) << std::endl;
+
+	FEBucklingAnalysis buckling_analysis(std::make_shared<FEStaticResult>(result));
+	buckling_analysis.mode_num = 1;
+	buckling_analysis.SolveBuckling();
+
+	std::cout << "Buckling Analysis Results:" << std::endl;
+	std::cout << "Mode Number: " << buckling_analysis.mode_num << std::endl;
+	for (size_t i = 0; i < buckling_analysis.eigs.size(); i++)
+	{
+		std::cout << "Mode " << i << ": " << buckling_analysis.eigs[i] << std::endl;
 	}
 }
 
@@ -725,8 +855,12 @@ int main(void) {
 
 
 	// 250511 Debug
-	TestDynamicAnalysis();
+	//TestDynamicAnalysis();
 	//CheckCantiBeamVibration2();
+	// CheckCantiBeamBuckling();
+
+	// 座屈検討用のピラミッド型トラスサンプル
+	CheckCantiPyramidTrussBuckling(1000, 4, 100);
 
 	// CheckSparseSolver();
 

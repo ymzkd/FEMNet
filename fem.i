@@ -5,10 +5,16 @@
 %include <std_array.i>
 %include <std_list.i>
 %include <std_shared_ptr.i>
+%include <std_string.i>
 
 %shared_ptr(FEModel);
 %shared_ptr(DASampler);
 %shared_ptr(DASampler_MaxDisplacement);
+%shared_ptr(FEDeformCase);
+%shared_ptr(FEStaticResult);
+%shared_ptr(StaticCombinationOperator);
+%shared_ptr(DynamicAnalysis);
+%shared_ptr(ResponseSpectrumMethod);
 // %shared_ptr(SSModel);
 
 // Element Pointer
@@ -104,9 +110,6 @@ namespace std {
     // List
     // %template(ListLoad) std::list<Load>;
     %template(ListBeamPolyLoad) std::list<BeamPolyLoad>;
-    %template(ListDASampler) std::list<std::shared_ptr<DASampler>>;
-    
-
     
     // Vector
     %template(VectorNode) std::vector<Node>;
@@ -120,7 +123,7 @@ namespace std {
 	%template(VectorSection) std::vector<Section>;
 	%template(VectorInt) std::vector<int>;
 	%template(VectorDouble) std::vector<double>;
-    
+    %template(VectorDASampler) std::vector<std::shared_ptr<DASampler>>;
 
 	%template(VectorBeamPolyLoad) std::vector<BeamPolyLoad>;
 	%template(VectorLoad) std::vector<std::shared_ptr<LoadBase>>;
@@ -154,6 +157,17 @@ namespace std {
         return $self->Nodes[index];
     }
 }
+
+// C#側で定義したIResponseSpectrumをGCに解放されないように
+// 保持するためのメソッドを追加
+%typemap(cscode) ResponseSpectrumMethod %{
+    private IResponseSpectrum __sptectrumRefs;
+
+    public void SetSpectrum(IResponseSpectrum spectrum) {
+        __sptectrumRefs = spectrum;
+        this.SpectrumFunction = spectrum;
+    }
+%}
 
 // C#のカスタムコードを追加
 %typemap(cscode) Material %{

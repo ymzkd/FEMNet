@@ -5,7 +5,7 @@ root = true
 # [*.{cpp,h}]
 
 # 改行設定
-end_of_line = lf
+end_of_line = crlf
 
 # UTF-8に変換
 charset = utf-8

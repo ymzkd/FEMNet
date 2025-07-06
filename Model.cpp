@@ -21,7 +21,13 @@
     #include <Spectra/MatOp/SparseSymShiftSolve.h>
     #include <Spectra/SymGEigsSolver.h>
     #include <Spectra/SymGEigsShiftSolver.h>
+    // #include <Spectra/Util/CompInfo.h>
 #endif
+
+#include <Eigen/Eigenvalues>
+#include <Spectra/SymGEigsSolver.h>
+#include <Spectra/MatOp/DenseSymMatProd.h>
+#include <Spectra/MatOp/DenseCholesky.h>
 
 #include "Element.h"
 #include "Components.h"
@@ -29,6 +35,62 @@
 
 #include "Model.h"
 
+// template <typename Scalar_ = double,
+//             int UploA = Eigen::Lower,
+//             int UploB = Eigen::Lower,
+//             int Flags = Eigen::ColMajor,
+//             typename StorageIndex = int>
+// class PardisoShiftInvert
+// {
+// public:
+//     using Scalar = Scalar_;
+
+// private:
+//     using Index = Eigen::Index;
+//     using SparseMatrix = Eigen::SparseMatrix<Scalar, Flags, StorageIndex>;
+//     using Vector = Eigen::Matrix<Scalar, Eigen::Dynamic, 1>;
+//     using MapConstVec = Eigen::Map<const Vector>;
+//     using MapVec = Eigen::Map<Vector>;
+//     using ConstGenericMatrix = const Eigen::Ref<const SparseMatrix>;
+
+//     ConstGenericMatrix m_matA;
+//     ConstGenericMatrix m_matB;
+//     const Index m_n;
+//     Eigen::PardisoLLT<SparseMatrix> m_solver;
+
+// public:
+//     template <typename DerivedA, typename DerivedB>
+//     PardisoShiftInvert(const Eigen::SparseMatrixBase<DerivedA> &A,
+//                         const Eigen::SparseMatrixBase<DerivedB> &B) : m_matA(A.derived()), m_matB(B.derived()), m_n(A.rows())
+//     {
+//         if (m_n != A.cols() || m_n != B.rows() || m_n != B.cols())
+//             throw std::invalid_argument("PardisoShiftInvert: A and B must be square matrices of the same size");
+//     }
+
+//     Index rows() const { return m_n; }
+//     Index cols() const { return m_n; }
+
+//     void set_shift(const Scalar &sigma)
+//     {
+//         // A - sigma * B を構築
+//         SparseMatrix matA = m_matA.template selfadjointView<UploA>();
+//         SparseMatrix matB = m_matB.template selfadjointView<UploB>();
+//         SparseMatrix mat = matA - sigma * matB;
+
+//         // PardisoLLTを使用して因数分解
+//         m_solver.compute(mat);
+
+//         if (m_solver.info() != Eigen::Success)
+//             throw std::invalid_argument("PardisoShiftInvert: Pardiso factorization failed with the given shift");
+//     }
+
+//     void perform_op(const Scalar *x_in, Scalar *y_out) const
+//     {
+//         MapConstVec x(x_in, m_n);
+//         MapVec y(y_out, m_n);
+//         y.noalias() = m_solver.solve(x);
+//     }
+// };
 
 // 入力: 対称なSparseMatrix、行インデックス配列、列インデックス配列
 void FEModel::splitMatrixWithResize(
@@ -599,6 +661,23 @@ Eigen::SparseMatrix<double> FEModel::AssembleStiffnessMatrix()
     return mat;
 }
 
+Eigen::SparseMatrix<double> FEModel::AssembleGeometricStiffnessMatrix(
+    const std::vector<Displacement>& displacements)
+{
+    int mat_size = Nodes.size() * 6;
+    Eigen::SparseMatrix<double> mat(mat_size, mat_size);
+    for each (std::shared_ptr<ElementBase> eh in Elements){
+
+        std::vector<Displacement> disp_vec(eh->NodeNum());
+        std::vector<Node*> nodes = eh->NodesList();
+        for (size_t i = 0; i < eh->NodeNum(); i++)
+            disp_vec[i] = displacements[nodes[i]->id];
+        eh->AssembleGeometricStiffMatrix(mat, disp_vec);
+    }
+        
+    return mat;
+}
+
 [[deprecated("This function is deprecated. Please use SolveLinearStatic instead.")]]
 void FEModel::Solve(std::vector<std::shared_ptr<LoadBase>> &loads,
                     std::vector<Displacement> &disp, std::vector<NodeLoad> &react)
@@ -799,9 +878,9 @@ bool DynamicAnalysis::Initialize()
 	// StiffnessMatrixの組み立て
     free_indices = model->FreeIndices();
     fixed_indices = model->FixIndices();
-    Eigen::SparseMatrix<double> ka; //, kb, kc;
-    FEModel::splitMatrixWithResize(model->AssembleStiffnessMatrix(), fixed_indices, ka);
-    stiffness_mat = ka;
+    //Eigen::SparseMatrix<double> ka; //, kb, kc;
+    FEModel::splitMatrixWithResize(model->AssembleStiffnessMatrix(), fixed_indices, matK_aa, matK_ab, matK_bb);
+    //matK_aa = ka;
 
     // MassMatrixの組み立て
     std::vector<Eigen::Triplet<double>> tripletList;
@@ -825,9 +904,9 @@ bool DynamicAnalysis::Initialize()
     }
     
     mass_mat_full *= (1.0 / model->GRAVACCEL);
-    Eigen::SparseMatrix<double> ma;
-    FEModel::splitMatrixWithResize(mass_mat_full, fixed_indices, ma);
-	mass_mat = ma;
+    //Eigen::SparseMatrix<double> ma;
+    FEModel::splitMatrixWithResize(mass_mat_full, fixed_indices, matM_aa, matM_ab, matM_bb);
+	//matM_aa = ma;
 
     // 減衰マトリクスの組み立て
     bool damp_init = damp_initializer->Initialize(this);
@@ -838,7 +917,8 @@ bool DynamicAnalysis::Initialize()
 
     // 因数分解しておく
 	double dt = accel_load.timestep;
-	compute_mat = mass_mat + 0.5 * dt * damping_mat + beta * dt * dt * stiffness_mat;
+    Eigen::SparseMatrix<double> compute_mat;
+	compute_mat = matM_aa + 0.5 * dt * matC_aa + beta * dt * dt * matK_aa;
 	solver.compute(compute_mat);
 
     // Recorder初期化
@@ -870,9 +950,22 @@ void DynamicAnalysis::ComputeStep()
 		if (fi == 0) post_accel0[i] = gacc.x;
 		else if (fi == 1) post_accel0[i] = gacc.y;
 		else if (fi == 2) post_accel0[i] = gacc.z;
-		else if (fi == 3) post_accel0[i] = 0.0;
-		else if (fi == 4) post_accel0[i] = 0.0;
-		else if (fi == 5) post_accel0[i] = 0.0;
+		//else if (fi == 3) post_accel0[i] = 0.0;
+		//else if (fi == 4) post_accel0[i] = 0.0;
+		//else if (fi == 5) post_accel0[i] = 0.0;
+    }
+
+    std::vector<int> fixed_indices = model->FixIndices();
+    Eigen::VectorXd post_accel0_fixed = Eigen::VectorXd::Zero(fixed_indices.size());
+    for (size_t i = 0; i < fixed_indices.size(); i++)
+    {
+        int fi = fixed_indices[i] % NODE_DOF;
+        if (fi == 0) post_accel0_fixed[i] = gacc.x;
+        else if (fi == 1) post_accel0_fixed[i] = gacc.y;
+        else if (fi == 2) post_accel0_fixed[i] = gacc.z;
+        //else if (fi == 3) post_accel0_fixed[i] = 0.0;
+        //else if (fi == 4) post_accel0_fixed[i] = 0.0;
+        //else if (fi == 5) post_accel0_fixed[i] = 0.0;
     }
 
 	// post_accel0の値を出力
@@ -884,9 +977,9 @@ void DynamicAnalysis::ComputeStep()
     //std::cout << "current_disp: " << current_disp.transpose() << std::endl;
 
     // 次ステップの変位、速度、加速度を取得	
-	Eigen::VectorXd post_accel = mass_mat.selfadjointView<Eigen::Upper>() * (-post_accel0)
-        - damping_mat.selfadjointView<Eigen::Upper>() * (current_vel + 0.5 * dt * current_accel)
-        - stiffness_mat.selfadjointView<Eigen::Upper>() * (current_disp + dt * current_vel + (0.5 - beta) * dt * dt * current_accel);
+	Eigen::VectorXd post_accel = matM_aa.selfadjointView<Eigen::Upper>() * (-post_accel0)
+        - matC_aa.selfadjointView<Eigen::Upper>() * (current_vel + 0.5 * dt * current_accel)
+        - matK_aa.selfadjointView<Eigen::Upper>() * (current_disp + dt * current_vel + (0.5 - beta) * dt * dt * current_accel);
     post_accel = solver.solve(post_accel);
 	Eigen::VectorXd post_vel = current_vel + 0.5 * (current_accel + post_accel) * dt;
 	Eigen::VectorXd post_disp = current_disp + dt * current_vel + (0.5 - beta) * dt * dt * current_accel + beta * dt * dt * post_accel;
@@ -897,17 +990,35 @@ void DynamicAnalysis::ComputeStep()
 	//std::cout << "post_disp: " << post_disp.transpose() << std::endl;
 
     // Update
+    current_step++;
 	current_accel = post_accel;
 	current_vel = post_vel;
 	current_disp = post_disp;
-    current_step++;
 
-    // Sampling
-    for each(auto sampler in samplers) {
-        sampler->Sampling(*this);
+    // Compute reaction force
+	Eigen::VectorXd rf = matK_ab.transpose() * current_disp + matM_ab.transpose() * current_accel + 
+        matC_ab.transpose() * current_vel + matM_bb * post_accel0_fixed;
+	Eigen::VectorXd rf_full = Eigen::VectorXd::Zero(model->NodeNum() * 6);
+    for (size_t i = 0; i < fixed_indices.size(); i++)
+		rf_full(fixed_indices[i]) = rf(i);
+
+	current_react_force.clear();
+    for (size_t i = 0; i < model->Nodes.size(); i++)
+    {
+        if (!model->Nodes[i].Fix.IsAnyFix()) continue;
+        int pos = i * 6;
+        current_react_force.push_back(NodeLoad(i, rf_full[pos], rf_full[pos + 1], rf_full[pos + 2], rf_full[pos + 3], rf_full[pos + 4], rf_full[pos + 5]));
     }
-    // Recording
-	energy_recorder.Record(*this);
+
+    if (RecordEnabled) {
+        // Sampling
+        for each(auto sampler in samplers) {
+            sampler->Sampling(*this);
+        }
+        // Recording
+        energy_recorder.Record(*this);
+    }
+
 }
 
 void DynamicAnalysis::ComputeSteps(int steps)
@@ -919,14 +1030,56 @@ void DynamicAnalysis::ComputeSteps(int steps)
 	}
 
     // ステップ数がデータ数を超えた場合も終了
-	if (current_step + steps >= accel_load.Accels.size()) {
-		std::cout << "Dynamic analysis completed." << std::endl;
-		return;
-	}
+	//if (current_step + steps >= accel_load.Accels.size()) {
+	//	std::cout << "Dynamic analysis completed." << std::endl;
+	//	return;
+	//}
 
 	// ステップ数分計算
 	for (int i = current_step; i < steps; i++)
 		ComputeStep();
+}
+
+bool DynamicAnalysis::SetDisplacements(std::vector<Displacement> disps)
+{
+    for (size_t i = 0; i < free_indices.size(); i++) {
+		size_t idx = free_indices[i];
+		size_t pos = idx % NODE_DOF;
+		size_t node_id = idx / NODE_DOF;
+		
+        if (node_id >= disps.size()) return false;
+
+        current_disp(i) = disps[node_id].displace[pos];
+    }
+    return true;
+}
+
+bool DynamicAnalysis::SetVelocities(std::vector<Displacement> vels)
+{
+    for (size_t i = 0; i < free_indices.size(); i++) {
+        size_t idx = free_indices[i];
+        size_t pos = idx % NODE_DOF;
+        size_t node_id = idx / NODE_DOF;
+
+        if (node_id >= vels.size()) return false;
+
+        current_vel(i) = vels[node_id].displace[pos];
+    }
+    return true;
+}
+
+bool DynamicAnalysis::SetAccelerations(std::vector<Displacement> accs)
+{
+    for (size_t i = 0; i < free_indices.size(); i++) {
+        size_t idx = free_indices[i];
+        size_t pos = idx % NODE_DOF;
+        size_t node_id = idx / NODE_DOF;
+
+        if (node_id >= accs.size()) return false;
+
+        current_accel(i) = accs[node_id].displace[pos];
+    }
+    return true;
 }
 
 std::vector<Displacement> DynamicAnalysis::GetDisplacements()
@@ -1041,7 +1194,9 @@ bool FEDynamicStiffDampInitializer::Initialize(DynamicAnalysis* analysis)
 	}
 
 	natural_angle_velocity = eigen_values[0];
-    analysis->damping_mat = analysis->stiffness_mat * (2.0 * damp_rate / natural_angle_velocity);
+    analysis->matC_aa = analysis->matK_aa * (2.0 * damp_rate / natural_angle_velocity);
+    analysis->matC_ab = analysis->matK_ab * (2.0 * damp_rate / natural_angle_velocity);
+    analysis->matC_bb = analysis->matK_bb * (2.0 * damp_rate / natural_angle_velocity);
 
 	return true;
 }
@@ -1073,7 +1228,7 @@ std::vector<double> FEVibrateResult::ParticipationFactors()
 
 	std::vector<double> participation_factors;
 
-    for (size_t i = 0; i < modes_num(); i++)
+    for (size_t i = 0; i < ModeNum(); i++)
     {
 		Eigen::VectorXd v = Eigen::VectorXd::Zero(model->NodeNum() * 6);
 		for (size_t j = 0; j < model->NodeNum(); j++)
@@ -1123,7 +1278,7 @@ std::vector<double> FEVibrateResult::ParticipationFactors(Vector direction)
 
     std::vector<double> participation_factors;
 
-    for (size_t i = 0; i < modes_num(); i++)
+    for (size_t i = 0; i < ModeNum(); i++)
     {
         Eigen::VectorXd v = Eigen::VectorXd::Zero(model->NodeNum() * 6);
         Eigen::VectorXd f = Eigen::VectorXd::Zero(model->NodeNum() * 6);
@@ -1178,7 +1333,7 @@ std::vector<Displacement> FEVibrateResult::ParticipationDirectedFactors()
 
     std::vector<Displacement> participation_factors;
 
-    for (size_t i = 0; i < modes_num(); i++)
+    for (size_t i = 0; i < ModeNum(); i++)
     {
         Eigen::VectorXd v = Eigen::VectorXd::Zero(model->NodeNum() * 6);
         for (size_t j = 0; j < model->NodeNum(); j++)
@@ -1239,7 +1394,7 @@ std::vector<double> FEVibrateResult::EffectiveMassRates()
 
     std::vector<double> mass_rates;
 
-    for (size_t i = 0; i < modes_num(); i++)
+    for (size_t i = 0; i < ModeNum(); i++)
     {
         Eigen::VectorXd v = Eigen::VectorXd::Zero(model->NodeNum() * 6);
         for (size_t j = 0; j < model->NodeNum(); j++)
@@ -1292,7 +1447,7 @@ std::vector<Displacement> FEVibrateResult::EffectiveDirectedMassRates()
     std::vector<Displacement> mass_rates;
 	//Eigen::VectorXd mass_lists = Eigen::VectorXd::Zero(modes_num());
 
-    for (size_t i = 0; i < modes_num(); i++)
+    for (size_t i = 0; i < ModeNum(); i++)
     {
         Eigen::VectorXd v = Eigen::VectorXd::Zero(model->NodeNum() * 6);
         for (size_t j = 0; j < model->NodeNum(); j++)
@@ -1348,10 +1503,10 @@ std::vector<Displacement> ResponseSpectrumMethod::calculate_displacementsCQC()
     std::vector<Displacement> responses(model->NodeNum());
     for (size_t j = 0; j < part_facs.size(); j++)
     {
-        std::vector<Displacement> uj = VibrateResult.mode_vectors[j];
+        std::vector<Displacement> uj = VibrateResult.ModeVectors()[j];
         for (size_t k = 0; k < part_facs.size(); k++)
         {
-            std::vector<Displacement> uk = VibrateResult.mode_vectors[k];
+            std::vector<Displacement> uk = VibrateResult.ModeVectors()[k];
 
             double rjk = periods[k] / periods[j];
 			double correlation = 8.0 * damping_rate * damping_rate * (1.0 + rjk) * pow(rjk, 1.5) /
@@ -1394,7 +1549,7 @@ std::vector<Displacement> ResponseSpectrumMethod::calculate_displacementsSRSS()
     std::vector<Displacement> responses(model->NodeNum());
     for (size_t i = 0; i < part_facs.size(); i++)
     {
-        std::vector<Displacement> mode_vector = VibrateResult.mode_vectors[i];
+        std::vector<Displacement> mode_vector = VibrateResult.ModeVectors()[i];
         //double sd = SpectrumFunction->Displacement(periods[i]);
         // | sd x vector x beta_i |
 
@@ -1430,7 +1585,7 @@ std::vector<Displacement> ResponseSpectrumMethod::calculate_displacementsABS()
     std::vector<Displacement> responses(model->NodeNum());
     for (size_t i = 0; i < part_facs.size(); i++)
     {
-        std::vector<Displacement> mode_vector = VibrateResult.mode_vectors[i];
+        std::vector<Displacement> mode_vector = VibrateResult.ModeVectors()[i];
         //double sd = SpectrumFunction->Displacement(periods[i]);
         // | sd x vector x beta_i |
 
@@ -1476,6 +1631,7 @@ ResponseSpectrumMethod::ResponseSpectrumMethod(std::shared_ptr<FEModel> model,
 
 std::vector<Displacement> ResponseSpectrumMethod::GetDisplacements()
 {
+    //return calculate_displacements();
     return displacements;
 }
 
@@ -1490,7 +1646,7 @@ std::vector<Displacement> ResponseSpectrumMethod::GetAccelerations()
     std::vector<Displacement> accels(model->NodeNum());
     for (size_t i = 0; i < part_facs.size(); i++)
     {
-        std::vector<Displacement> mode_vector = VibrateResult.mode_vectors[i];
+        std::vector<Displacement> mode_vector = VibrateResult.ModeVectors()[i];
         //double sa = SpectrumFunction->Acceleration(periods[i]);
         // | sd x vector x beta_i |
         for (size_t j = 0; j < mode_vector.size(); j++)
@@ -1567,29 +1723,34 @@ void DAEnergyRecorder::Initialize()
     potential_energy.clear();
     damping_energy.clear();
     input_energy.clear();
+
+	kinetic_energy.push_back(0);
+	potential_energy.push_back(0);
+	damping_energy.push_back(0);
+	input_energy.push_back(0);
 }
 
 void DAEnergyRecorder::RecordKineticEnergy(DynamicAnalysis& da)
 {
-    double energy = 0.5 * da.current_disp.dot(da.stiffness_mat.selfadjointView<Eigen::Upper>()* da.current_disp);
+    double energy = 0.5 * da.current_disp.dot(da.matK_aa.selfadjointView<Eigen::Upper>()* da.current_disp);
 	kinetic_energy.push_back(energy);
 }
 
 void DAEnergyRecorder::RecordPotentialEnergy(DynamicAnalysis& da)
 {
-    double energy = 0.5 * da.current_vel.dot(da.mass_mat.selfadjointView<Eigen::Upper>() * da.current_vel);
+    double energy = 0.5 * da.current_vel.dot(da.matM_aa.selfadjointView<Eigen::Upper>() * da.current_vel);
 	potential_energy.push_back(energy);
 }
 
 void DAEnergyRecorder::RecordDampingEnergy(DynamicAnalysis& da)
 {
-	double energy = da.current_vel.dot(da.damping_mat.selfadjointView<Eigen::Upper>() * da.current_vel);
+	double energy = da.current_vel.dot(da.matC_aa.selfadjointView<Eigen::Upper>() * da.current_vel);
 	damping_energy.push_back(energy);
 }
 
 void DAEnergyRecorder::RecordInputEnergy(DynamicAnalysis& da)
 {
-    Vector gacc = da.accel_load.Direction * da.accel_load.Accels[da.current_step];
+    Vector gacc = da.accel_load.Direction * da.accel_load.Accels[da.current_step - 1];
     std::vector<int> free_indices = da.model->FreeIndices();
     Eigen::VectorXd post_accel0 = Eigen::VectorXd::Zero(free_indices.size());
     for (size_t i = 0; i < free_indices.size(); i++)
@@ -1603,7 +1764,7 @@ void DAEnergyRecorder::RecordInputEnergy(DynamicAnalysis& da)
         else if (fi == 5) post_accel0[i] = 0.0;
     }
 
-    Eigen::VectorXd post_accel = da.mass_mat.selfadjointView<Eigen::Upper>() * post_accel0;
+    Eigen::VectorXd post_accel = da.matM_aa.selfadjointView<Eigen::Upper>() * post_accel0;
     input_energy.push_back(post_accel.dot(da.current_vel));
 }
 
@@ -1613,4 +1774,281 @@ void DAEnergyRecorder::Record(DynamicAnalysis& da)
 	RecordPotentialEnergy(da);
 	RecordDampingEnergy(da);
 	RecordInputEnergy(da);
+}
+
+int FEBucklingAnalysis::SolveBuckling()
+{
+    int computed_num = mode_num;
+    bool solve_in_spectra = true;
+	int solver_selection = 1; // 1: Spectra sparse, 2: Spectra dense, other: Eigen dense
+
+    std::vector<int> free_indices = deform_case->model->FreeIndices();
+    std::vector<int> fixed_indices = deform_case->model->FixIndices();
+    Eigen::SparseMatrix<double> ka; //, kb, kc;
+    FEModel::splitMatrixWithResize(deform_case->model->AssembleStiffnessMatrix(), fixed_indices, ka);
+
+    Eigen::SparseMatrix<double> kg; //, kb, kc;
+    FEModel::splitMatrixWithResize(
+        deform_case->model->AssembleGeometricStiffnessMatrix(deform_case->GetDisplacements()), 
+        fixed_indices, kg);
+
+    if (solver_selection == 1)
+    {
+
+        int ncv = 2 * computed_num + 1; // Recommended value
+
+        //using OpType = Spectra::SymShiftInvert<double, Eigen::Sparse, Eigen::Sparse, Eigen::Upper>;
+        //using BOpType = Spectra::SparseSymMatProd<double, Eigen::Upper>;
+        //OpType A_op(ka, kg);
+        //BOpType B_op(kg);
+        //Spectra::SymGEigsShiftSolver<OpType, BOpType, Spectra::GEigsMode::Buckling>
+        //   geigs(A_op, B_op, computed_num, ncv, 0.1);
+
+        using OpType = Spectra::SparseSymMatProd<double, Eigen::Upper>;
+        using BOpType = Spectra::SparseCholesky<double, Eigen::Upper>;
+        OpType A_op(-kg); // Invert
+        BOpType B_op(ka); // Invert
+        Spectra::SymGEigsSolver<OpType, BOpType, Spectra::GEigsMode::Cholesky> 
+             geigs(A_op, B_op, computed_num, ncv);
+    
+        //  using OpType = Spectra::SparseSymMatProd<double, Eigen::Upper>;
+        //  using BOpType = Spectra::SparseRegularInverse<double, Eigen::Upper>;
+        //  OpType A_op(kg);
+        //  BOpType B_op(ka);
+        //  Spectra::SymGEigsSolver<OpType, BOpType, Spectra::GEigsMode::RegularInverse>
+        //   geigs(A_op, B_op, computed_num, ncv);
+
+        geigs.init();
+        //int nconv = geigs.compute(Spectra::SortRule::LargestMagn);
+        //int nconv = geigs.compute(Spectra::SortRule::SmallestMagn);
+        // int nconv = geigs.compute(Spectra::SortRule::SmallestAlge);
+        int nconv = geigs.compute(Spectra::SortRule::LargestAlge);
+
+        if (geigs.info() == Spectra::CompInfo::Successful)
+        {
+            Eigen::MatrixXd part_eigen_vectors = geigs.eigenvectors();
+            // Eigen::MatrixXd tmp_mat2 = -kg * u1s;
+            // Eigen::MatrixXd u2s = solver.solve(tmp_mat2);
+            Eigen::MatrixXd eigs_vector = Eigen::MatrixXd::Zero(deform_case->model->DOFNum(), computed_num);
+            for (size_t i = 0; i < free_indices.size(); i++)
+            {
+                eigs_vector.row(free_indices[i]) = part_eigen_vectors.row(i);
+                // for (size_t i = 0; i < other_indices.size(); i++)
+                //     eigs_vector.row(free_indices[other_indices[i]]) = u1s.row(i);
+                // for (size_t i = 0; i < shrink_indices.size(); i++)
+                //     eigs_vector.row(free_indices[shrink_indices[i]]) = u2s.row(i);
+            }
+
+            std::cout << "Column Num: " << eigs_vector.cols() << std::endl;
+            std::cout << "Row Num: " << eigs_vector.rows() << std::endl;
+            //std::cout << "Check Calc Eigen: " << part_eigen_vectors.transpose() * kg.selfadjointView<Eigen::Upper>() * part_eigen_vectors << std::endl;
+            for (size_t i = 0; i < nconv; i++)
+            {
+			    //std::cout << "Eigen Value Check: " << part_eigen_vectors.col(i).transpose() * kg.selfadjointView<Eigen::Upper>() * part_eigen_vectors.col(i) << std::endl;
+            
+                //std::cout << "Vector Size: " << eigs_vector.col(i).norm() << std::endl;
+                std::vector<Displacement> v(deform_case->model->NodeNum());
+                for (size_t j = 0; j < deform_case->model->NodeNum(); j++)
+                {
+                    int p = j * 6;
+                    v[j] = Displacement(
+                        eigs_vector(p, i), eigs_vector(p + 1, i), eigs_vector(p + 2, i),
+                        eigs_vector(p + 3, i), eigs_vector(p + 4, i), eigs_vector(p + 5, i));
+                }
+                mode_vectors.push_back(v);
+            }
+
+            // 固有値を元の固有値問題に戻す
+            for each(double v in geigs.eigenvalues()) {
+                eigs.push_back(1.0 / v);
+			    //std::cout << "Eigen Value Check2: " << v << std::endl;
+            }
+            
+        }
+        else
+        {
+            return -1;
+        }
+        mode_num = nconv;
+    }
+    else if (solver_selection == 2) {
+        // Dense Solver
+        Eigen::MatrixXd kg_dense = Eigen::MatrixXd(kg);
+        Eigen::MatrixXd k_dense = Eigen::MatrixXd(ka);
+
+        // 行列演算子を作成
+        Spectra::DenseSymMatProd<double, Eigen::Upper> kg_dense_op(-kg_dense);
+        Spectra::DenseCholesky<double, Eigen::Upper> k_dense_op(k_dense);
+
+        Spectra::SymGEigsSolver<Spectra::DenseSymMatProd<double, Eigen::Upper>,
+            Spectra::DenseCholesky<double, Eigen::Upper>,
+            Spectra::GEigsMode::Cholesky> solver(kg_dense_op, k_dense_op, computed_num, 2 * computed_num + 1);
+
+        solver.init();
+        int nconv = solver.compute(Spectra::SortRule::LargestAlge);
+
+        if (solver.info() == Spectra::CompInfo::Successful)
+        {
+            Eigen::MatrixXd part_eigen_vectors = solver.eigenvectors();
+            // Eigen::MatrixXd tmp_mat2 = -kg * u1s;
+            // Eigen::MatrixXd u2s = solver.solve(tmp_mat2);
+            Eigen::MatrixXd eigs_vector = Eigen::MatrixXd::Zero(deform_case->model->DOFNum(), computed_num);
+            for (size_t i = 0; i < free_indices.size(); i++)
+            {
+                eigs_vector.row(free_indices[i]) = part_eigen_vectors.row(i);
+                // for (size_t i = 0; i < other_indices.size(); i++)
+                //     eigs_vector.row(free_indices[other_indices[i]]) = u1s.row(i);
+                // for (size_t i = 0; i < shrink_indices.size(); i++)
+                //     eigs_vector.row(free_indices[shrink_indices[i]]) = u2s.row(i);
+            }
+
+            //std::cout << "Column Num: " << eigs_vector.cols() << std::endl;
+            //std::cout << "Row Num: " << eigs_vector.rows() << std::endl;
+            //std::cout << "Check Calc Eigen: " << part_eigen_vectors.transpose() * kg.selfadjointView<Eigen::Upper>() * part_eigen_vectors << std::endl;
+            for (size_t i = 0; i < nconv; i++)
+            {
+                //std::cout << "Eigen Value Check: " << part_eigen_vectors.col(i).transpose() * kg.selfadjointView<Eigen::Upper>() * part_eigen_vectors.col(i) << std::endl;
+
+                //std::cout << "Vector Size: " << eigs_vector.col(i).norm() << std::endl;
+                std::vector<Displacement> v(deform_case->model->NodeNum());
+                for (size_t j = 0; j < deform_case->model->NodeNum(); j++)
+                {
+                    int p = j * 6;
+                    v[j] = Displacement(
+                        eigs_vector(p, i), eigs_vector(p + 1, i), eigs_vector(p + 2, i),
+                        eigs_vector(p + 3, i), eigs_vector(p + 4, i), eigs_vector(p + 5, i));
+                }
+                mode_vectors.push_back(v);
+            }
+
+            // 固有値を元の固有値問題に戻す
+            for each(double v in solver.eigenvalues()) {
+                eigs.push_back(1.0 / v);
+                //std::cout << "Eigen Value Check2: " << v << std::endl;
+            }
+
+        }
+        else
+        {
+            return -1;
+        }
+        mode_num = nconv;
+
+    }
+    else {
+        // 密行列への変換
+        Eigen::MatrixXd kg_dense = Eigen::MatrixXd(-kg);
+        Eigen::MatrixXd k_dense = Eigen::MatrixXd(ka);
+
+        // 対称行列の場合、下三角部分を補完
+        kg_dense.triangularView<Eigen::Lower>() = kg_dense.triangularView<Eigen::Upper>().transpose();
+        k_dense.triangularView<Eigen::Lower>() = k_dense.triangularView<Eigen::Upper>().transpose();
+
+        // 一般固有値問題を解く
+        Eigen::GeneralizedSelfAdjointEigenSolver<Eigen::MatrixXd> solver(kg_dense, k_dense);
+
+        if (solver.info() == Eigen::Success) {
+            Eigen::VectorXd eigs_arr = solver.eigenvalues();
+            for (size_t i = 0; i < mode_num; i++)
+            {
+				double eig = eigs_arr[eigs_arr.size() - i - 1];
+                eigs.push_back(1.0 / eig);
+            }
+
+            //for (size_t i = 0; i < mode_num; i++)
+            //{
+            //    double eig = eigs_arr[eigs_arr.size() - i - 1];
+            //    eigs.push_back(1.0 / eig);
+            //}
+
+   //         for (double v : solver.eigenvalues()) {
+   //             eigs.push_back(1.0 / v);
+			//}
+
+            Eigen::MatrixXd part_eigen_vectors = solver.eigenvectors();
+            // Eigen::MatrixXd tmp_mat2 = -kg * u1s;
+            // Eigen::MatrixXd u2s = solver.solve(tmp_mat2);
+            Eigen::MatrixXd eigs_vector = Eigen::MatrixXd::Zero(deform_case->model->DOFNum(), mode_num);
+            for (size_t j = 0; j < mode_num; j++)
+            {
+                for (size_t i = 0; i < free_indices.size(); i++)
+                    eigs_vector(free_indices[i], j) = part_eigen_vectors(i, j);
+            }
+        }
+        else {
+            return -1;
+        }
+    }
+
+    
+    return mode_num;
+}
+
+BeamStressData StaticCombinationOperator::GetBeamStress(int eid, double p)
+{
+    BeamStressData data;
+    for (StaticDeformFactor op : this->cases)
+        data += op.factor * op.op->GetBeamStress(eid, p);
+    return data;
+}
+
+PlateStressData StaticCombinationOperator::GetPlateStressData(int eid, double xi, double eta)
+{
+    PlateStressData data;
+    for (StaticDeformFactor op : this->cases)
+        data += op.factor * op.op->GetPlateStressData(eid, xi, eta);
+    return data;
+}
+
+Displacement StaticCombinationOperator::GetBeamDisplace(int eid, double p)
+{
+	Displacement disp;
+	for (StaticDeformFactor op : this->cases)
+		disp += op.factor * op.op->GetBeamDisplace(eid, p);
+
+    return disp;
+}
+
+std::vector<Displacement> StaticCombinationOperator::GetDisplacements()
+{
+	std::vector<Displacement> disp(model->NodeNum());
+	for (StaticDeformFactor op : this->cases)
+	{
+		std::vector<Displacement> d = op.op->GetDisplacements();
+		for (size_t i = 0; i < d.size(); i++)
+			disp[i] += d[i] * op.factor;
+	}
+    return disp;
+}
+
+std::vector<NodeLoad> StaticCombinationOperator::GetReactForces()
+{
+    std::vector<NodeLoad> combined_react;
+    for (const auto& case_factor : cases) {
+       auto react = case_factor.op->GetReactForces();
+       for (size_t i = 0; i < react.size(); i++)
+       {
+           bool need_fallback = false;
+           // compine_reactがi番目要素を含む場合はi番目要素をチェック
+           if (i < combined_react.size()) {
+               // i番目要素が対象のノードか？
+               if (combined_react[i].id == react[i].id) {
+                   combined_react[i].data += (case_factor.factor * react[i].data);
+                   continue;
+               }
+           }
+
+           for (auto& cr : combined_react) {
+               if (cr.id == react[i].id) {
+                   cr.data += (case_factor.factor * react[i].data);
+                   break;
+               }
+               need_fallback = true;
+           }
+
+           if (need_fallback)
+               combined_react.push_back(react[i]);
+       }
+    }
+    return combined_react;
 }

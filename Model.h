@@ -42,13 +42,21 @@ public:
     //friend class DynamicAnalysis;
 
     int step;
+    std::string Name;
     std::vector<Displacement> velocity, displacement, acceleration;
+    
+	DASampler() : step(0), Name("") {}
+	DASampler(std::string name) : step(0), Name(name) {}
+    
     virtual void Sampling(DynamicAnalysis& analysis) = 0;
+
 };
 
 class DASampler_MaxDisplacement : public DASampler {
 public:
     double max_displacement = 0.0;
+
+	DASampler_MaxDisplacement() : DASampler("MaxDisplacement") {}
 
     void Sampling(DynamicAnalysis& da) override;
 };
@@ -64,6 +72,9 @@ private:
     std::vector<int> UnLumpedFixIndices();
 
     Eigen::SparseMatrix<double> AssembleStiffnessMatrix();
+
+    Eigen::SparseMatrix<double> AssembleGeometricStiffnessMatrix(
+        const std::vector<Displacement> &displacements);
     
     /// <summary>
     /// 
@@ -81,14 +92,10 @@ private:
         Eigen::SparseMatrix<double>& fixed_matrix);
 
     /// <summary>
-    /// ┌      ┐
-    /// │ A  B │
-    /// │ C  D │
-    /// └      ┘
-
-    /// │ A  B │
-    /// │ C  D │
-
+    /// ┌                  ┐
+    /// │ free  free_fixed │  *
+    /// │  *      fixed    │ { fixed_indices }
+    /// └                  ┘
     /// </summary>
     /// <param name="A"></param>
     /// <param name="fixed_indices"></param>
@@ -104,6 +111,7 @@ private:
         const std::vector<int>& colIndices);
 
 	friend class DynamicAnalysis;
+    friend class FEBucklingAnalysis;
 
 public:
     static constexpr double GRAVACCEL = 9806.6;\
@@ -154,11 +162,12 @@ public:
     QuadPlateElement* GetQuadPlateElement(int id);
     TriPlateElement* GetTriPlateElement(int id);
 
+
     [[deprecated("This function is deprecated. Please use SolveLinearStatic instead.")]]
     void Solve(
-        std::vector<std::shared_ptr<LoadBase>>& loads,
-        std::vector<Displacement>& disp,
-        std::vector<NodeLoad>& react);
+        std::vector<std::shared_ptr<LoadBase>> &loads,
+        std::vector<Displacement> &disp,
+        std::vector<NodeLoad> &react);
 
     void SolveLinearStatic(
         std::vector<std::shared_ptr<LoadBase>>& loads,
@@ -190,6 +199,10 @@ public:
     virtual Displacement GetBeamDisplace(int eid, double p) = 0;
     //FEDeformCase(std::shared_ptr<FEModel> model, std::vector<std::shared_ptr<LoadBase>> loads, std::vector<Displacement> displace, std::vector<NodeLoad> react_force)
     virtual std::vector<Displacement> GetDisplacements() = 0;
+
+    virtual std::vector<NodeLoad> GetReactForces() {
+		return std::vector<NodeLoad>();
+    };
     //virtual std::vector<Displacement> GetVelocities() = 0;
     //virtual std::vector<Displacement> GetAccelerations() = 0;
 };
@@ -232,15 +245,64 @@ public:
 
     // FEDeformCase を介して継承されました
     std::vector<Displacement> GetDisplacements() override;
+
+    std::vector<NodeLoad> GetReactForces() override { return react_force; };
+}; // FEStaticResult
+
+struct StaticDeformFactor {
+public:
+	std::shared_ptr<FEStaticResult> op;
+	double factor;
+	StaticDeformFactor(std::shared_ptr<FEStaticResult> op, double factor)
+		: op(op), factor(factor) {
+	};
 };
 
-class FEVibrateResult {
+class StaticCombinationOperator : public FEDeformCase {
 public:
-    std::shared_ptr<FEModel> model;
-    
-    int modes_num() { return eigs.size(); };
+	std::vector<StaticDeformFactor> cases;
+	StaticCombinationOperator() {};
+	StaticCombinationOperator(std::vector<StaticDeformFactor> cases)
+		: cases(cases) {
+	};
+
+    // FEDeformCase を介して継承されました
+    BeamStressData GetBeamStress(int eid, double p) override;
+
+    PlateStressData GetPlateStressData(int eid, double xi, double eta) override;
+
+    Displacement GetBeamDisplace(int eid, double p) override;
+
+    std::vector<Displacement> GetDisplacements() override;
+
+    std::vector<NodeLoad> GetReactForces() override;
+        
+}; // StaticCombinationOperator
+
+class FEModeOperator {
+public:
+    FEModeOperator() {};
+    // ModeOperator(std::shared_ptr<FEModel> model) : model(model) {};
+
+    // std::shared_ptr<FEModel> model;
+    virtual std::vector<std::vector<Displacement>> ModeVectors() = 0;
+    virtual std::vector<double> EigenValues() = 0;
+    virtual int ModeNum() = 0;
+};
+
+class FEVibrateResult : public FEModeOperator {
+private:
     std::vector<double> eigs; // Omegas
     std::vector<std::vector<Displacement>> mode_vectors;
+public:
+    std::shared_ptr<FEModel> model;
+
+    int ModeNum() override { return eigs.size(); };
+    std::vector<std::vector<Displacement>> ModeVectors() override { return mode_vectors; };
+    std::vector<double> EigenValues() override { return eigs; };
+
+    // int ModeNum() { return eigs.size(); };
+    
 
 	FEVibrateResult() {};
 
@@ -249,7 +311,7 @@ public:
         std::vector<std::vector<Displacement>> mode_vectors,
         std::vector<double> eigs)
         : model(model), mode_vectors(mode_vectors),
-        eigs(eigs) {};
+          eigs(eigs) {};
 
     std::vector<double> ParticipationFactors();
     std::vector<double> ParticipationFactors(Vector direction);
@@ -265,6 +327,22 @@ public:
 
         return periods;
 	}
+};
+
+class FEBucklingAnalysis : public FEModeOperator {
+public:
+    std::shared_ptr<FEDeformCase> deform_case;
+    FEBucklingAnalysis(std::shared_ptr<FEDeformCase> deform_case) : deform_case(deform_case) {};
+
+    int ModeNum() override { return mode_num; }
+    std::vector<std::vector<Displacement>> ModeVectors() override { return mode_vectors; }
+    std::vector<double> EigenValues() override { return eigs; }
+
+    int SolveBuckling();
+    int mode_num = 1;
+    std::vector<double> eigs;
+    std::vector<std::vector<Displacement>> mode_vectors;
+
 };
 
 class DARecorder {
@@ -296,16 +374,17 @@ private:
 #else
     Eigen::SimplicialLLT<Eigen::SparseMatrix<double>, Eigen::Upper> solver;
 #endif
-	Eigen::SparseMatrix<double> mass_mat;
-	Eigen::SparseMatrix<double> stiffness_mat;
-	Eigen::SparseMatrix<double> damping_mat;
-	Eigen::SparseMatrix<double> compute_mat;
+	Eigen::SparseMatrix<double> matM_aa, matM_ab, matM_bb;
+	Eigen::SparseMatrix<double> matK_aa, matK_ab, matK_bb;
+	Eigen::SparseMatrix<double> matC_aa, matC_ab, matC_bb;
+	/*Eigen::SparseMatrix<double> compute_mat;*/
 	// Eigen::SparseMatrix<double> m_sh, k_sh, d_sh;
 	// Eigen::SparseMatrix<double> m_sha, m_shb, m_shc, m_shd;
 	std::vector<int> free_indices, fixed_indices;
 	//std::vector<int> shrink_indices, other_indices;
 
     Eigen::VectorXd current_disp, current_vel, current_accel;
+	std::vector<NodeLoad> current_react_force;
 
     friend class FEDynamicDampInitializer;
     friend class FEDynamicStiffDampInitializer;
@@ -319,8 +398,9 @@ public:
 	int current_step = 0;
 	//double damping_rate = 0.05; // 減衰比
 
-    std::list<std::shared_ptr<DASampler>> samplers;
+    std::vector<std::shared_ptr<DASampler>> samplers;
 	DAEnergyRecorder energy_recorder;
+	bool RecordEnabled = true;
 
 	//const double tmp_w1 = 720;
 	//const double tmp_w1 = 4200;
@@ -332,7 +412,8 @@ public:
     //    : model(std::make_shared<FEModel>(model)), accel_load(accel_load) {
     //}
 
-    DynamicAnalysis(std::shared_ptr<FEModel> model, DynamicAccelLoad accel_load, FEDynamicDampInitializer* damp = nullptr);
+    DynamicAnalysis(std::shared_ptr<FEModel> model, 
+        DynamicAccelLoad accel_load, FEDynamicDampInitializer* damp = nullptr);
 	//	: model(model), accel_load(accel_load) {
 	//};
 
@@ -343,15 +424,19 @@ public:
 		//current_disp.clear();
 		//current_vel.clear();
 		//current_accel.clear();
-		mass_mat.resize(0, 0);
-		stiffness_mat.resize(0, 0);
-		damping_mat.resize(0, 0);
-		compute_mat.resize(0, 0);
+		matM_aa.resize(0, 0);
+		matK_aa.resize(0, 0);
+		matC_aa.resize(0, 0);
+		//compute_mat.resize(0, 0);
 	}
 
 	// Newmarkのβ法による動的解析
     void ComputeStep();
 	void ComputeSteps(int steps);
+
+    bool SetDisplacements(std::vector<Displacement> disps);
+    bool SetVelocities(std::vector<Displacement> vels);
+    bool SetAccelerations(std::vector<Displacement> accs);
 
     std::vector<Displacement> GetDisplacements();
 	std::vector<Displacement> GetVelocities();
@@ -373,6 +458,8 @@ public:
     BeamStressData GetBeamStress(int eid, double p) override;
     PlateStressData GetPlateStressData(int eid, double xi, double eta) override;
     Displacement GetBeamDisplace(int eid, double p) override;
+
+    std::vector<NodeLoad> GetReactForces() override { return current_react_force; };
 };
 
 /// <summary>

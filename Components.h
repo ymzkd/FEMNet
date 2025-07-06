@@ -250,6 +250,7 @@ public:
     double A;
     double Iy;
     double Iz;
+    double Iyz = 0;
     double K;
 
     Section(double A, double Iy, double Iz, double K)
@@ -422,6 +423,31 @@ public:
     double Mx() const { return loads[3]; }
     double My() const { return loads[4]; }
     double Mz() const { return loads[5]; }
+
+    // 二項演算子
+    NodeLoadData operator+(const NodeLoadData& other) const;
+    NodeLoadData operator-(const NodeLoadData& other) const;
+    NodeLoadData operator*(double scalar) const;
+    NodeLoadData operator/(double scalar) const;
+    
+    // 単項演算子
+    NodeLoadData operator-() const;
+    
+    // 複合代入演算子
+    NodeLoadData& operator+=(const NodeLoadData& other);
+    NodeLoadData& operator-=(const NodeLoadData& other);
+    NodeLoadData& operator*=(double scalar);
+    NodeLoadData& operator/=(double scalar);
+    
+    // friend関数
+    friend NodeLoadData operator*(double scalar, const NodeLoadData& load);
+    friend std::ostream& operator<<(std::ostream& os, const NodeLoadData& load);
+
+private:
+    // IDを決定するヘルパー関数
+    static int determineId(int id1, int id2);
 };
+
+std::ostream& operator<<(std::ostream& os, const NodeLoadData& load);
 
 #endif

@@ -253,3 +253,123 @@ Plane Plane::CreateFromPoints(Point p0, Point p1, Point p2)
 
     return Plane(p0, ex, ey, ez);
 }
+
+// NodeLoadData 演算子実装
+
+// IDを決定するヘルパー関数
+int NodeLoadData::determineId(int id1, int id2) {
+    if (id1 >= 0 && id2 < 0) {
+        return id1;  // 片方が正・片方が負の場合は正のIDを採用
+    } else if (id1 < 0 && id2 >= 0) {
+        return id2;  // 片方が正・片方が負の場合は正のIDを採用
+    } else if (id1 < 0 && id2 < 0) {
+        return -1;   // 両方が負の場合は-1
+    } else {
+        // 両方が正の場合は最初のオペランドのIDを保持し、Warningを出力
+        if (id1 != id2) {
+            std::cerr << "Warning: Both NodeLoadData have positive IDs (" 
+                      << id1 << ", " << id2 << "). Using first operand's ID: " << id1 << std::endl;
+        }
+        return id1;
+    }
+}
+
+// 二項演算子の実装
+NodeLoadData NodeLoadData::operator+(const NodeLoadData& other) const {
+    NodeLoadData result;
+    result.id = determineId(this->id, other.id);
+    for (int i = 0; i < 6; i++) {
+        result.loads[i] = this->loads[i] + other.loads[i];
+    }
+    return result;
+}
+
+NodeLoadData NodeLoadData::operator-(const NodeLoadData& other) const {
+    NodeLoadData result;
+    result.id = determineId(this->id, other.id);
+    for (int i = 0; i < 6; i++) {
+        result.loads[i] = this->loads[i] - other.loads[i];
+    }
+    return result;
+}
+
+NodeLoadData NodeLoadData::operator*(double scalar) const {
+    NodeLoadData result;
+    result.id = this->id;  // スカラー乗算の場合はIDは変更しない
+    for (int i = 0; i < 6; i++) {
+        result.loads[i] = this->loads[i] * scalar;
+    }
+    return result;
+}
+
+NodeLoadData NodeLoadData::operator/(double scalar) const {
+    if (scalar == 0.0) {
+        std::cerr << "Error: Division by zero in NodeLoadData operator/" << std::endl;
+        return *this;  // ゼロ除算の場合は元の値を返す
+    }
+    
+    NodeLoadData result;
+    result.id = this->id;  // スカラー除算の場合はIDは変更しない
+    for (int i = 0; i < 6; i++) {
+        result.loads[i] = this->loads[i] / scalar;
+    }
+    return result;
+}
+
+// 単項演算子の実装
+NodeLoadData NodeLoadData::operator-() const {
+    NodeLoadData result;
+    result.id = this->id;  // 符号反転の場合はIDは変更しない
+    for (int i = 0; i < 6; i++) {
+        result.loads[i] = -this->loads[i];
+    }
+    return result;
+}
+
+// 複合代入演算子の実装
+NodeLoadData& NodeLoadData::operator+=(const NodeLoadData& other) {
+    this->id = determineId(this->id, other.id);
+    for (int i = 0; i < 6; i++) {
+        this->loads[i] += other.loads[i];
+    }
+    return *this;
+}
+
+NodeLoadData& NodeLoadData::operator-=(const NodeLoadData& other) {
+    this->id = determineId(this->id, other.id);
+    for (int i = 0; i < 6; i++) {
+        this->loads[i] -= other.loads[i];
+    }
+    return *this;
+}
+
+NodeLoadData& NodeLoadData::operator*=(double scalar) {
+    for (int i = 0; i < 6; i++) {
+        this->loads[i] *= scalar;
+    }
+    return *this;
+}
+
+NodeLoadData& NodeLoadData::operator/=(double scalar) {
+    if (scalar == 0.0) {
+        std::cerr << "Error: Division by zero in NodeLoadData operator/=" << std::endl;
+        return *this;  // ゼロ除算の場合は変更しない
+    }
+    
+    for (int i = 0; i < 6; i++) {
+        this->loads[i] /= scalar;
+    }
+    return *this;
+}
+
+// friend関数の実装
+NodeLoadData operator*(double scalar, const NodeLoadData& load) {
+    return load * scalar;
+}
+
+std::ostream& operator<<(std::ostream& os, const NodeLoadData& load) {
+    os << "NodeLoadData ID: " << load.id 
+       << " Px: " << load.Px() << ", Py: " << load.Py() << ", Pz: " << load.Pz()
+       << ", Mx: " << load.Mx() << ", My: " << load.My() << ", Mz: " << load.Mz();
+    return os;
+}

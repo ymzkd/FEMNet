@@ -26,6 +26,8 @@ class ElementBase
 {
 private:
     //static constexpr ElementType type = ElementType::None;
+    virtual Eigen::MatrixXd geometric_stiffness_matrix(const std::vector<Displacement> &disp) = 0;
+
 public:
     Material Mat;
     // ElementDataBase *data;
@@ -33,6 +35,8 @@ public:
     // int TotalDOF = 0;
     int id = -1;
     ElementBase() {};
+    virtual int NodeNum() = 0;
+    virtual std::vector<Node*> NodesList() = 0;
     //ElementBase(ElementType t) : type(t) {};
     // ElementBase(int mid, SSModel *model) : mid(mid), Model(model){};
 
@@ -50,6 +54,7 @@ public:
     virtual int TotalDof() = 0;
     virtual Eigen::MatrixXd StiffnessMatrix() = 0;
     virtual void AssembleStiffMatrix(Eigen::SparseMatrix<double>& mat) = 0;
+    virtual void AssembleGeometricStiffMatrix(Eigen::SparseMatrix<double>& mat, const std::vector<Displacement>& disp) = 0;
     virtual void AssembleMassMatrix(Eigen::SparseMatrix<double>& mat) = 0;
 };
 
@@ -60,6 +65,79 @@ public:
     BeamStressData() : Nx(0), Qy(0), Qz(0), Mx(0), My(0), Mz(0) {};
     BeamStressData(double nx, double qy, double qz, double mx, double my, double mz) :
         Nx(nx), Qy(qy), Qz(qz), Mx(mx), My(my), Mz(mz) {};
+
+    // 加算演算子
+    friend BeamStressData operator+(const BeamStressData& lhs, const BeamStressData& rhs) {
+        return BeamStressData(
+            lhs.Nx + rhs.Nx,
+            lhs.Qy + rhs.Qy,
+            lhs.Qz + rhs.Qz,
+            lhs.Mx + rhs.Mx,
+            lhs.My + rhs.My,
+            lhs.Mz + rhs.Mz
+        );
+    }
+
+    // 加算代入演算子
+    BeamStressData& operator+=(const BeamStressData& rhs) {
+        Nx += rhs.Nx;
+        Qy += rhs.Qy;
+        Qz += rhs.Qz;
+        Mx += rhs.Mx;
+        My += rhs.My;
+        Mz += rhs.Mz;
+        return *this;
+    }
+
+    // 減算演算子
+    friend BeamStressData operator-(const BeamStressData& lhs, const BeamStressData& rhs) {
+        return BeamStressData(
+            lhs.Nx - rhs.Nx,
+            lhs.Qy - rhs.Qy,
+            lhs.Qz - rhs.Qz,
+            lhs.Mx - rhs.Mx,
+            lhs.My - rhs.My,
+            lhs.Mz - rhs.Mz
+        );
+    }
+
+    // 減算代入演算子
+    BeamStressData& operator-=(const BeamStressData& rhs) {
+        Nx -= rhs.Nx;
+        Qy -= rhs.Qy;
+        Qz -= rhs.Qz;
+        Mx -= rhs.Mx;
+        My -= rhs.My;
+        Mz -= rhs.Mz;
+        return *this;
+    }
+
+    // スカラー倍演算子
+    friend BeamStressData operator*(const BeamStressData& lhs, double scalar) {
+        return BeamStressData(
+            lhs.Nx * scalar,
+            lhs.Qy * scalar,
+            lhs.Qz * scalar,
+            lhs.Mx * scalar,
+            lhs.My * scalar,
+            lhs.Mz * scalar
+        );
+    }
+
+    friend BeamStressData operator*(double scalar, const BeamStressData& rhs) {
+        return rhs * scalar;
+    }
+
+    // スカラー倍代入演算子
+    BeamStressData& operator*=(double scalar) {
+        Nx *= scalar;
+        Qy *= scalar;
+        Qz *= scalar;
+        Mx *= scalar;
+        My *= scalar;
+        Mz *= scalar;
+        return *this;
+    }
 
     friend std::ostream& operator<<(std::ostream& os, const BeamStressData& bsd);
 };
@@ -97,13 +175,15 @@ public:
 std::ostream& operator<<(std::ostream& os, const BeamStress& bsd);
 
 class BarElementBase : public ElementBase {
-private:
+protected:
     static const int node_num = 2;
 public:
     Node* Nodes[2];
+
     Section* Sec;
 
-	Node* ni() { return Nodes[0]; }
+    std::vector<Node*> NodesList() override { return std::vector<Node*>{Nodes[0], Nodes[1]}; }
+    Node* ni() { return Nodes[0]; }
 	Node* nj() { return Nodes[1]; }
     double length();
     Eigen::VectorXd NodeLumpedMass() {
@@ -122,6 +202,9 @@ private:
     static const int node_num = 2;
     Eigen::Matrix<double, node_num, total_dof> trans_matrix();
     Eigen::MatrixXd stiffness_matrix_local();
+
+    // トラス要素の幾何剛性行列(6x6)
+    Eigen::MatrixXd geometric_stiffness_matrix(const std::vector<Displacement>& disp) override;
     //double element_length();
 public:
     // Node* Nodes[2];
@@ -134,12 +217,21 @@ public:
         id = _id;
     };
 
+    // トラス要素の幾何剛性行列(6x6)
     Eigen::MatrixXd StiffnessMatrix();
+
     bool hasRotate() { return false; }
+
+    int NodeNum() override { return node_num; }
+    
     ElementType Type() { return ElementType::Truss; }
     //ElementType Type() { return type; }
+    
     int TotalDof() { return total_dof; }
-    void AssembleStiffMatrix(Eigen::SparseMatrix<double>& mat);
+
+    void AssembleMatrix(Eigen::SparseMatrix<double>& mat, Eigen::MatrixXd K);
+    void AssembleStiffMatrix(Eigen::SparseMatrix<double>& mat) override;
+    void AssembleGeometricStiffMatrix(Eigen::SparseMatrix<double>& mat, const std::vector<Displacement>& disp) override;
 
     Eigen::MatrixXd NodeConsistentMass() override;
 
@@ -156,6 +248,7 @@ protected:
     Eigen::MatrixXd trans_matrix();
     virtual Eigen::MatrixXd stiffness_matrix_local();
 
+    Eigen::MatrixXd geometric_stiffness_matrix(const std::vector<Displacement>& disp) override;
 private:
     //static constexpr ElementType type = ElementType::Beam;
     
@@ -192,10 +285,14 @@ public:
 
     virtual Eigen::MatrixXd StiffnessMatrix();
     bool hasRotate() { return true; }
+    int NodeNum() override { return node_num; }
     //ElementType Type() { return type; }
     ElementType Type() { return ElementType::Beam; }
     int TotalDof() { return total_dof; }
-    void AssembleStiffMatrix(Eigen::SparseMatrix<double>& mat);
+
+    void AssembleMatrix(Eigen::SparseMatrix<double>& mat, Eigen::MatrixXd K);
+    void AssembleStiffMatrix(Eigen::SparseMatrix<double>& mat) override;
+    void AssembleGeometricStiffMatrix(Eigen::SparseMatrix<double>& mat, const std::vector<Displacement>& disp) override;
     
     std::vector<NodeLoadData> InertialForceToNodeLoadData(Eigen::Vector3d accel_vec) override;
     Eigen::MatrixXd NodeConsistentMass() override;
@@ -247,7 +344,6 @@ public:
     Plane plane;
     Thickness thickness;
 
-    virtual int NodeNum() = 0;
     virtual std::vector<NodeLoadData> AreaForceToNodeLoadData(std::vector<Vector> load_vecs) = 0;
 
 };
@@ -266,10 +362,13 @@ private:
     Eigen::Matrix3d DMatrix();
     Eigen::MatrixXd localStiffnessMatrix();
 
+    Eigen::MatrixXd geometric_stiffness_matrix(const std::vector<Displacement>& disp) override;
+
     Eigen::MatrixXd trans_matrix();
 
 public:
     Node* Nodes[3];
+    std::vector<Node*> NodesList() override { return std::vector<Node*>{Nodes[0], Nodes[1], Nodes[2]}; }
 
     TriPlaneElement() {};
     TriPlaneElement(Node* n0, Node* n1, Node* n2, double t, Material mat, double beta = 0);
@@ -299,10 +398,13 @@ public:
 
     double Area();
     ElementType Type() { return type; }
-    int NodeNum() override { return 3; }
+    int NodeNum() override { return node_num; }
     int TotalDof() { return total_dof; }
-    Eigen::MatrixXd StiffnessMatrix(); 
-    void AssembleStiffMatrix(Eigen::SparseMatrix<double>& mat);
+    Eigen::MatrixXd StiffnessMatrix();
+
+    void AssembleMatrix(Eigen::SparseMatrix<double>& mat, Eigen::MatrixXd K);
+    void AssembleStiffMatrix(Eigen::SparseMatrix<double>& mat) override;
+    void AssembleGeometricStiffMatrix(Eigen::SparseMatrix<double>& mat, const std::vector<Displacement>& disp) override;
     void AssembleMassMatrix(Eigen::SparseMatrix<double>& mat);
 
     MembraneStressData stress(Displacement d0, Displacement d1, Displacement d2);
@@ -323,10 +425,13 @@ private:
     Eigen::MatrixXd BMatrix(double xi, double eta);
     Eigen::Matrix3d DMatrix();
     Eigen::MatrixXd localStiffnessMatrix();
+    Eigen::MatrixXd geometric_stiffness_matrix(const std::vector<Displacement>& disp) override;
+
     Eigen::MatrixXd trans_matrix();
 
 public:
     Node* Nodes[4];
+    std::vector<Node*> NodesList() override { return std::vector<Node*>{Nodes[0], Nodes[1], Nodes[2], Nodes[3]}; }
     //Plane plane;
     //Thickness thickness;
 
@@ -353,10 +458,13 @@ public:
 
     double Area();
     ElementType Type() { return type; }
-    int NodeNum() override { return 4; }
+    int NodeNum() override { return node_num; }
     int TotalDof() { return total_dof; }
     Eigen::MatrixXd StiffnessMatrix();
-    void AssembleStiffMatrix(Eigen::SparseMatrix<double>& mat);
+    
+    void AssembleMatrix(Eigen::SparseMatrix<double>& mat, Eigen::MatrixXd K);
+    void AssembleStiffMatrix(Eigen::SparseMatrix<double>& mat) override;
+    void AssembleGeometricStiffMatrix(Eigen::SparseMatrix<double>& mat, const std::vector<Displacement>& disp) override;
     void AssembleMassMatrix(Eigen::SparseMatrix<double>& mat);
 
     MembraneStressData stress(Displacement d0, Displacement d1, 
@@ -372,6 +480,91 @@ public:
     PlateStressData(double mx, double my, double mxy, 
         double qx, double qy, double nx, double ny, double qxy) :
         Mx(mx), My(my), Mxy(mxy), Qx(qx), Qy(qy), Nx(nx), Ny(ny), Qxy(qxy) {};
+
+    // 加算演算子
+    friend PlateStressData operator+(const PlateStressData& lhs, const PlateStressData& rhs) {
+        return PlateStressData(
+            lhs.Mx + rhs.Mx,
+            lhs.My + rhs.My,
+            lhs.Mxy + rhs.Mxy,
+            lhs.Qx + rhs.Qx,
+            lhs.Qy + rhs.Qy,
+            lhs.Nx + rhs.Nx,
+            lhs.Ny + rhs.Ny,
+            lhs.Qxy + rhs.Qxy
+        );
+    }
+
+    // 加算代入演算子
+    PlateStressData& operator+=(const PlateStressData& rhs) {
+        Mx += rhs.Mx;
+        My += rhs.My;
+        Mxy += rhs.Mxy;
+        Qx += rhs.Qx;
+        Qy += rhs.Qy;
+        Nx += rhs.Nx;
+        Ny += rhs.Ny;
+        Qxy += rhs.Qxy;
+        return *this;
+    }
+
+    // 減算演算子
+    friend PlateStressData operator-(const PlateStressData& lhs, const PlateStressData& rhs) {
+        return PlateStressData(
+            lhs.Mx - rhs.Mx,
+            lhs.My - rhs.My,
+            lhs.Mxy - rhs.Mxy,
+            lhs.Qx - rhs.Qx,
+            lhs.Qy - rhs.Qy,
+            lhs.Nx - rhs.Nx,
+            lhs.Ny - rhs.Ny,
+            lhs.Qxy - rhs.Qxy
+        );
+    }
+
+    // 減算代入演算子
+    PlateStressData& operator-=(const PlateStressData& rhs) {
+        Mx -= rhs.Mx;
+        My -= rhs.My;
+        Mxy -= rhs.Mxy;
+        Qx -= rhs.Qx;
+        Qy -= rhs.Qy;
+        Nx -= rhs.Nx;
+        Ny -= rhs.Ny;
+        Qxy -= rhs.Qxy;
+        return *this;
+    }
+
+    // スカラー倍演算子
+    friend PlateStressData operator*(const PlateStressData& lhs, double scalar) {
+        return PlateStressData(
+            lhs.Mx * scalar,
+            lhs.My * scalar,
+            lhs.Mxy * scalar,
+            lhs.Qx * scalar,
+            lhs.Qy * scalar,
+            lhs.Nx * scalar,
+            lhs.Ny * scalar,
+            lhs.Qxy * scalar
+        );
+    }
+
+    friend PlateStressData operator*(double scalar, const PlateStressData& rhs) {
+        return rhs * scalar;
+    }
+
+    // スカラー倍代入演算子
+    PlateStressData& operator*=(double scalar) {
+        Mx *= scalar;
+        My *= scalar;
+        Mxy *= scalar;
+        Qx *= scalar;
+        Qy *= scalar;
+        Nx *= scalar;
+        Ny *= scalar;
+        Qxy *= scalar;
+        return *this;
+    }
 
     friend std::ostream& operator<<(std::ostream& os, const PlateStressData& strs);
 };
@@ -414,10 +607,14 @@ private:
     Eigen::Matrix3d DMatrix();
 
     Eigen::MatrixXd localStiffnessMatrix();
+
+    Eigen::MatrixXd geometric_stiffness_matrix(const std::vector<Displacement>& disp) override;
+
     LocalMatrixd trans_matrix();
 
 public:
     Node* Nodes[3];
+    std::vector<Node*> NodesList() override { return std::vector<Node*>{Nodes[0], Nodes[1], Nodes[2]}; }
     //Plane plane;
     //Thickness thickness;
 
@@ -447,10 +644,13 @@ public:
 
     double Area();
     ElementType Type() { return type; }
-    int NodeNum() override { return 3; }
+    int NodeNum() override { return node_num; }
     int TotalDof() { return total_dof; }
     Eigen::MatrixXd StiffnessMatrix();
-    void AssembleStiffMatrix(Eigen::SparseMatrix<double>& mat);
+
+    void AssembleMatrix(Eigen::SparseMatrix<double>& mat, Eigen::MatrixXd K);
+    void AssembleStiffMatrix(Eigen::SparseMatrix<double>& mat) override;
+    void AssembleGeometricStiffMatrix(Eigen::SparseMatrix<double>& mat, const std::vector<Displacement>& disp) override;
     void AssembleMassMatrix(Eigen::SparseMatrix<double>& mat);
 
     PlateStressData stress(
@@ -489,6 +689,8 @@ private:
     Eigen::Matrix3d DMatrix();
     Eigen::MatrixXd localStiffnessMatrix();
 
+    Eigen::MatrixXd geometric_stiffness_matrix(const std::vector<Displacement>& disp) override;
+
     LocalMatrixd trans_matrix();
 
     // Nastran方式のエッジ補正行列
@@ -501,6 +703,7 @@ private:
 public:
     // static constexpr int node_num = 4;
     Node* Nodes[node_num];
+    std::vector<Node*> NodesList() override { return std::vector<Node*>{Nodes[0], Nodes[1], Nodes[2], Nodes[3]}; }
     //Plane plane;
     //Thickness thickness;
     QuadPlaneElement plane_element;
@@ -532,12 +735,23 @@ public:
 
     double Area();
     ElementType Type() { return type; }
-    int NodeNum() override { return 4; }
+    int NodeNum() override { return node_num; }
     int TotalDof() { return total_dof; }
     Eigen::MatrixXd StiffnessMatrix();
-    void AssembleStiffMatrix(Eigen::SparseMatrix<double>& mat);
+
+    // 剛性行列を組み込む
+    void AssembleMatrix(Eigen::SparseMatrix<double>& mat, Eigen::MatrixXd K);
+    
+    // 剛性行列を組み込む
+    void AssembleStiffMatrix(Eigen::SparseMatrix<double>& mat) override;
+
+    // 幾何剛性行列を組み込む
+    void AssembleGeometricStiffMatrix(Eigen::SparseMatrix<double>& mat, const std::vector<Displacement>& disp) override;
+    
+    // 集中質量行列を組み込む
     void AssembleMassMatrix(Eigen::SparseMatrix<double>& mat);
 
+    // 応力を計算
     PlateStressData stress(
         Displacement d0, Displacement d1, Displacement d2, Displacement d3, double xi, double eta);
     //void shearstress(Displacement d0, Displacement d1, 

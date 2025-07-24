@@ -350,12 +350,29 @@ public:
 //    };
 //};
 
+struct NodeMass {
+public:
+    double Mass = 0;
+    double LoadMass = 0;
+    double ElementMass = 0;
+
+    NodeMass() {};
+    NodeMass(double node_mass, double load_mass, double element_mass)
+        : Mass(node_mass), LoadMass(load_mass), ElementMass(element_mass) {
+    };
+
+    double SumMass() const {
+        return Mass + LoadMass + ElementMass;
+    }
+};
+
 struct Node {
 public:
     int id = -1;
     Point Location;
     Support Fix;
-	double Mass = 0;
+	//double Mass = 0;
+	NodeMass MassData;
 
     Node(int id, double x, double y, double z)
         : id(id), Location(x, y, z) {};

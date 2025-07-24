@@ -358,31 +358,33 @@ int FEModel::SolveVibration(const int nev, std::vector<double>& eigen_values,
     Eigen::SparseMatrix<double> ka; //, kb, kc;
     FEModel::splitMatrixWithResize(AssembleStiffnessMatrix(), fixed_indices, ka);
     
-    std::vector<Eigen::Triplet<double>> tripletList;
-    for (int i = 0; i < NodeNum(); ++i) {
-        tripletList.push_back(Eigen::Triplet<double>(i * 6, i * 6, 0.0));
-        tripletList.push_back(Eigen::Triplet<double>(i * 6 + 1, i * 6 + 1, 0.0));
-        tripletList.push_back(Eigen::Triplet<double>(i * 6 + 2, i * 6 + 2, 0.0));
-    }
-    Eigen::SparseMatrix<double> mass_mat(NodeNum() * 6, NodeNum() * 6);
-    mass_mat.setFromTriplets(tripletList.begin(), tripletList.end());
-    // Construct MassMatrix
-    for each (std::shared_ptr<ElementBase> eh in Elements)
-        eh->AssembleMassMatrix(mass_mat);
-    
-	for each(Node n in Nodes)
-	{
-		int i = n.id * 6;
-		mass_mat.coeffRef(i, i) += n.Mass;
-		mass_mat.coeffRef(i + 1, i + 1) += n.Mass;
-		mass_mat.coeffRef(i + 2, i + 2) += n.Mass;
-	}
+ //   std::vector<Eigen::Triplet<double>> tripletList;
+ //   for (int i = 0; i < NodeNum(); ++i) {
+ //       tripletList.push_back(Eigen::Triplet<double>(i * 6, i * 6, 0.0));
+ //       tripletList.push_back(Eigen::Triplet<double>(i * 6 + 1, i * 6 + 1, 0.0));
+ //       tripletList.push_back(Eigen::Triplet<double>(i * 6 + 2, i * 6 + 2, 0.0));
+ //   }
+ //   Eigen::SparseMatrix<double> mass_mat(NodeNum() * 6, NodeNum() * 6);
+ //   mass_mat.setFromTriplets(tripletList.begin(), tripletList.end());
+ //   
+ //   // Construct MassMatrix
+ //   for each (std::shared_ptr<ElementBase> eh in Elements)
+ //       eh->AssembleMassMatrix(mass_mat);
+ //   
+	//for each(Node n in Nodes)
+	//{
+	//	int i = n.id * 6;
+	//	mass_mat.coeffRef(i, i) += n.MassData.SumMass();
+	//	mass_mat.coeffRef(i + 1, i + 1) += n.MassData.SumMass();
+	//	mass_mat.coeffRef(i + 2, i + 2) += n.MassData.SumMass();
+	//}
 
-    mass_mat *= (1.0 / GRAVACCEL);
+ //   mass_mat *= (1.0 / GRAVACCEL);
+    //Eigen::SparseMatrix<double> mass_mat(NodeNum() * 6, NodeNum() * 6);
 
     //std::cout << "Mass Matrix: \n" << mass_mat << std::endl;
     Eigen::SparseMatrix<double> ma;
-    FEModel::splitMatrixWithResize(mass_mat, fixed_indices, ma);
+    FEModel::splitMatrixWithResize(AssembleMassMatrix(), fixed_indices, ma);
 
     std::vector<int> shrink_indices, other_indices;
     Eigen::Diagonal mdiag = ma.diagonal();
@@ -651,6 +653,23 @@ TriPlateElement* FEModel::GetTriPlateElement(int id)
     return be;
 }
 
+std::vector<NodeLoadData> FEModel::InnertialForceToNodeLoads(const InertialForce inertial_force)
+{
+    std::vector<NodeLoadData> node_loads;
+    //if (std::shared_ptr<InertialForce> inertial = std::dynamic_pointer_cast<InertialForce>(load)) {
+    for each(auto& e in Elements)
+    {
+        std::vector<NodeLoadData> elem_loads =
+            e->InertialForceToNodeLoadData(
+                Eigen::Vector3d(
+                    inertial_force.accels.x, 
+                    inertial_force.accels.y, 
+                    inertial_force.accels.z));
+        node_loads.insert(node_loads.end(), elem_loads.begin(), elem_loads.end());
+    }
+    return node_loads;
+}
+
 Eigen::SparseMatrix<double> FEModel::AssembleStiffnessMatrix()
 {
     int mat_size = Nodes.size() * 6;
@@ -659,6 +678,33 @@ Eigen::SparseMatrix<double> FEModel::AssembleStiffnessMatrix()
         eh->AssembleStiffMatrix(mat);
 
     return mat;
+}
+
+Eigen::SparseMatrix<double> FEModel::AssembleMassMatrix()
+{
+    std::vector<Eigen::Triplet<double>> tripletList;
+    for (int i = 0; i < NodeNum(); ++i) {
+        tripletList.push_back(Eigen::Triplet<double>(i * 6, i * 6, 0.0));
+        tripletList.push_back(Eigen::Triplet<double>(i * 6 + 1, i * 6 + 1, 0.0));
+        tripletList.push_back(Eigen::Triplet<double>(i * 6 + 2, i * 6 + 2, 0.0));
+    }
+    Eigen::SparseMatrix<double> mass_mat(NodeNum() * 6, NodeNum() * 6);
+    mass_mat.setFromTriplets(tripletList.begin(), tripletList.end());
+
+    // Construct MassMatrix
+    //for each(std::shared_ptr<ElementBase> eh in Elements)
+    //    eh->AssembleMassMatrix(mass_mat);
+
+    for each(Node n in Nodes)
+    {
+        int i = n.id * 6;
+        mass_mat.coeffRef(i, i) += n.MassData.SumMass();
+        mass_mat.coeffRef(i + 1, i + 1) += n.MassData.SumMass();
+        mass_mat.coeffRef(i + 2, i + 2) += n.MassData.SumMass();
+    }
+
+    mass_mat *= (1.0 / GRAVACCEL);
+	return mass_mat;
 }
 
 Eigen::SparseMatrix<double> FEModel::AssembleGeometricStiffnessMatrix(
@@ -676,6 +722,20 @@ Eigen::SparseMatrix<double> FEModel::AssembleGeometricStiffnessMatrix(
     }
         
     return mat;
+}
+
+void FEModel::ComputeElementNodeMass()
+{
+	for (size_t i = 0; i < Nodes.size(); i++)
+		Nodes[i].MassData.ElementMass = 0.0;
+
+    for (std::shared_ptr<ElementBase> eh : Elements) {
+		Eigen::VectorXd masses = eh->NodeLumpedMass();
+        for (size_t i = 0; i < eh->NodeNum(); i++) {
+            int node_id = eh->NodesList()[i]->id;
+			Nodes[node_id].MassData.ElementMass += masses(i);
+		}
+    }
 }
 
 [[deprecated("This function is deprecated. Please use SolveLinearStatic instead.")]]
@@ -883,29 +943,29 @@ bool DynamicAnalysis::Initialize()
     //matK_aa = ka;
 
     // MassMatrixの組み立て
-    std::vector<Eigen::Triplet<double>> tripletList;
-    for (int i = 0; i < model->NodeNum(); ++i) {
-        tripletList.push_back(Eigen::Triplet<double>(i * 6, i * 6, 0.0));
-        tripletList.push_back(Eigen::Triplet<double>(i * 6 + 1, i * 6 + 1, 0.0));
-        tripletList.push_back(Eigen::Triplet<double>(i * 6 + 2, i * 6 + 2, 0.0));
-    }
-    Eigen::SparseMatrix<double> mass_mat_full(model->NodeNum() * 6, model->NodeNum() * 6);
-    mass_mat_full.setFromTriplets(tripletList.begin(), tripletList.end());
-    // Construct MassMatrix
-    for each(std::shared_ptr<ElementBase> eh in model->Elements)
-        eh->AssembleMassMatrix(mass_mat_full);
+    //std::vector<Eigen::Triplet<double>> tripletList;
+    //for (int i = 0; i < model->NodeNum(); ++i) {
+    //    tripletList.push_back(Eigen::Triplet<double>(i * 6, i * 6, 0.0));
+    //    tripletList.push_back(Eigen::Triplet<double>(i * 6 + 1, i * 6 + 1, 0.0));
+    //    tripletList.push_back(Eigen::Triplet<double>(i * 6 + 2, i * 6 + 2, 0.0));
+    //}
+    //Eigen::SparseMatrix<double> mass_mat_full(model->NodeNum() * 6, model->NodeNum() * 6);
+    //mass_mat_full.setFromTriplets(tripletList.begin(), tripletList.end());
+    //// Construct MassMatrix
+    //for each(std::shared_ptr<ElementBase> eh in model->Elements)
+    //    eh->AssembleMassMatrix(mass_mat_full);
 
-    for each(Node n in model->Nodes)
-    {
-        int i = n.id * 6;
-        mass_mat_full.coeffRef(i, i) += n.Mass;
-        mass_mat_full.coeffRef(i + 1, i + 1) += n.Mass;
-        mass_mat_full.coeffRef(i + 2, i + 2) += n.Mass;
-    }
-    
-    mass_mat_full *= (1.0 / model->GRAVACCEL);
+    //for each(Node n in model->Nodes)
+    //{
+    //    int i = n.id * 6;
+    //    mass_mat_full.coeffRef(i, i) += n.MassData.SumMass();
+    //    mass_mat_full.coeffRef(i + 1, i + 1) += n.MassData.SumMass();
+    //    mass_mat_full.coeffRef(i + 2, i + 2) += n.MassData.SumMass();
+    //}
+    //
+    //mass_mat_full *= (1.0 / model->GRAVACCEL);
     //Eigen::SparseMatrix<double> ma;
-    FEModel::splitMatrixWithResize(mass_mat_full, fixed_indices, matM_aa, matM_ab, matM_bb);
+    FEModel::splitMatrixWithResize(model->AssembleMassMatrix(), fixed_indices, matM_aa, matM_ab, matM_bb);
 	//matM_aa = ma;
 
     // 減衰マトリクスの組み立て
@@ -1204,27 +1264,27 @@ bool FEDynamicStiffDampInitializer::Initialize(DynamicAnalysis* analysis)
 std::vector<double> FEVibrateResult::ParticipationFactors()
 {
     // MassMatrixの組み立て
-    std::vector<Eigen::Triplet<double>> tripletList;
-    for (int i = 0; i < model->NodeNum(); ++i) {
-        tripletList.push_back(Eigen::Triplet<double>(i * 6, i * 6, 0.0));
-        tripletList.push_back(Eigen::Triplet<double>(i * 6 + 1, i * 6 + 1, 0.0));
-        tripletList.push_back(Eigen::Triplet<double>(i * 6 + 2, i * 6 + 2, 0.0));
-    }
-    Eigen::SparseMatrix<double> mass_mat(model->NodeNum() * 6, model->NodeNum() * 6);
-    mass_mat.setFromTriplets(tripletList.begin(), tripletList.end());
-    // Construct MassMatrix
-    for each(std::shared_ptr<ElementBase> eh in model->Elements)
-        eh->AssembleMassMatrix(mass_mat);
+    //std::vector<Eigen::Triplet<double>> tripletList;
+    //for (int i = 0; i < model->NodeNum(); ++i) {
+    //    tripletList.push_back(Eigen::Triplet<double>(i * 6, i * 6, 0.0));
+    //    tripletList.push_back(Eigen::Triplet<double>(i * 6 + 1, i * 6 + 1, 0.0));
+    //    tripletList.push_back(Eigen::Triplet<double>(i * 6 + 2, i * 6 + 2, 0.0));
+    //}
+    Eigen::SparseMatrix<double> mass_mat= model->AssembleMassMatrix();
+    //mass_mat.setFromTriplets(tripletList.begin(), tripletList.end());
+    //// Construct MassMatrix
+    //for each(std::shared_ptr<ElementBase> eh in model->Elements)
+    //    eh->AssembleMassMatrix(mass_mat);
 
-    for each(Node n in model->Nodes)
-    {
-        int i = n.id * 6;
-        mass_mat.coeffRef(i, i) += n.Mass;
-        mass_mat.coeffRef(i + 1, i + 1) += n.Mass;
-        mass_mat.coeffRef(i + 2, i + 2) += n.Mass;
-    }
+    //for each(Node n in model->Nodes)
+    //{
+    //    int i = n.id * 6;
+    //    mass_mat.coeffRef(i, i) += n.MassData.SumMass();
+    //    mass_mat.coeffRef(i + 1, i + 1) += n.MassData.SumMass();
+    //    mass_mat.coeffRef(i + 2, i + 2) += n.MassData.SumMass();
+    //}
 
-    mass_mat *= (1.0 / FEModel::GRAVACCEL);
+    //mass_mat *= (1.0 / FEModel::GRAVACCEL);
 
 	std::vector<double> participation_factors;
 
@@ -1254,27 +1314,27 @@ std::vector<double> FEVibrateResult::ParticipationFactors()
 std::vector<double> FEVibrateResult::ParticipationFactors(Vector direction)
 {
     // MassMatrixの組み立て
-    std::vector<Eigen::Triplet<double>> tripletList;
-    for (int i = 0; i < model->NodeNum(); ++i) {
-        tripletList.push_back(Eigen::Triplet<double>(i * 6, i * 6, 0.0));
-        tripletList.push_back(Eigen::Triplet<double>(i * 6 + 1, i * 6 + 1, 0.0));
-        tripletList.push_back(Eigen::Triplet<double>(i * 6 + 2, i * 6 + 2, 0.0));
-    }
-    Eigen::SparseMatrix<double> mass_mat(model->NodeNum() * 6, model->NodeNum() * 6);
-    mass_mat.setFromTriplets(tripletList.begin(), tripletList.end());
-    // Construct MassMatrix
-    for each(std::shared_ptr<ElementBase> eh in model->Elements)
-        eh->AssembleMassMatrix(mass_mat);
+    //std::vector<Eigen::Triplet<double>> tripletList;
+    //for (int i = 0; i < model->NodeNum(); ++i) {
+    //    tripletList.push_back(Eigen::Triplet<double>(i * 6, i * 6, 0.0));
+    //    tripletList.push_back(Eigen::Triplet<double>(i * 6 + 1, i * 6 + 1, 0.0));
+    //    tripletList.push_back(Eigen::Triplet<double>(i * 6 + 2, i * 6 + 2, 0.0));
+    //}
+    Eigen::SparseMatrix<double> mass_mat = model->AssembleMassMatrix();
+    //mass_mat.setFromTriplets(tripletList.begin(), tripletList.end());
+    //// Construct MassMatrix
+    //for each(std::shared_ptr<ElementBase> eh in model->Elements)
+    //    eh->AssembleMassMatrix(mass_mat);
 
-    for each(Node n in model->Nodes)
-    {
-        int i = n.id * 6;
-        mass_mat.coeffRef(i, i) += n.Mass;
-        mass_mat.coeffRef(i + 1, i + 1) += n.Mass;
-        mass_mat.coeffRef(i + 2, i + 2) += n.Mass;
-    }
+    //for each(Node n in model->Nodes)
+    //{
+    //    int i = n.id * 6;
+    //    mass_mat.coeffRef(i, i) += n.MassData.SumMass();
+    //    mass_mat.coeffRef(i + 1, i + 1) += n.MassData.SumMass();
+    //    mass_mat.coeffRef(i + 2, i + 2) += n.MassData.SumMass();
+    //}
 
-    mass_mat *= (1.0 / FEModel::GRAVACCEL);
+    //mass_mat *= (1.0 / FEModel::GRAVACCEL);
 
     std::vector<double> participation_factors;
 
@@ -1309,27 +1369,27 @@ std::vector<double> FEVibrateResult::ParticipationFactors(Vector direction)
 std::vector<Displacement> FEVibrateResult::ParticipationDirectedFactors()
 {
     // MassMatrixの組み立て
-    std::vector<Eigen::Triplet<double>> tripletList;
-    for (int i = 0; i < model->NodeNum(); ++i) {
-        tripletList.push_back(Eigen::Triplet<double>(i * 6, i * 6, 0.0));
-        tripletList.push_back(Eigen::Triplet<double>(i * 6 + 1, i * 6 + 1, 0.0));
-        tripletList.push_back(Eigen::Triplet<double>(i * 6 + 2, i * 6 + 2, 0.0));
-    }
-    Eigen::SparseMatrix<double> mass_mat(model->NodeNum() * 6, model->NodeNum() * 6);
-    mass_mat.setFromTriplets(tripletList.begin(), tripletList.end());
-    // Construct MassMatrix
-    for each(std::shared_ptr<ElementBase> eh in model->Elements)
-        eh->AssembleMassMatrix(mass_mat);
+    //std::vector<Eigen::Triplet<double>> tripletList;
+    //for (int i = 0; i < model->NodeNum(); ++i) {
+    //    tripletList.push_back(Eigen::Triplet<double>(i * 6, i * 6, 0.0));
+    //    tripletList.push_back(Eigen::Triplet<double>(i * 6 + 1, i * 6 + 1, 0.0));
+    //    tripletList.push_back(Eigen::Triplet<double>(i * 6 + 2, i * 6 + 2, 0.0));
+    //}
+    Eigen::SparseMatrix<double> mass_mat = model->AssembleMassMatrix();
+    //mass_mat.setFromTriplets(tripletList.begin(), tripletList.end());
+    //// Construct MassMatrix
+    //for each(std::shared_ptr<ElementBase> eh in model->Elements)
+    //    eh->AssembleMassMatrix(mass_mat);
 
-    for each(Node n in model->Nodes)
-    {
-        int i = n.id * 6;
-        mass_mat.coeffRef(i, i) += n.Mass;
-        mass_mat.coeffRef(i + 1, i + 1) += n.Mass;
-        mass_mat.coeffRef(i + 2, i + 2) += n.Mass;
-    }
+    //for each(Node n in model->Nodes)
+    //{
+    //    int i = n.id * 6;
+    //    mass_mat.coeffRef(i, i) += n.MassData.SumMass();
+    //    mass_mat.coeffRef(i + 1, i + 1) += n.MassData.SumMass();
+    //    mass_mat.coeffRef(i + 2, i + 2) += n.MassData.SumMass();
+    //}
 
-    mass_mat *= (1.0 / FEModel::GRAVACCEL);
+    //mass_mat *= (1.0 / FEModel::GRAVACCEL);
 
     std::vector<Displacement> participation_factors;
 
@@ -1369,27 +1429,27 @@ std::vector<Displacement> FEVibrateResult::ParticipationDirectedFactors()
 std::vector<double> FEVibrateResult::EffectiveMassRates()
 {
     // MassMatrixの組み立て
-    std::vector<Eigen::Triplet<double>> tripletList;
-    for (int i = 0; i < model->NodeNum(); ++i) {
-        tripletList.push_back(Eigen::Triplet<double>(i * 6, i * 6, 0.0));
-        tripletList.push_back(Eigen::Triplet<double>(i * 6 + 1, i * 6 + 1, 0.0));
-        tripletList.push_back(Eigen::Triplet<double>(i * 6 + 2, i * 6 + 2, 0.0));
-    }
-    Eigen::SparseMatrix<double> mass_mat(model->NodeNum() * 6, model->NodeNum() * 6);
-    mass_mat.setFromTriplets(tripletList.begin(), tripletList.end());
-    // Construct MassMatrix
-    for each(std::shared_ptr<ElementBase> eh in model->Elements)
-        eh->AssembleMassMatrix(mass_mat);
+    //std::vector<Eigen::Triplet<double>> tripletList;
+    //for (int i = 0; i < model->NodeNum(); ++i) {
+    //    tripletList.push_back(Eigen::Triplet<double>(i * 6, i * 6, 0.0));
+    //    tripletList.push_back(Eigen::Triplet<double>(i * 6 + 1, i * 6 + 1, 0.0));
+    //    tripletList.push_back(Eigen::Triplet<double>(i * 6 + 2, i * 6 + 2, 0.0));
+    //}
+    Eigen::SparseMatrix<double> mass_mat = model->AssembleMassMatrix();
+    //mass_mat.setFromTriplets(tripletList.begin(), tripletList.end());
+    //// Construct MassMatrix
+    //for each(std::shared_ptr<ElementBase> eh in model->Elements)
+    //    eh->AssembleMassMatrix(mass_mat);
 
-    for each(Node n in model->Nodes)
-    {
-        int i = n.id * 6;
-        mass_mat.coeffRef(i, i) += n.Mass;
-        mass_mat.coeffRef(i + 1, i + 1) += n.Mass;
-        mass_mat.coeffRef(i + 2, i + 2) += n.Mass;
-    }
+    //for each(Node n in model->Nodes)
+    //{
+    //    int i = n.id * 6;
+    //    mass_mat.coeffRef(i, i) += n.MassData.SumMass();
+    //    mass_mat.coeffRef(i + 1, i + 1) += n.MassData.SumMass();
+    //    mass_mat.coeffRef(i + 2, i + 2) += n.MassData.SumMass();
+    //}
 
-    mass_mat *= (1.0 / FEModel::GRAVACCEL);
+    //mass_mat *= (1.0 / FEModel::GRAVACCEL);
 	double total_mass = mass_mat.diagonal().sum();
 
     std::vector<double> mass_rates;
@@ -1421,27 +1481,27 @@ std::vector<double> FEVibrateResult::EffectiveMassRates()
 std::vector<Displacement> FEVibrateResult::EffectiveDirectedMassRates()
 {
     // MassMatrixの組み立て
-    std::vector<Eigen::Triplet<double>> tripletList;
-    for (int i = 0; i < model->NodeNum(); ++i) {
-        tripletList.push_back(Eigen::Triplet<double>(i * 6, i * 6, 0.0));
-        tripletList.push_back(Eigen::Triplet<double>(i * 6 + 1, i * 6 + 1, 0.0));
-        tripletList.push_back(Eigen::Triplet<double>(i * 6 + 2, i * 6 + 2, 0.0));
-    }
-    Eigen::SparseMatrix<double> mass_mat(model->NodeNum() * 6, model->NodeNum() * 6);
-    mass_mat.setFromTriplets(tripletList.begin(), tripletList.end());
-    // Construct MassMatrix
-    for each(std::shared_ptr<ElementBase> eh in model->Elements)
-        eh->AssembleMassMatrix(mass_mat);
+    //std::vector<Eigen::Triplet<double>> tripletList;
+    //for (int i = 0; i < model->NodeNum(); ++i) {
+    //    tripletList.push_back(Eigen::Triplet<double>(i * 6, i * 6, 0.0));
+    //    tripletList.push_back(Eigen::Triplet<double>(i * 6 + 1, i * 6 + 1, 0.0));
+    //    tripletList.push_back(Eigen::Triplet<double>(i * 6 + 2, i * 6 + 2, 0.0));
+    //}
+    Eigen::SparseMatrix<double> mass_mat = model->AssembleMassMatrix();
+    //mass_mat.setFromTriplets(tripletList.begin(), tripletList.end());
+    //// Construct MassMatrix
+    //for each(std::shared_ptr<ElementBase> eh in model->Elements)
+    //    eh->AssembleMassMatrix(mass_mat);
 
-    for each(Node n in model->Nodes)
-    {
-        int i = n.id * 6;
-        mass_mat.coeffRef(i, i) += n.Mass;
-        mass_mat.coeffRef(i + 1, i + 1) += n.Mass;
-        mass_mat.coeffRef(i + 2, i + 2) += n.Mass;
-    }
+    //for each(Node n in model->Nodes)
+    //{
+    //    int i = n.id * 6;
+    //    mass_mat.coeffRef(i, i) += n.MassData.SumMass();
+    //    mass_mat.coeffRef(i + 1, i + 1) += n.MassData.SumMass();
+    //    mass_mat.coeffRef(i + 2, i + 2) += n.MassData.SumMass();
+    //}
 
-    mass_mat *= (1.0 / FEModel::GRAVACCEL);
+    //mass_mat *= (1.0 / FEModel::GRAVACCEL);
 
     double total_mass = mass_mat.diagonal().sum();
     std::vector<Displacement> mass_rates;

@@ -71,7 +71,11 @@ private:
     /// <returns></returns>
     std::vector<int> UnLumpedFixIndices();
 
+	// 剛性マトリクスの組み立て
     Eigen::SparseMatrix<double> AssembleStiffnessMatrix();
+
+	// 質量マトリクスの組み立て
+    Eigen::SparseMatrix<double> AssembleMassMatrix();
 
     Eigen::SparseMatrix<double> AssembleGeometricStiffnessMatrix(
         const std::vector<Displacement> &displacements);
@@ -112,6 +116,7 @@ private:
 
 	friend class DynamicAnalysis;
     friend class FEBucklingAnalysis;
+	friend class FEVibrateResult;
 
 public:
     static constexpr double GRAVACCEL = 9806.6;\
@@ -162,6 +167,12 @@ public:
     QuadPlateElement* GetQuadPlateElement(int id);
     TriPlateElement* GetTriPlateElement(int id);
 
+    // 慣性力を等価な節点荷重に変換
+    std::vector<NodeLoadData> InnertialForceToNodeLoads(
+		const InertialForce inertial_force);
+
+    // 要素質量に基づく節点質量を計算してセットアップ
+    void ComputeElementNodeMass();
 
     [[deprecated("This function is deprecated. Please use SolveLinearStatic instead.")]]
     void Solve(
@@ -313,10 +324,17 @@ public:
         : model(model), mode_vectors(mode_vectors),
           eigs(eigs) {};
 
+	// モードごとの刺激係数計算
     std::vector<double> ParticipationFactors();
     std::vector<double> ParticipationFactors(Vector direction);
+
+    // 方向別のモードごとの刺激係数計算
     std::vector<Displacement> ParticipationDirectedFactors();
+    
+	// モードごとの有効質量比計算
     std::vector<double> EffectiveMassRates();
+
+    // 方向別のモードごとの有効質量比計算
     std::vector<Displacement> EffectiveDirectedMassRates();
 
 	std::vector<double> NaturalPeriods() {

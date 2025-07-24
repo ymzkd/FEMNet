@@ -446,6 +446,66 @@ void CheckCantiPyramidTrussBuckling(double D, int n, double h)
 	}
 }
 
+void CheckQuadPlateBuckling() {
+	std::cout << "CheckQuadPlateBuckling Start" << std::endl;
+	// ノードの作成
+	Node n0(0, 0.0, 0.0, 0.0);
+	Node n1(1, 100.0, 0.0, 10.0);
+	Node n2(2, 200.0, 0.0, 0.0);
+	Node n3(3, 0.0, 100.0, 0.0);
+	Node n4(4, 100.0, 100.0, 10.0);
+	Node n5(5, 200.0, 100.0, 0.0);
+	n0.Fix.PinFix();
+	n2.Fix.PinFix();
+	n3.Fix.PinFix();
+	n5.Fix.PinFix();
+
+	// 材料と厚さの設定
+	Material mat(5000, 0.2);
+	mat.dense = 4.3;
+	Thickness thickness(2.0);
+	// QuadPlateElementのインスタンスを作成
+	QuadPlateElement element1(&n0, &n1, &n4, &n3, thickness, mat);
+	QuadPlateElement element2(&n1, &n2, &n5, &n4, thickness, mat);
+	// FEModelの作成
+	FEModel model;
+	model.Nodes.push_back(n0);
+	model.Nodes.push_back(n1);
+	model.Nodes.push_back(n2);
+	model.Nodes.push_back(n3);
+	model.Nodes.push_back(n4);
+	model.Nodes.push_back(n5);
+	model.Materials.push_back(mat);
+	
+	model.add_element(element1);
+	model.add_element(element2);
+
+	//std::shared_ptr<QuadPlateElement> qpe = std::make_shared<QuadPlateElement>(element1);
+	//std::shared_ptr<QuadPlateElement> qpe2 = std::make_shared<QuadPlateElement>(element2);
+	//model.Elements.push_back(qpe);
+	//model.Elements.push_back(qpe2);
+
+	NodeLoad nl1 = NodeLoad(1, 0, 0, -100.0);
+	NodeLoad nl2 = NodeLoad(4, 0, 0, -100.0);
+	std::vector<std::shared_ptr<LoadBase>> loads;
+	loads.push_back(std::make_shared<NodeLoad>(nl1));
+	loads.push_back(std::make_shared<NodeLoad>(nl2));
+	std::vector<Displacement> disp;
+	std::vector<NodeLoad> react;
+	model.Solve(loads, disp, react);
+	FEStaticResult result = FEStaticResult(std::make_shared<FEModel>(model), loads, disp, react);
+	std::cout << "Static Result: " << result.displace[model.Nodes.size() - 1] << std::endl;
+	FEBucklingAnalysis buckling_analysis(std::make_shared<FEStaticResult>(result));
+	buckling_analysis.mode_num = 4;
+	buckling_analysis.SolveBuckling();
+	std::cout << "Buckling Analysis Results:" << std::endl;
+	std::cout << "Mode Number: " << buckling_analysis.mode_num << std::endl;
+	for (size_t i = 0; i < buckling_analysis.eigs.size(); i++)
+	{
+		std::cout << "Mode " << i << ": " << buckling_analysis.eigs[i] << std::endl;
+	}
+}
+
 void TestBodyforceToNodeLoadData() {
 
 	std::cout << "TestBodyforceToNodeLoadData Start" << std::endl;
@@ -861,6 +921,7 @@ int main(void) {
 
 	// 座屈検討用のピラミッド型トラスサンプル
 	CheckCantiPyramidTrussBuckling(1000, 4, 100);
+	CheckQuadPlateBuckling();
 
 	// CheckSparseSolver();
 

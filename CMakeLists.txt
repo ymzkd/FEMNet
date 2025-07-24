@@ -39,12 +39,14 @@ endif()
 set(CMAKE_SWIG_FLAGS "")
 
 set_property(SOURCE fem.i PROPERTY CPLUSPLUS ON)
+# set_property(SOURCE SeismicModule.i PROPERTY CPLUSPLUS ON)
 set_source_files_properties(fem.i PROPERTIES SWIG_FLAGS "-includeall")
+# set_source_files_properties(SeismicModule.i PROPERTIES SWIG_FLAGS "-includeall")
 
 swig_add_library(fem
     TYPE SHARED
     LANGUAGE CSharp
-    SOURCES fem.i Components.cpp Model.cpp Element.cpp LoadComponent.cpp
+    SOURCES fem.i Components.cpp Model.cpp Element.cpp LoadComponent.cpp SeismicModule.cpp
     OUTPUT_DIR ${SWIG_OUTPUT_DIR}
     OUTFILE_DIR ${SWIG_OUTPUT_DIR}
 )
@@ -76,7 +78,7 @@ set_target_properties( fem
 )
 
 # === App ===
-add_executable(sampleapp app.cpp Components.cpp Model.cpp Element.cpp LoadComponent.cpp)
+add_executable(sampleapp app.cpp Components.cpp Model.cpp Element.cpp LoadComponent.cpp SeismicModule.cpp)
 
 target_include_directories(sampleapp PUBLIC ${CMAKE_SOURCE_DIR})
 if (MKL_FOUND)

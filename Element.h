@@ -17,7 +17,7 @@
 
 Eigen::Matrix3d trans_matrix3(const Point p0, const Point p1, const double beta);
 
-enum ElementType
+enum class ElementType
 {
     None, Beam, Truss, Membrane, Plate, DKT, DKQ
 };
@@ -26,7 +26,7 @@ class ElementBase
 {
 private:
     //static constexpr ElementType type = ElementType::None;
-    virtual Eigen::MatrixXd geometric_stiffness_matrix(const std::vector<Displacement> &disp) = 0;
+    virtual Eigen::MatrixXd geometric_local_stiffness_matrix(const std::vector<Displacement> &disp) = 0;
 
 public:
     Material Mat;
@@ -204,7 +204,7 @@ private:
     Eigen::MatrixXd stiffness_matrix_local();
 
     // トラス要素の幾何剛性行列(6x6)
-    Eigen::MatrixXd geometric_stiffness_matrix(const std::vector<Displacement>& disp) override;
+    Eigen::MatrixXd geometric_local_stiffness_matrix(const std::vector<Displacement>& disp) override;
     //double element_length();
 public:
     // Node* Nodes[2];
@@ -248,7 +248,7 @@ protected:
     Eigen::MatrixXd trans_matrix();
     virtual Eigen::MatrixXd stiffness_matrix_local();
 
-    Eigen::MatrixXd geometric_stiffness_matrix(const std::vector<Displacement>& disp) override;
+    Eigen::MatrixXd geometric_local_stiffness_matrix(const std::vector<Displacement>& disp) override;
 private:
     //static constexpr ElementType type = ElementType::Beam;
     
@@ -362,7 +362,7 @@ private:
     Eigen::Matrix3d DMatrix();
     Eigen::MatrixXd localStiffnessMatrix();
 
-    Eigen::MatrixXd geometric_stiffness_matrix(const std::vector<Displacement>& disp) override;
+    Eigen::MatrixXd geometric_local_stiffness_matrix(const std::vector<Displacement>& disp) override;
 
     Eigen::MatrixXd trans_matrix();
 
@@ -425,7 +425,7 @@ private:
     Eigen::MatrixXd BMatrix(double xi, double eta);
     Eigen::Matrix3d DMatrix();
     Eigen::MatrixXd localStiffnessMatrix();
-    Eigen::MatrixXd geometric_stiffness_matrix(const std::vector<Displacement>& disp) override;
+    Eigen::MatrixXd geometric_local_stiffness_matrix(const std::vector<Displacement>& disp) override;
 
     Eigen::MatrixXd trans_matrix();
 
@@ -608,7 +608,7 @@ private:
 
     Eigen::MatrixXd localStiffnessMatrix();
 
-    Eigen::MatrixXd geometric_stiffness_matrix(const std::vector<Displacement>& disp) override;
+    Eigen::MatrixXd geometric_local_stiffness_matrix(const std::vector<Displacement>& disp) override;
 
     LocalMatrixd trans_matrix();
 
@@ -647,6 +647,7 @@ public:
     int NodeNum() override { return node_num; }
     int TotalDof() { return total_dof; }
     Eigen::MatrixXd StiffnessMatrix();
+    Eigen::MatrixXd GeometricStiffnessMatrix(const std::vector<Displacement>& disp);
 
     void AssembleMatrix(Eigen::SparseMatrix<double>& mat, Eigen::MatrixXd K);
     void AssembleStiffMatrix(Eigen::SparseMatrix<double>& mat) override;
@@ -689,7 +690,7 @@ private:
     Eigen::Matrix3d DMatrix();
     Eigen::MatrixXd localStiffnessMatrix();
 
-    Eigen::MatrixXd geometric_stiffness_matrix(const std::vector<Displacement>& disp) override;
+    Eigen::MatrixXd geometric_local_stiffness_matrix(const std::vector<Displacement>& disp) override;
 
     LocalMatrixd trans_matrix();
 
@@ -738,6 +739,7 @@ public:
     int NodeNum() override { return node_num; }
     int TotalDof() { return total_dof; }
     Eigen::MatrixXd StiffnessMatrix();
+    Eigen::MatrixXd GeometricStiffnessMatrix(const std::vector<Displacement>& disp);
 
     // 剛性行列を組み込む
     void AssembleMatrix(Eigen::SparseMatrix<double>& mat, Eigen::MatrixXd K);

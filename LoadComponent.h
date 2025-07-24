@@ -10,23 +10,57 @@
 #include "Components.h"
 #include "Element.h"
 
+enum class LoadType {
+    None,
+    BodyForce,
+};
+
 class LoadBase {
 public:
     LoadBase(){};
-    
+
+    virtual LoadType Type() { return LoadType::None; }
     virtual std::vector<NodeLoadData> NodeLoads() = 0;
 };
 
 class InertialForce: public LoadBase {
 public:
+
 	Vector accels;
 	InertialForce() : InertialForce(0, 0, 0) {};
 	InertialForce(double x, double y, double z) : accels(x, y, z) {};
 	InertialForce(Vector v) : accels(v) {};
 	
-	std::vector<NodeLoadData> NodeLoads() override {
+	LoadType Type() override { return LoadType::BodyForce; }
+	
+    std::vector<NodeLoadData> NodeLoads() override {
 		return std::vector<NodeLoadData>();
 	}
+};
+
+enum class BodyForaceSelector : unsigned int {
+    None = 0,
+    NodeMass = 1 << 0,
+    LoadMass = 1 << 1,
+    ElementMass = 1 << 2,
+    All = NodeMass | LoadMass | ElementMass
+};
+
+class NodeBodyForce : public LoadBase {
+public:
+	Node* node;
+    Vector Accels;
+	BodyForaceSelector selector = BodyForaceSelector::All;
+
+	NodeBodyForce() : node(nullptr), Accels(0, 0, 0) {};
+	NodeBodyForce(Node* node, double x, double y, double z) : node(node), Accels(x, y, z) {};
+
+    LoadType Type() override { return LoadType::BodyForce; }
+
+    std::vector<NodeLoadData> NodeLoads() override {
+		Vector f = Accels * node->MassData.SumMass(); // ここで質量を掛けて加速度を計算
+        return std::vector<NodeLoadData>{ NodeLoadData(node->id, f.x, f.y, f.z) };
+    }
 };
 
 class NodeLoad : public LoadBase {

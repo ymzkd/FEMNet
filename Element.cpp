@@ -84,7 +84,7 @@ Eigen::MatrixXd TrussElement::stiffness_matrix_local()
 	return local_stiffMat;
 }
 
-Eigen::MatrixXd TrussElement::geometric_stiffness_matrix(
+Eigen::MatrixXd TrussElement::geometric_local_stiffness_matrix(
 	const std::vector<Displacement> &disp)
 {
 	Eigen::MatrixXd Kg_mat = Eigen::MatrixXd::Zero(total_dof, total_dof);
@@ -197,7 +197,7 @@ void TrussElement::AssembleStiffMatrix(Eigen::SparseMatrix<double> &mat)
 void TrussElement::AssembleGeometricStiffMatrix(
 	Eigen::SparseMatrix<double> &mat, const std::vector<Displacement> &disp)
 {
-	AssembleMatrix(mat, geometric_stiffness_matrix(disp));
+	AssembleMatrix(mat, geometric_local_stiffness_matrix(disp));
 }
 
 Eigen::MatrixXd TrussElement::NodeConsistentMass()
@@ -321,7 +321,7 @@ void BeamElement::AssembleStiffMatrix(Eigen::SparseMatrix<double> &mat)
 void BeamElement::AssembleGeometricStiffMatrix(
 	Eigen::SparseMatrix<double> &mat, const std::vector<Displacement> &disp)
 {
-	AssembleMatrix(mat, geometric_stiffness_matrix(disp));
+	AssembleMatrix(mat, geometric_local_stiffness_matrix(disp));
 }
 
 std::vector<NodeLoadData> BeamElement::InertialForceToNodeLoadData(Eigen::Vector3d accel_vec)
@@ -470,13 +470,56 @@ Eigen::MatrixXd BeamElement::stiffness_matrix_local() {
 	return m;
 }
 
-Eigen::MatrixXd BeamElement::geometric_stiffness_matrix(const std::vector<Displacement> &disp){
+Eigen::MatrixXd BeamElement::geometric_local_stiffness_matrix(const std::vector<Displacement> &disp){
 	Eigen::MatrixXd Kg_mat = Eigen::MatrixXd::Zero(total_dof, total_dof);
 	double l = element_length();
 	BeamStress s = stress(disp[0], disp[1]);
 	double Nx = s.S0.Nx;
 	double Qy = s.S0.Qy;
 	double Qz = s.S0.Qz;
+
+	int indices_b[8]{ 1,2,4,5,7,8,10,11 };
+	int indices_x[6]{ 0,1,2,6,7,8 };
+
+	Eigen::MatrixXd Kg_b = Eigen::MatrixXd::Zero(8, 8);
+	Kg_b << 6.0/(5.0*l), 0, 0, 1.0/10.0, -6.0/(5.0*l), 0, 0, 1.0/10.0,
+		0, 6.0/(5.0*l), -1.0/10.0, 0, 0, -6.0/(5.0*l), -1.0/10.0, 0,
+		0, -1.0/10.0, 2.0*l/15.0, 0, 0, 1.0/10.0, -l/30.0, 0,
+		1.0/10.0, 0, 0, 2.0*l/15.0, -1.0/10.0, 0, 0, -l/30.0,
+		-6.0/(5.0*l), 0, 0, -1.0/10.0, 6.0/(5.0*l), 0, 0, -1.0/10.0,
+		0, -6.0/(5.0*l), 1.0/10.0, 0, 0, 6.0/(5.0*l), 1.0/10.0, 0,
+		0, -1.0/10.0, -l/30.0, 0, 0, 1.0/10.0, 2.0*l/15.0, 0,
+		1.0/10.0, 0, 0, -l/30.0, -1.0/10.0, 0, 0, 2.0*l/15.0;
+	 Kg_b *= Nx;
+
+	Eigen::MatrixXd Kg_x = Eigen::MatrixXd::Zero(6, 6);
+	Kg_x << 1, 0, 0, -1, 0, 0,
+			0, 1, 0, 0, -1, 0,
+			0, 0, 1, 0, 0, -1,
+			-1, 0, 0, 1, 0, 0,
+			0, -1, 0, 0, 1, 0,
+			0, 0, -1, 0, 0, 1;
+	Kg_x *= Nx / l;
+
+	for (size_t i = 0; i < 8; i++)
+	{
+		int ir = indices_b[i];
+		for (size_t j = 0; j < 8; j++)
+		{
+			int ic = indices_b[j];
+			Kg_mat(ir, ic) += Kg_b(i, j);
+		}
+	}
+
+	for (size_t i = 0; i < 6; i++)
+	{
+		int ir = indices_x[i];
+		for (size_t j = 0; j < 6; j++)
+		{
+			int ic = indices_x[j];
+			Kg_mat(ir, ic) += Kg_x(i, j);
+		}
+	}
 
 	// Kg_mat << 1.0 / l, 0, 0, 0, 0, 0, -1.0 / l, 0, 0, 0, 0, 0,
 	// 	0, 6.0 / 5.0 / l, 0, 0, 0, 1.0 / 10.0, 0, -6.0 / 15.0 / l, 0, 0, 0, 1.0 / 10.0,
@@ -493,19 +536,19 @@ Eigen::MatrixXd BeamElement::geometric_stiffness_matrix(const std::vector<Displa
 	// Kg_mat *= Nx;
 
 	// A1 A1^t
-	Eigen::MatrixXd Kg_mat1 = Eigen::MatrixXd::Zero(total_dof, total_dof);
-	Kg_mat1 << Nx / l, -(s.S0.Mz - s.S1.Mz) / (l * l), (s.S0.My - s.S1.My) / (l * l), 0, s.S0.My / l, -s.S0.Mz / l, -Nx / l, (s.S1.Mz - s.S0.Mz) / (l * l), (s.S1.My - s.S0.My) / (l * l), 0, -s.S1.My / l, s.S1.Mz / l,
-		-(s.S0.Mz - s.S1.Mz) / (l * l), (Nx * Sec->Iz * 12) / (Sec->A * l * l * l), 0, 0, 0, -(Nx * Sec->Iz * 6) / (Sec->A * l * l), -(s.S1.Mz - s.S0.Mz) / (l * l), -(-Nx * 12 * Sec->Iz) / (Sec->A * l * l * l), 0, 0, 0, -(Nx * 6 * Sec->Iz) / (Sec->A * l * l),
-		(s.S0.My - s.S1.My) / (l * l), 0, (Nx * Sec->Iy * 12) / (Sec->A * l * l * l), 0, (-Nx * Sec->Iy * 6) / (Sec->A * l * l), 0, (s.S1.My - s.S0.My) / (l * l), 0, (-Nx * 12 * Sec->Iy) / (Sec->A * l * l * l), 0, (-Nx * 6 * Sec->Iy) / (Sec->A * l * l), 0,
-		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-		s.S0.My / l, 0, (-Nx * Sec->Iy * 6) / (Sec->A * l * l), 0, (Nx * Sec->Iy * 4) / (Sec->A * l), 0, -s.S0.My / l, 0, (Nx * Sec->Iy * 6) / (Sec->A * l * l), 0, (Nx * Sec->Iy * 2) / (Sec->A * l), 0,
-		-s.S0.Mz / l, -(Nx * Sec->Iz * 6) / (Sec->A * l * l), 0, 0, 0, (Nx * Sec->Iz * 4) / (Sec->A * l), s.S0.Mz / l, (-Nx * Sec->Iz * 6) / (Sec->A * l * l), 0, 0, 0, (Nx * Sec->Iz * 2) / (Sec->A * l),
-		-Nx / l, -(s.S1.Mz - s.S0.Mz) / (l * l), (s.S1.My - s.S0.My) / (l * l), 0, -s.S0.My / l, s.S0.Mz / l, Nx / l, (s.S0.Mz - s.S1.Mz) / (l * l), (s.S0.My - s.S1.My) / (l * l), 0, s.S1.My / l, -s.S1.Mz / l,
-		(s.S1.Mz - s.S0.Mz) / (l * l), (Nx * 12 * Sec->Iz) / (Sec->A * l * l * l), 0, 0, 0, (-Nx * Sec->Iz * 6) / (Sec->A * l * l), (s.S0.Mz - s.S1.Mz) / (l * l), (Nx * 12 * Sec->Iz) / (Sec->A * l * l * l), 0, 0, 0, (-Nx * 6 * Sec->Iz) / (Sec->A * l * l),
-		(s.S1.My - s.S0.My) / (l * l), 0, (-Nx * 12 * Sec->Iy) / (Sec->A * l * l * l), 0, (Nx * Sec->Iy * 6) / (Sec->A * l * l), 0, (s.S0.My - s.S1.My) / (l * l), 0, (Nx * 12 * Sec->Iy) / (Sec->A * l * l * l), 0, (Nx * 6 * Sec->Iy) / (Sec->A * l * l), 0,
-		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-		-s.S1.My / l, 0, (-Nx * Sec->Iy * 6) / (Sec->A * l * l), 0, (Nx * Sec->Iy * 2) / (Sec->A * l), 0, s.S1.My / l, 0, (Nx * Sec->Iy * 6) / (Sec->A * l * l), 0, (Nx * Sec->Iy * 4) / (Sec->A * l), 0,
-		s.S1.Mz / l, -(Nx * Sec->Iz * 6) / (Sec->A * l * l), 0, 0, 0, (Nx * Sec->Iz * 2) / (Sec->A * l), -s.S1.Mz / l, (-Nx * Sec->Iz * 6) / (Sec->A * l * l), 0, 0, 0, (Nx * Sec->Iz * 4) / (Sec->A * l);
+	//Eigen::MatrixXd Kg_mat1 = Eigen::MatrixXd::Zero(total_dof, total_dof);
+	//Kg_mat1 << Nx / l, -(s.S0.Mz - s.S1.Mz) / (l * l), (s.S0.My - s.S1.My) / (l * l), 0, s.S0.My / l, -s.S0.Mz / l, -Nx / l, (s.S1.Mz - s.S0.Mz) / (l * l), (s.S1.My - s.S0.My) / (l * l), 0, -s.S1.My / l, s.S1.Mz / l,
+	//	-(s.S0.Mz - s.S1.Mz) / (l * l), (Nx * Sec->Iz * 12) / (Sec->A * l * l * l), 0, 0, 0, -(Nx * Sec->Iz * 6) / (Sec->A * l * l), -(s.S1.Mz - s.S0.Mz) / (l * l), -(-Nx * 12 * Sec->Iz) / (Sec->A * l * l * l), 0, 0, 0, -(Nx * 6 * Sec->Iz) / (Sec->A * l * l),
+	//	(s.S0.My - s.S1.My) / (l * l), 0, (Nx * Sec->Iy * 12) / (Sec->A * l * l * l), 0, (-Nx * Sec->Iy * 6) / (Sec->A * l * l), 0, (s.S1.My - s.S0.My) / (l * l), 0, (-Nx * 12 * Sec->Iy) / (Sec->A * l * l * l), 0, (-Nx * 6 * Sec->Iy) / (Sec->A * l * l), 0,
+	//	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//	s.S0.My / l, 0, (-Nx * Sec->Iy * 6) / (Sec->A * l * l), 0, (Nx * Sec->Iy * 4) / (Sec->A * l), 0, -s.S0.My / l, 0, (Nx * Sec->Iy * 6) / (Sec->A * l * l), 0, (Nx * Sec->Iy * 2) / (Sec->A * l), 0,
+	//	-s.S0.Mz / l, -(Nx * Sec->Iz * 6) / (Sec->A * l * l), 0, 0, 0, (Nx * Sec->Iz * 4) / (Sec->A * l), s.S0.Mz / l, (-Nx * Sec->Iz * 6) / (Sec->A * l * l), 0, 0, 0, (Nx * Sec->Iz * 2) / (Sec->A * l),
+	//	-Nx / l, -(s.S1.Mz - s.S0.Mz) / (l * l), (s.S1.My - s.S0.My) / (l * l), 0, -s.S0.My / l, s.S0.Mz / l, Nx / l, (s.S0.Mz - s.S1.Mz) / (l * l), (s.S0.My - s.S1.My) / (l * l), 0, s.S1.My / l, -s.S1.Mz / l,
+	//	(s.S1.Mz - s.S0.Mz) / (l * l), (Nx * 12 * Sec->Iz) / (Sec->A * l * l * l), 0, 0, 0, (-Nx * Sec->Iz * 6) / (Sec->A * l * l), (s.S0.Mz - s.S1.Mz) / (l * l), (Nx * 12 * Sec->Iz) / (Sec->A * l * l * l), 0, 0, 0, (-Nx * 6 * Sec->Iz) / (Sec->A * l * l),
+	//	(s.S1.My - s.S0.My) / (l * l), 0, (-Nx * 12 * Sec->Iy) / (Sec->A * l * l * l), 0, (Nx * Sec->Iy * 6) / (Sec->A * l * l), 0, (s.S0.My - s.S1.My) / (l * l), 0, (Nx * 12 * Sec->Iy) / (Sec->A * l * l * l), 0, (Nx * 6 * Sec->Iy) / (Sec->A * l * l), 0,
+	//	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//	-s.S1.My / l, 0, (-Nx * Sec->Iy * 6) / (Sec->A * l * l), 0, (Nx * Sec->Iy * 2) / (Sec->A * l), 0, s.S1.My / l, 0, (Nx * Sec->Iy * 6) / (Sec->A * l * l), 0, (Nx * Sec->Iy * 4) / (Sec->A * l), 0,
+	//	s.S1.Mz / l, -(Nx * Sec->Iz * 6) / (Sec->A * l * l), 0, 0, 0, (Nx * Sec->Iz * 2) / (Sec->A * l), -s.S1.Mz / l, (-Nx * Sec->Iz * 6) / (Sec->A * l * l), 0, 0, 0, (Nx * Sec->Iz * 4) / (Sec->A * l);
 
 	//Eigen::MatrixXd Kg_mat1 = Eigen::MatrixXd::Zero(total_dof, total_dof);
 	//Kg_mat1 << Nx / l, (s.S0.Mz - s.S1.Mz) / (l * l), (s.S0.My - s.S1.My) / (l * l), 0, s.S0.My / l, -s.S0.Mz / l, -Nx / l, (s.S1.Mz - s.S0.Mz) / (l * l), (s.S1.My - s.S0.My) / (l * l), 0, -s.S1.My / l, s.S1.Mz / l,
@@ -522,54 +565,54 @@ Eigen::MatrixXd BeamElement::geometric_stiffness_matrix(const std::vector<Displa
 	//	s.S1.Mz / l, (Nx * Sec->Iz * 6) / (Sec->A * l * l), 0, 0, 0, (Nx * Sec->Iz * 2) / (Sec->A * l), -s.S1.Mz / l, (-Nx * Sec->Iz * 6) / (Sec->A * l * l), 0, 0, 0, (Nx * Sec->Iz * 4) / (Sec->A * l);
 
 	// A2 A2^t + A3 A3^t
-	Eigen::MatrixXd Kg_mat2 = Eigen::MatrixXd::Zero(total_dof, total_dof);
-	Kg_mat2 << 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-		0, (6.0 * Nx) / (5.0 * l), 0, -(s.S0.My + s.S1.My) / (2.0 * l), 0, Nx / 10.0, 0, -(6.0 * Nx) / (5.0 * l), 0, (s.S0.My + s.S1.My) / (2.0 * l), 0, Nx / 10,
-		0, 0, (6.0 * Nx) / (5.0 * l), (s.S0.Mz + s.S1.Mz) / (2.0 * l), -Nx / 10.0, 0, 0, 0, -(6.0 * Nx) / (5.0 * l), -(s.S0.Mz + s.S1.Mz) / (2.0 * l), -Nx / 10, 0,
-		0, -(s.S0.My + s.S1.My) / (2.0 * l), (s.S0.Mz + s.S1.Mz) / (2.0 * l), Nx * (Sec->Iy + Sec->Iz) / (Sec->A * l * l), 0, 0, 0, (s.S0.My + s.S1.My) / (2.0 * l), -(s.S0.Mz + s.S1.Mz) / (2.0 * l), -Nx * (Sec->Iy + Sec->Iz) / (Sec->A * l * l), 0, 0,
-		0, 0, -Nx / 10, 0, 2 * Nx * l / 15, 0, 0, 0, Nx / 10, 0, -Nx * l / 30, 0,
-		0, Nx / 10, 0, 0, 0, 2.0 * Nx * l / 15, 0, -Nx / 10, 0, 0, 0, -Nx * l / 30,
-		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-		0, -6.0 * Nx / (5 * l), 0, (s.S0.My + s.S1.My) / (2 * l), 0, -Nx / 10, 0, 6.0 * Nx / (5.0 * l), 0, -(s.S0.My + s.S1.My) / (2.0 * l), 0, -Nx / 10,
-		0, 0, -6.0 * Nx / (5.0 * l), -(s.S0.Mz + s.S1.Mz) / (2.0 * l), Nx / 10, 0, 0, 0, 6.0 * Nx / (5.0 * l), (s.S0.Mz + s.S1.Mz) / (2.0 * l), Nx / 10, 0,
-		0, (s.S0.My + s.S1.My) / (2.0 * l), -(s.S0.Mz + s.S1.Mz) / (2.0 * l), -Nx * (Sec->Iy + Sec->Iz) / (Sec->A * l * l), 0, 0, 0, -(s.S0.My + s.S1.My) / (2.0 * l), (s.S0.Mz + s.S1.Mz) / (2.0 * l), Nx * (Sec->Iy + Sec->Iz) / (Sec->A * l * l), 0, 0,
-		0, 0, -Nx / 10, 0, -Nx * l / 30.0, 0, 0, 0, Nx / 10.0, 0, 2.0 * Nx * l / 15.0, 0,
-		0, -Nx / 10.0, 0, 0, 0, -Nx * l / 30.0, 0, -Nx / 10.0, 0, 0, 0, 2.0 * l * Nx / 15.0;
+	//Eigen::MatrixXd Kg_mat2 = Eigen::MatrixXd::Zero(total_dof, total_dof);
+	//Kg_mat2 << 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//	0, (6.0 * Nx) / (5.0 * l), 0, -(s.S0.My + s.S1.My) / (2.0 * l), 0, Nx / 10.0, 0, -(6.0 * Nx) / (5.0 * l), 0, (s.S0.My + s.S1.My) / (2.0 * l), 0, Nx / 10,
+	//	0, 0, (6.0 * Nx) / (5.0 * l), (s.S0.Mz + s.S1.Mz) / (2.0 * l), -Nx / 10.0, 0, 0, 0, -(6.0 * Nx) / (5.0 * l), -(s.S0.Mz + s.S1.Mz) / (2.0 * l), -Nx / 10, 0,
+	//	0, -(s.S0.My + s.S1.My) / (2.0 * l), (s.S0.Mz + s.S1.Mz) / (2.0 * l), Nx * (Sec->Iy + Sec->Iz) / (Sec->A * l * l), 0, 0, 0, (s.S0.My + s.S1.My) / (2.0 * l), -(s.S0.Mz + s.S1.Mz) / (2.0 * l), -Nx * (Sec->Iy + Sec->Iz) / (Sec->A * l * l), 0, 0,
+	//	0, 0, -Nx / 10, 0, 2 * Nx * l / 15, 0, 0, 0, Nx / 10, 0, -Nx * l / 30, 0,
+	//	0, Nx / 10, 0, 0, 0, 2.0 * Nx * l / 15, 0, -Nx / 10, 0, 0, 0, -Nx * l / 30,
+	//	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//	0, -6.0 * Nx / (5 * l), 0, (s.S0.My + s.S1.My) / (2 * l), 0, -Nx / 10, 0, 6.0 * Nx / (5.0 * l), 0, -(s.S0.My + s.S1.My) / (2.0 * l), 0, -Nx / 10,
+	//	0, 0, -6.0 * Nx / (5.0 * l), -(s.S0.Mz + s.S1.Mz) / (2.0 * l), Nx / 10, 0, 0, 0, 6.0 * Nx / (5.0 * l), (s.S0.Mz + s.S1.Mz) / (2.0 * l), Nx / 10, 0,
+	//	0, (s.S0.My + s.S1.My) / (2.0 * l), -(s.S0.Mz + s.S1.Mz) / (2.0 * l), -Nx * (Sec->Iy + Sec->Iz) / (Sec->A * l * l), 0, 0, 0, -(s.S0.My + s.S1.My) / (2.0 * l), (s.S0.Mz + s.S1.Mz) / (2.0 * l), Nx * (Sec->Iy + Sec->Iz) / (Sec->A * l * l), 0, 0,
+	//	0, 0, -Nx / 10, 0, -Nx * l / 30.0, 0, 0, 0, Nx / 10.0, 0, 2.0 * Nx * l / 15.0, 0,
+	//	0, -Nx / 10.0, 0, 0, 0, -Nx * l / 30.0, 0, -Nx / 10.0, 0, 0, 0, 2.0 * l * Nx / 15.0;
 
 	// A6 A1^t + A1 A6^t + A7 A2^t + A2 A7^t
-	Eigen::MatrixXd Kg_mat3 = Eigen::MatrixXd::Zero(total_dof, total_dof);
-	Kg_mat3 << 0, 0, -1.0/l, 0, 0, 0, 0, 0, 1.0/l, 0, 0, 0,
-		0, 0, 0, 0.5, 0, 0, 0, 0, 0, 0.5, 0, 0,
-		-1.0/l, 0, 0, 0, 0, 0, 1.0/l, 0, 0, 0, 0, 0,
-		0, 0.5, 0, 0, 0, -l/12.0, 0, -0.5, 0, 0, 0, l/12.0,
-		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-		0, 0, 0, -l/12.0, 0, 0, 0, 0, 0, l/12.0, 0, 0,
-		0, 0, 1.0/l, 0, 0, 0, 0, 0, -1.0/l, 0, 0, 0,
-		0, 0, 0, -0.5, 0, 0, 0, 0, 0, -0.5, 0, 0,
-		1.0 / l, 0, 0, 0, 0, 0, -1.0 / l, 0, 0, 0, 0, 0,
-		0, 0.5, 0, 0, 0, l / 12.0, 0, -0.5, 0, 0, 0, -l / 12.0,
-		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-		0, 0, 0, l / 12.0, 0, 0, 0, 0, 0, -l / 12.0, 0, 0;
-	Kg_mat3 *= Qz;
-	
+	//Eigen::MatrixXd Kg_mat3 = Eigen::MatrixXd::Zero(total_dof, total_dof);
+	//Kg_mat3 << 0, 0, -1.0/l, 0, 0, 0, 0, 0, 1.0/l, 0, 0, 0,
+	//	0, 0, 0, 0.5, 0, 0, 0, 0, 0, 0.5, 0, 0,
+	//	-1.0/l, 0, 0, 0, 0, 0, 1.0/l, 0, 0, 0, 0, 0,
+	//	0, 0.5, 0, 0, 0, -l/12.0, 0, -0.5, 0, 0, 0, l/12.0,
+	//	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//	0, 0, 0, -l/12.0, 0, 0, 0, 0, 0, l/12.0, 0, 0,
+	//	0, 0, 1.0/l, 0, 0, 0, 0, 0, -1.0/l, 0, 0, 0,
+	//	0, 0, 0, -0.5, 0, 0, 0, 0, 0, -0.5, 0, 0,
+	//	1.0 / l, 0, 0, 0, 0, 0, -1.0 / l, 0, 0, 0, 0, 0,
+	//	0, 0.5, 0, 0, 0, l / 12.0, 0, -0.5, 0, 0, 0, -l / 12.0,
+	//	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//	0, 0, 0, l / 12.0, 0, 0, 0, 0, 0, -l / 12.0, 0, 0;
+	//Kg_mat3 *= Qz;
+	//
 	// A1 A4^t + A4 A1^t + A3 A5^t + A5 A3^t
-	Eigen::MatrixXd Kg_mat4 = Eigen::MatrixXd::Zero(total_dof, total_dof);
-	Kg_mat4 << 0, -1.0/l, 0, 0, 0, 0, 0, 1.0/l, 0, 0, 0, 0,
-		-1.0/l, 0, 0, 0, 0, 0, 1.0/l, 0, 0, 0, 0, 0,
-		0, 0, 0, -0.5, 0, 0, 0, 0, 0, -0.5, 0, 0,
-		0, 0, -0.5, 0, -l/12.0, 0, 0, 0, 0.5, 0, l/12.0, 0,
-		0, 0, 0, -l/12.0, 0, 0, 0, 0, 0, l/12.0, 0, 0,
-		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-		0, 1.0/l, 0, 0, 0, 0, 0, -1.0/l, 0, 0, 0, 0,
-		1.0/l, 0, 0, 0, 0, 0, -1.0/l, 0, 0, 0, 0, 0,
-		0, 0, 0, 0.5, 0, 0, 0, 0, 0, 0.5, 0, 0,
-		0, 0, -0.5, 0, l / 12.0, 0, 0, 0, 0.5, 0, -l / 12.0, 0,
-		0, 0, 0, l / 12.0, 0, 0, 0, 0, 0, -l / 12.0, 0, 0,
-		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0;
-	Kg_mat4 *= Qy;
+	//Eigen::MatrixXd Kg_mat4 = Eigen::MatrixXd::Zero(total_dof, total_dof);
+	//Kg_mat4 << 0, -1.0/l, 0, 0, 0, 0, 0, 1.0/l, 0, 0, 0, 0,
+	//	-1.0/l, 0, 0, 0, 0, 0, 1.0/l, 0, 0, 0, 0, 0,
+	//	0, 0, 0, -0.5, 0, 0, 0, 0, 0, -0.5, 0, 0,
+	//	0, 0, -0.5, 0, -l/12.0, 0, 0, 0, 0.5, 0, l/12.0, 0,
+	//	0, 0, 0, -l/12.0, 0, 0, 0, 0, 0, l/12.0, 0, 0,
+	//	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	//	0, 1.0/l, 0, 0, 0, 0, 0, -1.0/l, 0, 0, 0, 0,
+	//	1.0/l, 0, 0, 0, 0, 0, -1.0/l, 0, 0, 0, 0, 0,
+	//	0, 0, 0, 0.5, 0, 0, 0, 0, 0, 0.5, 0, 0,
+	//	0, 0, -0.5, 0, l / 12.0, 0, 0, 0, 0.5, 0, -l / 12.0, 0,
+	//	0, 0, 0, l / 12.0, 0, 0, 0, 0, 0, -l / 12.0, 0, 0,
+	//	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0;
+	//Kg_mat4 *= Qy;
 
-	Kg_mat = Kg_mat1 + Kg_mat2 + Kg_mat3 + Kg_mat4;
-	Kg_mat *= 0.5;
+	//Kg_mat = Kg_mat1 + Kg_mat2 + Kg_mat3 + Kg_mat4;
+	//Kg_mat *= 0.5;
 
 		// Kg_mat << 1.0 / l, 0, 0, 0, 0, 0, -1.0 / l, 0, 0, 0, 0, 0,
 		// 	0, 6.0 / 5.0 / l, 0, 0, 0, 1.0 / 10.0, 0, -6.0 / 5.0 / l, 0, 0, 0, 1.0 / 10.0,
@@ -903,7 +946,7 @@ void TriPlaneElement::AssembleStiffMatrix(Eigen::SparseMatrix<double> &mat)
 void TriPlaneElement::AssembleGeometricStiffMatrix(
 	Eigen::SparseMatrix<double> &mat, const std::vector<Displacement> &disp)
 {
-	AssembleMatrix(mat, geometric_stiffness_matrix(disp));
+	AssembleMatrix(mat, geometric_local_stiffness_matrix(disp));
 }
 
 void TriPlaneElement::AssembleMassMatrix(Eigen::SparseMatrix<double>& mat)
@@ -963,7 +1006,7 @@ Eigen::MatrixXd TriPlaneElement::localStiffnessMatrix()
 	return K;
 }
 
-Eigen::MatrixXd TriPlaneElement::geometric_stiffness_matrix(const std::vector<Displacement>& disp)
+Eigen::MatrixXd TriPlaneElement::geometric_local_stiffness_matrix(const std::vector<Displacement>& disp)
 {
 	// Eigen::MatrixXd Kg_mat = Eigen::MatrixXd::Zero(total_dof, total_dof);
 	double area = Area();
@@ -993,8 +1036,9 @@ Eigen::MatrixXd TriPlaneElement::geometric_stiffness_matrix(const std::vector<Di
 	SigMat3.block<2, 2>(4, 4) = SigMat;
 
 	Eigen::MatrixXd Kg = Gmat.transpose() * SigMat3 * Gmat * area * thickness.plane_thick;
-	Eigen::MatrixXd tr = trans_matrix();
-	return tr.transpose() * Kg * tr;
+	//Eigen::MatrixXd tr = trans_matrix();
+	//return tr.transpose() * Kg * tr;
+	return Kg;
 }
 
 Eigen::MatrixXd TriPlaneElement::trans_matrix()
@@ -1384,7 +1428,7 @@ Eigen::MatrixXd TriPlateElement::localStiffnessMatrix()
 	return mat * Area();
 }
 
-Eigen::MatrixXd TriPlateElement::geometric_stiffness_matrix(const std::vector<Displacement> &disp)
+Eigen::MatrixXd TriPlateElement::geometric_local_stiffness_matrix(const std::vector<Displacement> &disp)
 {
 	Eigen::MatrixXd Kg = Eigen::MatrixXd::Zero(9, 9);
 
@@ -1456,8 +1500,9 @@ Eigen::MatrixXd TriPlateElement::geometric_stiffness_matrix(const std::vector<Di
 		Kg += Gmat.transpose() * SigMat * Gmat * weight * area;
 	}
 
-	Eigen::MatrixXd trMat = trans_matrix();
-	return trMat.transpose() * Kg * trMat;
+	//Eigen::MatrixXd trMat = trans_matrix();
+	//return trMat.transpose() * Kg * trMat;
+	return Kg;
 }
 
 TriPlateElement::TriPlateElement(Node* n0, Node* n1, Node* n2, Thickness t, Material mat)
@@ -1716,6 +1761,44 @@ Eigen::MatrixXd TriPlateElement::StiffnessMatrix()
 	return trMat.transpose() * mat * trMat;
 }
 
+Eigen::MatrixXd TriPlateElement::GeometricStiffnessMatrix(const std::vector<Displacement>& disp)
+{
+	Eigen::MatrixXd KGpln = plane_element.geometric_local_stiffness_matrix(disp);
+	Eigen::MatrixXd KGplt = geometric_local_stiffness_matrix(disp);
+
+	//int indices_rotz[3]{ 5,11,17 };
+	int indices_pln[9]{ 0,1,2,6,7,8,12,13,14 };
+	//int indices_pln[9]{ 0,1,-1,6,7,-1,12,13,-1 };
+	int indices_plt[9]{ 2,3,4,8,9,10,14,15,16 };
+
+	Eigen::MatrixXd mat = Eigen::MatrixXd::Zero(total_dof, total_dof);
+
+	for (size_t i = 0; i < 9; i++)
+	{
+		int ir = indices_pln[i];
+		if (ir < 0) continue; // -1は無視
+		for (size_t j = 0; j < 9; j++)
+		{
+			int ic = indices_pln[j];
+			if (ic < 0) continue; // -1は無視
+			mat(ir, ic) += KGpln(i, j);
+		}
+	}
+
+	for (size_t i = 0; i < 9; i++)
+	{
+		int ir = indices_plt[i];
+		for (size_t j = 0; j < 9; j++)
+		{
+			int ic = indices_plt[j];
+			mat(ir, ic) += KGplt(i, j);
+		}
+	}
+
+	Eigen::MatrixXd trMat = trans_matrix();
+	return trMat.transpose() * mat * trMat;
+}
+
 void TriPlateElement::AssembleMatrix(Eigen::SparseMatrix<double> &mat, Eigen::MatrixXd K)
 {
 	int indices[total_dof];
@@ -1781,7 +1864,7 @@ void TriPlateElement::AssembleStiffMatrix(Eigen::SparseMatrix<double> &mat)
 void TriPlateElement::AssembleGeometricStiffMatrix(
 	Eigen::SparseMatrix<double> &mat, const std::vector<Displacement> &disp)
 {
-	AssembleMatrix(mat, geometric_stiffness_matrix(disp));
+	AssembleMatrix(mat, GeometricStiffnessMatrix(disp));
 }
 
 void TriPlateElement::AssembleMassMatrix(Eigen::SparseMatrix<double>& mat)
@@ -2108,7 +2191,7 @@ Eigen::MatrixXd QuadPlaneElement::localStiffnessMatrix()
 	return K;
 }
 
-Eigen::MatrixXd QuadPlaneElement::geometric_stiffness_matrix(const std::vector<Displacement> &disp)
+Eigen::MatrixXd QuadPlaneElement::geometric_local_stiffness_matrix(const std::vector<Displacement> &disp)
 {
 	const double intgp = 1.0 / sqrt(3.0);
 	Eigen::Vector4d xi_list(-intgp, intgp, intgp, -intgp);
@@ -2126,12 +2209,13 @@ Eigen::MatrixXd QuadPlaneElement::geometric_stiffness_matrix(const std::vector<D
 
 		Eigen::Matrix2d JMat = JMatrix(xi, eta);
 		double detJ = JMat.determinant();
-		JMat = JMat.inverse();
+		//JMat = JMat.inverse().eval();
 
 		Eigen::MatrixXd dndx(2, 4);
 		dndx.row(0) = dndxi;
 		dndx.row(1) = dndeta;
-		dndx = JMat * dndx;
+		dndx = JMat.inverse() * dndx;
+		//dndx = JMat * dndx;
 
 		Eigen::MatrixXd Gmat = Eigen::MatrixXd::Zero(6, 12);
 		Gmat << 
@@ -2153,11 +2237,13 @@ Eigen::MatrixXd QuadPlaneElement::geometric_stiffness_matrix(const std::vector<D
 		SigMat3.block<2, 2>(2, 2) = SigMat;
 		SigMat3.block<2, 2>(4, 4) = SigMat;
 
-		Kg += thickness.plane_thick * intgp * Gmat.transpose() * SigMat3 * Gmat * detJ;
+		Kg += thickness.plane_thick * Gmat.transpose() * SigMat3 * Gmat * detJ;
+		//Kg += thickness.plane_thick * intgp * Gmat.transpose() * SigMat3 * Gmat * detJ;
 	}
 
-	Eigen::MatrixXd tr = trans_matrix();
-	return tr.transpose() * Kg * tr;
+	//Eigen::MatrixXd tr = trans_matrix();
+	//return tr.transpose() * Kg * tr;
+	return Kg;
 }
 
 QuadPlaneElement::QuadPlaneElement(Node* n0, Node* n1, Node* n2, Node* n3, double t, Material mat)
@@ -2383,7 +2469,7 @@ void QuadPlaneElement::AssembleStiffMatrix(Eigen::SparseMatrix<double> &mat)
 void QuadPlaneElement::AssembleGeometricStiffMatrix(
 	Eigen::SparseMatrix<double> &mat, const std::vector<Displacement> &disp)
 {
-	AssembleMatrix(mat, geometric_stiffness_matrix(disp));
+	AssembleMatrix(mat, geometric_local_stiffness_matrix(disp));
 }
 
 void QuadPlaneElement::AssembleMassMatrix(Eigen::SparseMatrix<double>& mat)
@@ -2917,7 +3003,7 @@ Eigen::MatrixXd QuadPlateElement::localStiffnessMatrix()
 	return K;
 }
 
-Eigen::MatrixXd QuadPlateElement::geometric_stiffness_matrix(const std::vector<Displacement> &disp)
+Eigen::MatrixXd QuadPlateElement::geometric_local_stiffness_matrix(const std::vector<Displacement> &disp)
 {
 	const double intgp = 1.0 / sqrt(3.0);
 	Eigen::Vector4d xi_list(-intgp, intgp, intgp, -intgp);
@@ -2938,11 +3024,13 @@ Eigen::MatrixXd QuadPlateElement::geometric_stiffness_matrix(const std::vector<D
 		SigMat << strs.My, strs.Mxy, strs.Mxy, strs.Mx;
 
 		double detJ = JMatrix(xi, eta).determinant();
-		Kg += hvecs.transpose() * SigMat * hvecs * intgp * detJ;
+		Kg += hvecs.transpose() * SigMat * hvecs * detJ;
+		//Kg += hvecs.transpose() * SigMat * hvecs * intgp * detJ;
 	}
 
-	Eigen::MatrixXd tr = trans_matrix();
-	return tr.transpose() * Kg * tr;
+	//Eigen::MatrixXd tr = trans_matrix();
+	//return tr.transpose() * Kg * tr;
+	return Kg;
 }
 
 QuadPlateElement::QuadPlateElement(Node* n0, Node* n1, Node* n2, Node* n3, double t, Material mat)
@@ -3466,6 +3554,39 @@ Eigen::MatrixXd QuadPlateElement::StiffnessMatrix()
 	return trMat.transpose() * mat * trMat;
 }
 
+Eigen::MatrixXd QuadPlateElement::GeometricStiffnessMatrix(const std::vector<Displacement>& disp) {
+	Eigen::MatrixXd KGpln = plane_element.geometric_local_stiffness_matrix(disp);
+	Eigen::MatrixXd KGplt = geometric_local_stiffness_matrix(disp);
+
+	int indices_pln[12]{ 0,1,2,6,7,8,12,13,14,18,19,20 };
+	int indices_plt[12]{ 2,3,4,8,9,10,14,15,16,20,21,22 };
+
+	Eigen::MatrixXd mat = Eigen::MatrixXd::Zero(total_dof, total_dof);
+
+	for (size_t i = 0; i < 12; i++)
+	{
+		int ir = indices_pln[i];
+		for (size_t j = 0; j < 12; j++)
+		{
+			int ic = indices_pln[j];
+			mat(ir, ic) += KGpln(i, j);
+		}
+	}
+
+	for (size_t i = 0; i < 12; i++)
+	{
+		int ir = indices_plt[i];
+		for (size_t j = 0; j < 12; j++)
+		{
+			int ic = indices_plt[j];
+			mat(ir, ic) += KGplt(i, j);
+		}
+	}
+
+	Eigen::MatrixXd trMat = trans_matrix();
+	return trMat.transpose() * mat * trMat;
+}
+
 void QuadPlateElement::AssembleMatrix(Eigen::SparseMatrix<double> &mat, Eigen::MatrixXd K)
 {
 	int indices[total_dof];
@@ -3523,7 +3644,7 @@ void QuadPlateElement::AssembleStiffMatrix(Eigen::SparseMatrix<double> &mat)
 void QuadPlateElement::AssembleGeometricStiffMatrix(
 	Eigen::SparseMatrix<double> &mat, const std::vector<Displacement> &disp)
 {
-	AssembleMatrix(mat, geometric_stiffness_matrix(disp));
+	AssembleMatrix(mat, GeometricStiffnessMatrix(disp));
 }
 
 void QuadPlateElement::AssembleMassMatrix(Eigen::SparseMatrix<double>& mat)

@@ -1,4 +1,5 @@
 %module (directors="1") FEMNet
+// %include "SeismicModule.i"
 
 %include <std_vector.i>
 %include <std_map.i>
@@ -37,6 +38,7 @@
 %shared_ptr(BeamLoadBase);
 %shared_ptr(NodeLoad);
 %shared_ptr(InertialForce);
+%shared_ptr(NodeBodyForce);
 
 // Director機能を有効化
 %feature("director") IResponseSpectrum;
@@ -55,6 +57,8 @@
     #include "Element.h"
     #include "Components.h"
     #include "Model.h"
+
+    #include "SeismicModule.h"
 %}
 
 %include <std_string.i>
@@ -128,6 +132,7 @@ namespace std {
 	%template(VectorBeamPolyLoad) std::vector<BeamPolyLoad>;
 	%template(VectorLoad) std::vector<std::shared_ptr<LoadBase>>;
 	%template(VectorNodeLoad) std::vector<NodeLoad>;
+	%template(VectorNodeBodyForce) std::vector<NodeBodyForce>;
     %template(VectorNodeLoadData) std::vector<NodeLoadData>;
 }
 
@@ -207,4 +212,5 @@ namespace std {
 #include "Element.h"
 #include "Components.h"
 #include "Model.h"
+#include "SeismicModule.h"
 

@@ -195,15 +195,12 @@ public:
 typedef FEModel FEModel;
 
 // 変形ケースを表す基底クラス
-class FEDeformCase {
+class FEDeformOperator {
 public:
     std::shared_ptr<FEModel> model;
-    //std::vector<std::shared_ptr<LoadBase>> loads;
-    //std::vector<Displacement> displace;
-    //std::vector<NodeLoad> react_force;
 
-    FEDeformCase() {};
-	FEDeformCase(std::shared_ptr<FEModel> model) : model(model) {};
+    FEDeformOperator() {};
+	FEDeformOperator(std::shared_ptr<FEModel> model) : model(model) {};
 
     virtual BeamStressData GetBeamStress(int eid, double p) = 0;
     virtual PlateStressData GetPlateStressData(int eid, double xi, double eta) = 0;
@@ -219,9 +216,8 @@ public:
 };
 
 // Static Solver Package
-class FEStaticResult : public FEDeformCase {
+class FEStaticResult : public FEDeformOperator {
 public:
-    //std::shared_ptr<FEModel> model;
     std::vector<std::shared_ptr<LoadBase>> loads;
     std::vector<Displacement> displace;
     std::vector<NodeLoad> react_force;
@@ -231,7 +227,7 @@ public:
         std::vector<std::shared_ptr<LoadBase>> loads,
         std::vector<Displacement> displace,
         std::vector<NodeLoad> react_force)
-        : FEDeformCase(model), loads(loads),
+        : FEDeformOperator(model), loads(loads),
         displace(displace), react_force(react_force) {};
 
     BeamStressData GetBeamStress(int eid, double p) override;
@@ -260,6 +256,7 @@ public:
     std::vector<NodeLoad> GetReactForces() override { return react_force; };
 }; // FEStaticResult
 
+
 struct StaticDeformFactor {
 public:
 	std::shared_ptr<FEStaticResult> op;
@@ -269,7 +266,7 @@ public:
 	};
 };
 
-class StaticCombinationOperator : public FEDeformCase {
+class StaticCombinationOperator : public FEDeformOperator {
 public:
 	std::vector<StaticDeformFactor> cases;
 	StaticCombinationOperator() {};
@@ -349,8 +346,8 @@ public:
 
 class FEBucklingAnalysis : public FEModeOperator {
 public:
-    std::shared_ptr<FEDeformCase> deform_case;
-    FEBucklingAnalysis(std::shared_ptr<FEDeformCase> deform_case) : deform_case(deform_case) {};
+    std::shared_ptr<FEDeformOperator> deform_case;
+    FEBucklingAnalysis(std::shared_ptr<FEDeformOperator> deform_case) : deform_case(deform_case) {};
 
     int ModeNum() override { return mode_num; }
     std::vector<std::vector<Displacement>> ModeVectors() override { return mode_vectors; }
@@ -385,7 +382,7 @@ public:
 /// <summary>
 /// 時刻歴応答解析クラス
 /// </summary>
-class DynamicAnalysis : public FEDeformCase {
+class DynamicAnalysis : public FEDeformOperator {
 private:
 #ifdef EIGEN_USE_MKL_ALL
     Eigen::PardisoLLT<Eigen::SparseMatrix<double>> solver;
@@ -512,7 +509,7 @@ enum ResponseSpectrumMethodType
 };
 
 
-class ResponseSpectrumMethod : public FEDeformCase {
+class ResponseSpectrumMethod : public FEDeformOperator {
 private:
     std::vector<Displacement> calculate_displacementsCQC();
     std::vector<Displacement> calculate_displacementsSRSS();

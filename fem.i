@@ -11,7 +11,7 @@
 %shared_ptr(FEModel);
 %shared_ptr(DASampler);
 %shared_ptr(DASampler_MaxDisplacement);
-%shared_ptr(FEDeformCase);
+%shared_ptr(FEDeformOperator);
 %shared_ptr(FEStaticResult);
 %shared_ptr(StaticCombinationOperator);
 %shared_ptr(DynamicAnalysis);

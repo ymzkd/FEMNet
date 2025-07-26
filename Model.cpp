@@ -228,126 +228,6 @@ Eigen::SparseMatrix<double> FEModel::extractSubMatrix(
     return subMat;
 }
 
-//void FEModel::SolveVibrationTest()
-//{
-//    std::vector<int> free_indices = FreeIndices();
-//    std::vector<int> fixed_indices = FixIndices();
-//    //std::vector<int> fixed_indices = UnLumpedFixIndices();
-//    Eigen::SparseMatrix<double> ka; //, kb, kc;
-//    FEModel::splitMatrixWithResize(AssembleStiffnessMatrix(), fixed_indices, ka);
-//
-//    //Eigen::VectorXd f_free(free_indices.size());
-//    //Eigen::VectorXd f_fix(fixed_indices.size());
-//
-//    //Eigen::SparseMatrix<double>::diagonal()
-//    std::vector<Eigen::Triplet<double>> tripletList;
-//    for (int i = 0; i < NodeNum(); ++i) {
-//        tripletList.push_back(Eigen::Triplet<double>(i * 6, i * 6, 0.0));
-//        tripletList.push_back(Eigen::Triplet<double>(i * 6 + 1, i * 6 + 1, 0.0));
-//        tripletList.push_back(Eigen::Triplet<double>(i * 6 + 2, i * 6 + 2, 0.0));
-//    }
-//    Eigen::SparseMatrix<double> mass_mat(NodeNum() * 6, NodeNum() * 6);
-//    mass_mat.setFromTriplets(tripletList.begin(), tripletList.end());
-//    // Construct MassMatrix
-//    for each (std::shared_ptr<ElementBase> eh in Elements) {
-//        //Eigen::VectorXd nw = eh->NodeLumpedMass();
-//        eh->AssembleMassMatrix(mass_mat);
-//    }
-//    mass_mat *= (1.0 / GRAVACCEL);
-//
-//    //std::cout << "Mass Matrix: \n" << mass_mat << std::endl;
-//    Eigen::SparseMatrix<double> ma;
-//    FEModel::splitMatrixWithResize(mass_mat, fixed_indices, ma);
-//
-//    std::vector<int> shrink_indices, other_indices;
-//    Eigen::Diagonal mdiag = ma.diagonal();
-//    //std::cout << "Mass Diag: " << mdiag << std::endl;
-//    for (size_t i = 0; i < mdiag.size(); i++)
-//    {
-//        if (mdiag.coeffRef(i) < 0.0000001)
-//            shrink_indices.push_back(i);
-//        else
-//            other_indices.push_back(i);
-//    }
-//
-//    Eigen::SparseMatrix<double> k_sha, k_shb, k_shc, k_shd, m_sh;
-//    FEModel::splitMatrixWithResize(ma, shrink_indices, m_sh);
-//    FEModel::splitMatrixWithResize(ka, shrink_indices, k_sha, k_shb, k_shd);
-//
-//#ifdef EIGEN_USE_MKL_ALL
-//    Eigen::PardisoLLT<Eigen::SparseMatrix<double>> solver;
-//#else
-//    Eigen::SimplicialLLT<Eigen::SparseMatrix<double>, Eigen::Upper> solver;
-//#endif
-//
-//    k_shc = k_shb.transpose();
-//    solver.compute(k_shd);
-//    Eigen::SparseMatrix<double> tmp_mat = k_shb * solver.solve(k_shc);
-//    k_sha -= tmp_mat.triangularView<Eigen::Upper>();
-//
-//    // A_op: 行列 A に対する作用素
-//    Spectra::SparseSymMatProd<double, Eigen::Upper> A_op(m_sh);
-//    // B_op: 行列 B に対する作用素
-//    Spectra::SparseCholesky<double, Eigen::Upper> B_op(k_sha);
-//
-//    //std::cout << "Mass Matrix: \n" << m_sh << std::endl;
-//    //std::cout << "Stiff Matrix: \n" << k_sha << std::endl;
-//
-//    // --- 一般固有値問題の設定 ---
-//    // 求める固有値の個数 (nev) と、アルゴリズム内部で使用する次元 (ncv) を指定します
-//    int nev = 5; // 求める固有値の数
-//    int ncv = nev+1; // ncv は nev より大きい必要があります
-//
-//    // Spectra の一般固有値ソルバーを生成
-//    // テンプレートパラメータ:
-//    //   - 第一引数: スカラ型 (double)
-//    //   - 第二引数: 固有値の選択規準 (ここでは LARGEST_MAGN：絶対値が大きい順)
-//    //   - 第三引数: 行列 A に対する作用素の型
-//    //   - 第四引数: 行列 B に対する作用素の型
-//    Spectra::SymGEigsSolver<Spectra::SparseSymMatProd<double, Eigen::Upper>, 
-//        Spectra::SparseCholesky<double, Eigen::Upper>, Spectra::GEigsMode::Cholesky>
-//        geigs(A_op, B_op, nev, ncv);
-//
-//    // ソルバーの初期化（内部で初期ベクトルを自動生成）
-//    geigs.init();
-//
-//    // 固有値問題を解く（compute() の戻り値は収束した固有値の数）
-//    int nconv = geigs.compute();
-//
-//    if (geigs.info() == Spectra::CompInfo::Successful)
-//    {
-//
-//        //std::cout << "converged eigen value :" << nconv << std::endl;
-//        //std::cout << geigs.eigenvalues() << "\n\n";
-//        
-//        Eigen::MatrixXd u1s = geigs.eigenvectors();
-//        Eigen::MatrixXd tmp_mat2 = -k_shc * u1s;
-//        Eigen::MatrixXd u2s = solver.solve(tmp_mat2);
-//        Eigen::MatrixXd mode_vectors = Eigen::MatrixXd::Zero(DOFNum(), nev);
-//        for (size_t i = 0; i < free_indices.size(); i++)
-//        {
-//            for (size_t i = 0; i < other_indices.size(); i++)
-//                mode_vectors.row(free_indices[other_indices[i]]) = u1s.row(i);
-//            for (size_t i = 0; i < shrink_indices.size(); i++)
-//                mode_vectors.row(free_indices[shrink_indices[i]]) = u2s.row(i);
-//        }
-//        
-//        std::cout << "converged eigen vector ::\n"
-//            << mode_vectors << "\n\n";
-//        
-//        std::cout << "Natural Periods :" << nconv << std::endl;
-//        for each (double v in geigs.eigenvalues())
-//        {
-//            //std::cout << (MODEL_PI * 2) / sqrt(v) << "\n";
-//            std::cout << sqrt(v) * (MODEL_PI * 2) << "\n";
-//        }
-//        
-//    }
-//    else {
-//        std::cout << "Eigenvalue calculations did not converge." << std::endl;
-//    }
-//}
-
 int FEModel::SolveVibration(const int nev, std::vector<double>& eigen_values, 
     std::vector<std::vector<Displacement>>& mode_vectors)
 {
@@ -357,38 +237,11 @@ int FEModel::SolveVibration(const int nev, std::vector<double>& eigen_values,
     std::vector<int> fixed_indices = FixIndices();
     Eigen::SparseMatrix<double> ka; //, kb, kc;
     FEModel::splitMatrixWithResize(AssembleStiffnessMatrix(), fixed_indices, ka);
-    
- //   std::vector<Eigen::Triplet<double>> tripletList;
- //   for (int i = 0; i < NodeNum(); ++i) {
- //       tripletList.push_back(Eigen::Triplet<double>(i * 6, i * 6, 0.0));
- //       tripletList.push_back(Eigen::Triplet<double>(i * 6 + 1, i * 6 + 1, 0.0));
- //       tripletList.push_back(Eigen::Triplet<double>(i * 6 + 2, i * 6 + 2, 0.0));
- //   }
- //   Eigen::SparseMatrix<double> mass_mat(NodeNum() * 6, NodeNum() * 6);
- //   mass_mat.setFromTriplets(tripletList.begin(), tripletList.end());
- //   
- //   // Construct MassMatrix
- //   for each (std::shared_ptr<ElementBase> eh in Elements)
- //       eh->AssembleMassMatrix(mass_mat);
- //   
-	//for each(Node n in Nodes)
-	//{
-	//	int i = n.id * 6;
-	//	mass_mat.coeffRef(i, i) += n.MassData.SumMass();
-	//	mass_mat.coeffRef(i + 1, i + 1) += n.MassData.SumMass();
-	//	mass_mat.coeffRef(i + 2, i + 2) += n.MassData.SumMass();
-	//}
-
- //   mass_mat *= (1.0 / GRAVACCEL);
-    //Eigen::SparseMatrix<double> mass_mat(NodeNum() * 6, NodeNum() * 6);
-
-    //std::cout << "Mass Matrix: \n" << mass_mat << std::endl;
     Eigen::SparseMatrix<double> ma;
     FEModel::splitMatrixWithResize(AssembleMassMatrix(), fixed_indices, ma);
 
     std::vector<int> shrink_indices, other_indices;
     Eigen::Diagonal mdiag = ma.diagonal();
-    //std::cout << "Mass Diag: " << mdiag << std::endl;
     for (size_t i = 0; i < mdiag.size(); i++)
     {
         if (mdiag.coeffRef(i) < 0.0000001)
@@ -412,16 +265,10 @@ int FEModel::SolveVibration(const int nev, std::vector<double>& eigen_values,
     Eigen::SparseMatrix<double> tmp_mat = k_shb * solver.solve(k_shc);
     k_sha -= tmp_mat.triangularView<Eigen::Upper>();
 
-    // Checkようにm_shの対角項を出力
-	//std::cout << "Mass Matrix: \n" << m_sh.diagonal() << std::endl;
-
     // A_op: 行列 A に対する作用素
     Spectra::SparseSymMatProd<double, Eigen::Upper> A_op(m_sh);
     // B_op: 行列 B に対する作用素
     Spectra::SparseCholesky<double, Eigen::Upper> B_op(k_sha);
-
-    //std::cout << "Mass Matrix: \n" << m_sh << std::endl;
-    //std::cout << "Stiff Matrix: \n" << k_sha << std::endl;
 
     // --- 一般固有値問題の設定 ---
     // 求める固有値の個数 (nev) と、アルゴリズム内部で使用する次元 (ncv) を指定します
@@ -913,7 +760,7 @@ std::vector<Displacement> FEStaticResult::GetDisplacements()
 }
 
 DynamicAnalysis::DynamicAnalysis(std::shared_ptr<FEModel> model, DynamicAccelLoad accel_load, FEDynamicDampInitializer* damp)
-    : FEDeformCase(model), accel_load(accel_load)
+    : FEDeformOperator(model), accel_load(accel_load)
 {
     if (!damp_initializer) {
         // デフォルトの減衰初期化子を用意
@@ -1677,7 +1524,7 @@ std::vector<Displacement> ResponseSpectrumMethod::calculate_displacements()
 
 ResponseSpectrumMethod::ResponseSpectrumMethod(std::shared_ptr<FEModel> model, 
     FEVibrateResult vibrate_result, Vector direction, IResponseSpectrum* spectrum_function, ResponseSpectrumMethodType type)
-    : FEDeformCase(model), VibrateResult(vibrate_result), SpectrumFunction(spectrum_function), Direction(direction), MethodType(type) {
+    : FEDeformOperator(model), VibrateResult(vibrate_result), SpectrumFunction(spectrum_function), Direction(direction), MethodType(type) {
 
     displacements = calculate_displacements();
 

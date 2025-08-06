@@ -8,6 +8,7 @@
 #define M_PI 3.14159265358979323846
 #endif
 
+
 void ResponseMax(const std::vector<double> &accels, 
     const double dt, const double damping_ratio, const double T,
     double &max_disp, double &max_accel, double &max_vel) {

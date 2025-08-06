@@ -119,7 +119,7 @@ private:
 	friend class FEVibrateResult;
 
 public:
-    static constexpr double GRAVACCEL = 9806.6;\
+    double GraityAccel = 9806.65;\
 
     /// <summary>
     /// 非拘束自由度の全自由度におけるインデックスを格納した配列を返す関数
@@ -289,7 +289,9 @@ public:
 
 class FEModeOperator {
 public:
+    std::shared_ptr<FEModel> model;
     FEModeOperator() {};
+	FEModeOperator(std::shared_ptr<FEModel> model) : model(model) {};
     // ModeOperator(std::shared_ptr<FEModel> model) : model(model) {};
 
     // std::shared_ptr<FEModel> model;
@@ -303,7 +305,7 @@ private:
     std::vector<double> eigs; // Omegas
     std::vector<std::vector<Displacement>> mode_vectors;
 public:
-    std::shared_ptr<FEModel> model;
+    //std::shared_ptr<FEModel> model;
 
     int ModeNum() override { return eigs.size(); };
     std::vector<std::vector<Displacement>> ModeVectors() override { return mode_vectors; };
@@ -318,8 +320,8 @@ public:
         std::shared_ptr<FEModel> model,
         std::vector<std::vector<Displacement>> mode_vectors,
         std::vector<double> eigs)
-        : model(model), mode_vectors(mode_vectors),
-          eigs(eigs) {};
+        : mode_vectors(mode_vectors),
+          eigs(eigs), FEModeOperator(model) {};
 
 	// モードごとの刺激係数計算
     std::vector<double> ParticipationFactors();
@@ -346,8 +348,9 @@ public:
 
 class FEBucklingAnalysis : public FEModeOperator {
 public:
+	std::shared_ptr<FEDeformOperator> InitailDeformOp = nullptr;
     std::shared_ptr<FEDeformOperator> deform_case;
-    FEBucklingAnalysis(std::shared_ptr<FEDeformOperator> deform_case) : deform_case(deform_case) {};
+    FEBucklingAnalysis(std::shared_ptr<FEDeformOperator> deform_op) : deform_case(deform_op), FEModeOperator(deform_op->model){};
 
     int ModeNum() override { return mode_num; }
     std::vector<std::vector<Displacement>> ModeVectors() override { return mode_vectors; }

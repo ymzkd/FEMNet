@@ -39,7 +39,7 @@ void TestMethod2() {
 
 	std::cout << "h\tNode2 dx\tNode2 dy\tNode2 dz" << std::endl;
 
-	for each(double h in h_compare)
+	for (double h : h_compare)
 	{
 		Point p0(0, 0, h);
 		Point p1(10, 0, -h);
@@ -338,7 +338,7 @@ void CheckCantiBeamVibration2() {
 	//model.SolveVibrationTest2();
 	double pi = 3.141592653589793238462643;
 	std::cout << "Natural Periods" << std::endl;
-	for each (double var in eigen_values)
+	for (double var : eigen_values)
 	{
 		std::cout << 2 * pi / var << "\n";
 	}
@@ -761,7 +761,7 @@ void TestBeamSemiRigidMethod() {
 	FEStaticResult result = FEStaticResult(std::make_shared<FEModel>(model), loads, disp, react);
 
 	std::cout << "React Forces" << std::endl;
-	for each (NodeLoad nl in react)
+	for (const NodeLoad& nl : react)
 	{
 		std::cout << nl << std::endl;
 	}

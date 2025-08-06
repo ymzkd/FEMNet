@@ -174,6 +174,36 @@ namespace std {
     }
 %}
 
+// FEDeformOperatorクラスにC#プロパティを追加
+%typemap(cscode) FEDeformOperator %{
+    /// <summary>
+    /// Operation Name
+    /// </summary>
+    public virtual string OperationName { get; set; } = "";
+
+    /// <summary>
+    /// Operation Description 
+    /// step summary, time, computation algorithm, etc.
+    /// </summary>
+    public virtual string OperationDescription { get; set; } = "";
+%}
+
+// DynamicAnalysisクラスでプロパティをオーバーライド
+%typemap(cscode) DynamicAnalysis %{
+    /// <summary>
+    /// Operation Name (Dynamic Analysis)
+    /// </summary>
+    public override string OperationName { get; set; } = "Dynamic Analysis";
+
+    /// <summary>
+    /// Operation Description (Dynamic Analysis)
+    /// </summary>
+    public override string OperationDescription { 
+        get => $"Step: {current_step}, \nTime: {current_step * accel_load.timestep:F3}s";
+        set { /* 動的解析では自動生成のため設定不可 */ }
+    }
+%}
+
 // C#のカスタムコードを追加
 %typemap(cscode) Material %{
     // ToStringメソッドをオーバーライド

@@ -479,8 +479,9 @@ Eigen::MatrixXd BeamElement::geometric_local_stiffness_matrix(const std::vector<
 	double Qz = s.S0.Qz;
 
 	int indices_b[8]{ 1,2,4,5,7,8,10,11 };
-	int indices_x[6]{ 0,1,2,6,7,8 };
+	int indices_x[2]{ 0,6 };
 
+	// 曲げによる幾何剛性
 	Eigen::MatrixXd Kg_b = Eigen::MatrixXd::Zero(8, 8);
 	Kg_b << 6.0/(5.0*l), 0, 0, 1.0/10.0, -6.0/(5.0*l), 0, 0, 1.0/10.0,
 		0, 6.0/(5.0*l), -1.0/10.0, 0, 0, -6.0/(5.0*l), -1.0/10.0, 0,
@@ -492,13 +493,10 @@ Eigen::MatrixXd BeamElement::geometric_local_stiffness_matrix(const std::vector<
 		1.0/10.0, 0, 0, -l/30.0, -1.0/10.0, 0, 0, 2.0*l/15.0;
 	 Kg_b *= Nx;
 
-	Eigen::MatrixXd Kg_x = Eigen::MatrixXd::Zero(6, 6);
-	Kg_x << 1, 0, 0, -1, 0, 0,
-			0, 1, 0, 0, -1, 0,
-			0, 0, 1, 0, 0, -1,
-			-1, 0, 0, 1, 0, 0,
-			0, -1, 0, 0, 1, 0,
-			0, 0, -1, 0, 0, 1;
+	 // 軸方向幾何剛性
+	 Eigen::MatrixXd Kg_x = Eigen::MatrixXd::Zero(2, 2);
+	Kg_x << 1, -1,
+		-1, 1;
 	Kg_x *= Nx / l;
 
 	for (size_t i = 0; i < 8; i++)
@@ -511,10 +509,10 @@ Eigen::MatrixXd BeamElement::geometric_local_stiffness_matrix(const std::vector<
 		}
 	}
 
-	for (size_t i = 0; i < 6; i++)
+	for (size_t i = 0; i < 2; i++)
 	{
 		int ir = indices_x[i];
-		for (size_t j = 0; j < 6; j++)
+		for (size_t j = 0; j < 2; j++)
 		{
 			int ic = indices_x[j];
 			Kg_mat(ir, ic) += Kg_x(i, j);

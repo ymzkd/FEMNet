@@ -319,7 +319,8 @@ public:
     }
 
     bool IsAnyFix() {
-        for each (bool f in isdof_fixed()) {
+        auto fixed = isdof_fixed();
+        for (bool f : fixed) {
             if (f) return true;
         }
         return false;

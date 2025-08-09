@@ -355,16 +355,13 @@ void CheckCantiBeamBuckling() {
 	std::vector<std::shared_ptr<LoadBase>> loads;
 	loads.push_back(std::make_shared<NodeLoad>(nl));
 
-	std::vector<Displacement> disp;
-	std::vector<NodeLoad> react;
-	model.Solve(loads, disp, react);
-
-	FEStaticResult result = FEStaticResult(std::make_shared<FEModel>(model), loads, disp, react);
+	FELinearStaticOp result(std::make_shared<FEModel>(model), loads);
+	result.Compute();
 
 	std::cout << "Static Result: " << result.displace[model.Nodes.size() - 1] << std::endl;
 	std::cout << "Beam Stress at Node 0 At 0: " << result.GetBeamStress(0, 0) << std::endl;
 
-	FEBucklingAnalysis buckling_analysis(std::make_shared<FEStaticResult>(result));
+	FEBucklingAnalysis buckling_analysis(std::make_shared<FELinearStaticOp>(result));
 	buckling_analysis.mode_num = 6;
 	buckling_analysis.SolveBuckling();
 
@@ -407,7 +404,6 @@ FEModel PyramidTrussModel(double D, int n, double h)
 			std::make_shared<TrussElement>(i, &model.Nodes[i + 1], &model.Nodes[0],
 				&model.Sections[0], model.Materials[0]);
 		model.Elements.push_back(t1);
-		// model.add_element(BeamElement(i, &model.Nodes[i], &model.Nodes[i + 1], &s0, m0));
 	}
 
 	return model;
@@ -416,7 +412,6 @@ FEModel PyramidTrussModel(double D, int n, double h)
 // 座屈検討用のピラミッド型トラスサンプル
 void CheckCantiPyramidTrussBuckling(double D, int n, double h)
 {
-
 	std::cout << "CheckCantiPyramidTrussBuckling Start" << std::endl;
 	FEModel model = PyramidTrussModel(1000, 4, 100);
 	// FEModel model = CantiBeamModel(2000, 10);
@@ -425,16 +420,13 @@ void CheckCantiPyramidTrussBuckling(double D, int n, double h)
 	std::vector<std::shared_ptr<LoadBase>> loads;
 	loads.push_back(std::make_shared<NodeLoad>(nl));
 
-	std::vector<Displacement> disp;
-	std::vector<NodeLoad> react;
-	model.Solve(loads, disp, react);
-
-	FEStaticResult result = FEStaticResult(std::make_shared<FEModel>(model), loads, disp, react);
+	FELinearStaticOp result = FELinearStaticOp(std::make_shared<FEModel>(model), loads);
+	result.Compute();
 
 	std::cout << "Static Result: " << result.displace[model.Nodes.size() - 1] << std::endl;
 	std::cout << "Beam Stress at Node 0 At 0: " << result.GetBeamStress(0, 0) << std::endl;
 
-	FEBucklingAnalysis buckling_analysis(std::make_shared<FEStaticResult>(result));
+	FEBucklingAnalysis buckling_analysis(std::make_shared<FELinearStaticOp>(result));
 	buckling_analysis.mode_num = 1;
 	buckling_analysis.SolveBuckling();
 
@@ -480,11 +472,6 @@ void CheckQuadPlateBuckling() {
 	model.add_element(element1);
 	model.add_element(element2);
 
-	//std::shared_ptr<QuadPlateElement> qpe = std::make_shared<QuadPlateElement>(element1);
-	//std::shared_ptr<QuadPlateElement> qpe2 = std::make_shared<QuadPlateElement>(element2);
-	//model.Elements.push_back(qpe);
-	//model.Elements.push_back(qpe2);
-
 	NodeLoad nl1 = NodeLoad(1, 0, 0, -100.0);
 	NodeLoad nl2 = NodeLoad(4, 0, 0, -100.0);
 	std::vector<std::shared_ptr<LoadBase>> loads;
@@ -492,10 +479,12 @@ void CheckQuadPlateBuckling() {
 	loads.push_back(std::make_shared<NodeLoad>(nl2));
 	std::vector<Displacement> disp;
 	std::vector<NodeLoad> react;
-	model.Solve(loads, disp, react);
-	FEStaticResult result = FEStaticResult(std::make_shared<FEModel>(model), loads, disp, react);
+	model.SolveLinearStatic(loads, disp, react);
+	FELinearStaticOp result = FELinearStaticOp(std::make_shared<FEModel>(model), loads);
+	result.Compute();
+
 	std::cout << "Static Result: " << result.displace[model.Nodes.size() - 1] << std::endl;
-	FEBucklingAnalysis buckling_analysis(std::make_shared<FEStaticResult>(result));
+	FEBucklingAnalysis buckling_analysis(std::make_shared<FELinearStaticOp>(result));
 	buckling_analysis.mode_num = 4;
 	buckling_analysis.SolveBuckling();
 	std::cout << "Buckling Analysis Results:" << std::endl;
@@ -587,21 +576,22 @@ void TestBeamInertialForceSolve() {
 	loads.push_back(std::make_shared<InertialForce>(inertial_force));
 
 	// 解析結果を格納する変数
-	std::vector<Displacement> displacements;
-	std::vector<NodeLoad> reactions;
+	//std::vector<Displacement> displacements;
+	//std::vector<NodeLoad> reactions;
 
 	// 静的解析を実行
-	model.SolveLinearStatic(loads, displacements, reactions);
-	FEStaticResult result = FEStaticResult(std::make_shared<FEModel>(model), loads, displacements, reactions);
-	
+	//model.SolveLinearStatic(loads, displacements, reactions);
+	FELinearStaticOp result = FELinearStaticOp(std::make_shared<FEModel>(model), loads);
+	result.Compute();
+
 	// 結果を出力
 	std::cout << "Displacements:" << std::endl;
-	for (size_t i = 0; i < displacements.size(); ++i) {
-		std::cout << "Node " << i << ": " << displacements[i] << std::endl;
+	for (size_t i = 0; i < result.GetDisplacements().size(); ++i) {
+		std::cout << "Node " << i << ": " << result.GetDisplacements()[i] << std::endl;
 	}
 
 	std::cout << "Reactions:" << std::endl;
-	for (const auto& reaction : reactions) {
+	for (const auto& reaction : result.GetReactForces()) {
 		std::cout << reaction << std::endl;
 	}
 
@@ -669,8 +659,9 @@ void TestPlatePressure() {
 
 	std::vector<Displacement> disp;// = model.Solve();
 	std::vector<NodeLoad> react;// = model.Solve();
-	model.Solve(loads, disp, react);
-	FEStaticResult result = FEStaticResult(std::make_shared<FEModel>(model), loads, disp, react);
+	//model.SolveLinearStatic(loads, disp, react);
+	FELinearStaticOp result = FELinearStaticOp(std::make_shared<FEModel>(model), loads);
+	result.Compute();
 
 	std::cout << "Displacement at 4: " << result.displace[4] << std::endl;
 	std::cout << "Displacement at 3: " << result.displace[3] << std::endl;
@@ -709,10 +700,11 @@ void TestBeamTorsionMethod1() {
 	std::vector<std::shared_ptr<LoadBase>> loads;
 	loads.push_back(std::make_shared<NodeLoad>(nl));
 
-	std::vector<Displacement> disp;// = model.Solve();
-	std::vector<NodeLoad> react;// = model.Solve();
-	model.Solve(loads, disp, react);
-	FEStaticResult result = FEStaticResult(std::make_shared<FEModel>(model), loads, disp, react);
+	//std::vector<Displacement> disp;// = model.Solve();
+	//std::vector<NodeLoad> react;// = model.Solve();
+	//model.SolveLinearStatic(loads, disp, react);
+	FELinearStaticOp result = FELinearStaticOp(std::make_shared<FEModel>(model), loads);
+	result.Compute();
 
 	std::cout << "Displacement: " << result.displace[2] << std::endl;
 
@@ -755,21 +747,22 @@ void TestBeamSemiRigidMethod() {
 	loads.push_back(std::make_shared<NodeLoad>(nl));
 	//model.Loads.push_back(std::make_shared<NodeLoad>(nl));
 
-	std::vector<Displacement> disp;// = model.Solve();
-	std::vector<NodeLoad> react;// = model.Solve();
-	model.Solve(loads, disp, react);
-	FEStaticResult result = FEStaticResult(std::make_shared<FEModel>(model), loads, disp, react);
+	//std::vector<Displacement> disp;// = model.Solve();
+	//std::vector<NodeLoad> react;// = model.Solve();
+	//model.SolveLinearStatic(loads, disp, react);
+	FELinearStaticOp result = FELinearStaticOp(std::make_shared<FEModel>(model), loads);
+	result.Compute();
 
 	std::cout << "React Forces" << std::endl;
-	for (const NodeLoad& nl : react)
+	for (const NodeLoad& nl : result.GetReactForces())
 	{
 		std::cout << nl << std::endl;
 	}
 	
-	for (size_t i = 0; i < disp.size(); i++)
+	for (size_t i = 0; i < result.GetDisplacements().size(); i++)
 	{
 		std::cout << "id: " << i << std::endl;
-		std::cout << disp[i] << std::endl;
+		std::cout << result.GetDisplacements()[i] << std::endl;
 	}
 
 	std::cout << "OUTPUT BEAM STRESS" << std::endl;

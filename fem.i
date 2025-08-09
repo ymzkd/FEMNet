@@ -13,7 +13,8 @@
 %shared_ptr(DASampler_MaxDisplacement);
 %shared_ptr(FEDeformOperator);
 %shared_ptr(FEStaticResult);
-%shared_ptr(StaticCombinationOperator);
+%shared_ptr(FELinearStaticOp);
+%shared_ptr(LinearStaticCombinationOperator);
 %shared_ptr(DynamicAnalysis);
 %shared_ptr(ResponseSpectrumMethod);
 // %shared_ptr(SSModel);

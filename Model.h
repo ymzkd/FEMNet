@@ -174,18 +174,10 @@ public:
     // 要素質量に基づく節点質量を計算してセットアップ
     void ComputeElementNodeMass();
 
-    [[deprecated("This function is deprecated. Please use SolveLinearStatic instead.")]]
-    void Solve(
-        std::vector<std::shared_ptr<LoadBase>> &loads,
-        std::vector<Displacement> &disp,
-        std::vector<NodeLoad> &react);
-
     void SolveLinearStatic(
         std::vector<std::shared_ptr<LoadBase>>& loads,
         std::vector<Displacement>& disp,
         std::vector<NodeLoad>& react);
-
-    //void SolveVibrationTest();
 
     int SolveVibration(const int nev, std::vector<double>& eigen_values,
         std::vector<std::vector<Displacement>>& mode_vectors);
@@ -216,19 +208,66 @@ public:
 };
 
 // Static Solver Package
-class FEStaticResult : public FEDeformOperator {
+//class FEStaticResult : public FEDeformOperator {
+//public:
+//    std::vector<std::shared_ptr<LoadBase>> loads;
+//    std::vector<Displacement> displace;
+//    std::vector<NodeLoad> react_force;
+//
+//    FEStaticResult(
+//        std::shared_ptr<FEModel> model,
+//        std::vector<std::shared_ptr<LoadBase>> loads,
+//        std::vector<Displacement> displace,
+//        std::vector<NodeLoad> react_force)
+//        : FEDeformOperator(model), loads(loads),
+//        displace(displace), react_force(react_force) {};
+//
+//    BeamStressData GetBeamStress(int eid, double p) override;
+//
+//    /// <summary>
+//    /// Obtain stress data for plate elements
+//    /// </summary>
+//    /// <param name="eid">element index</param>
+//    /// <param name="xi">
+//    /// xi for square isoparametric elements and L1 for triangular element
+//    /// area coordinate system in the first parameter.
+//    /// </param>
+//    /// <param name="eta">
+//    /// eta for square isoparametric elements and L2 for triangular element
+//    /// area coordinate system in the second parameter.
+//    /// </param>
+//    /// <returns>Plate element stress data</returns>
+//    PlateStressData GetPlateStressData(int eid, double xi, double eta) override;
+//
+//
+//    Displacement GetBeamDisplace(int eid, double p) override;
+//
+//    // FEDeformCase を介して継承されました
+//    std::vector<Displacement> GetDisplacements() override;
+//
+//    std::vector<NodeLoad> GetReactForces() override { return react_force; };
+//}; // FEStaticResult
+
+
+
+// Static Solver Package
+class FELinearStaticOp : public FEDeformOperator {
+private:
+    bool m_computed = false;
+
 public:
     std::vector<std::shared_ptr<LoadBase>> loads;
     std::vector<Displacement> displace;
     std::vector<NodeLoad> react_force;
 
-    FEStaticResult(
+    FELinearStaticOp(
         std::shared_ptr<FEModel> model,
-        std::vector<std::shared_ptr<LoadBase>> loads,
-        std::vector<Displacement> displace,
-        std::vector<NodeLoad> react_force)
-        : FEDeformOperator(model), loads(loads),
-        displace(displace), react_force(react_force) {};
+        std::vector<std::shared_ptr<LoadBase>> loads)
+        : FEDeformOperator(model), loads(loads) {
+    };
+
+	bool Computed() { return m_computed; }
+	void Compute();
 
     BeamStressData GetBeamStress(int eid, double p) override;
 
@@ -253,24 +292,23 @@ public:
     // FEDeformCase を介して継承されました
     std::vector<Displacement> GetDisplacements() override;
 
-    std::vector<NodeLoad> GetReactForces() override { return react_force; };
+    std::vector<NodeLoad> GetReactForces() override;
 }; // FEStaticResult
 
-
-struct StaticDeformFactor {
+struct LinearStaticDeformFactor {
 public:
-	std::shared_ptr<FEStaticResult> op;
+	std::shared_ptr<FELinearStaticOp> op;
 	double factor;
-	StaticDeformFactor(std::shared_ptr<FEStaticResult> op, double factor)
+	LinearStaticDeformFactor(std::shared_ptr<FELinearStaticOp> op, double factor)
 		: op(op), factor(factor) {
 	};
 };
 
-class StaticCombinationOperator : public FEDeformOperator {
+class LinearStaticCombinationOperator : public FEDeformOperator {
 public:
-	std::vector<StaticDeformFactor> cases;
-	StaticCombinationOperator() {};
-	StaticCombinationOperator(std::vector<StaticDeformFactor> cases)
+	std::vector<LinearStaticDeformFactor> cases;
+	LinearStaticCombinationOperator() {};
+	LinearStaticCombinationOperator(std::vector<LinearStaticDeformFactor> cases)
 		: cases(cases) {
 	};
 

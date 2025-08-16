@@ -2,6 +2,8 @@
 #define _FEANALYSIS_
 
 #include "Model.h"
+#include "BarElement.h"
+#include "PlaneElement.h"
 
 // 変形ケースを表す基底クラス
 class FEDeformOperator

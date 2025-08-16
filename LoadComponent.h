@@ -9,6 +9,8 @@
 
 #include "Components.h"
 #include "Element.h"
+#include "BarElement.h"
+#include "PlaneElement.h"
 
 enum class LoadType {
     None,

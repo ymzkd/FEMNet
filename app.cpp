@@ -13,6 +13,9 @@
 #include "FEDynamic.h"
 #include "LoadComponent.h"
 
+#include "PlaneElement.h"
+#include "BarElement.h"
+
 void TestMethod1() {
 
 	Point p0(0, 0, 0);

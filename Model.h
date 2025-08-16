@@ -28,8 +28,6 @@ class DynamicAnalysis;
 
 class IResponseSpectrum {
 public:
-    //IResponseSpectrum() {}
-    //virtual ~IResponseSpectrum() {}
     virtual double Acceleration(double t) = 0;
     virtual double Velocity(double t) = 0;
 	virtual double Displacement(double t) = 0;
@@ -38,9 +36,6 @@ public:
 class DASampler {
 
 public:
-
-    //friend class DynamicAnalysis;
-
     int step;
     std::string Name;
     std::vector<Displacement> velocity, displacement, acceleration;
@@ -142,9 +137,6 @@ public:
     
     std::vector<std::shared_ptr<ElementBase>> Elements;
     
-    // template<>
-    // void add_element(ElementBase* data);
-    //void add_element(ElementBase data);
     void add_element(BeamElement data);
     void add_element(ComplexBeamElement data);
     void add_element(TrussElement data);
@@ -156,9 +148,7 @@ public:
     // index based element addition
     void add_truss_element(int id, int n1_id, int n2_id, int sec_id, int mat_id);
     void add_beam_element(int id, int n1_id, int n2_id, int sec_id, int mat_id, double beta);
-    //void add_tri_plane_element(int id, int n1_id, int n2_id, int n3_id, int mat_id, int sec_id);
     void add_tri_plate_element(int id, int n1_id, int n2_id, int n3_id, double thickness, int mat_id);
-    //void add_quad_plane_element(int id, int n1_id, int n2_id, int n3_id, int n4_id, int mat_id, int sec_id);
     void add_quad_plate_element(int id, int n1_id, int n2_id, int n3_id, int n4_id, double thickness, int mat_id);
     
     BarElementBase* GetBarElement(int id);
@@ -170,6 +160,8 @@ public:
     // 慣性力を等価な節点荷重に変換
     std::vector<NodeLoadData> InnertialForceToNodeLoads(
 		const InertialForce inertial_force);
+
+    double SumNodeMass();
 
     // 要素質量に基づく節点質量を計算してセットアップ
     void ComputeElementNodeMass();
@@ -197,58 +189,12 @@ public:
     virtual BeamStressData GetBeamStress(int eid, double p) = 0;
     virtual PlateStressData GetPlateStressData(int eid, double xi, double eta) = 0;
     virtual Displacement GetBeamDisplace(int eid, double p) = 0;
-    //FEDeformCase(std::shared_ptr<FEModel> model, std::vector<std::shared_ptr<LoadBase>> loads, std::vector<Displacement> displace, std::vector<NodeLoad> react_force)
     virtual std::vector<Displacement> GetDisplacements() = 0;
 
     virtual std::vector<NodeLoad> GetReactForces() {
 		return std::vector<NodeLoad>();
     };
-    //virtual std::vector<Displacement> GetVelocities() = 0;
-    //virtual std::vector<Displacement> GetAccelerations() = 0;
 };
-
-// Static Solver Package
-//class FEStaticResult : public FEDeformOperator {
-//public:
-//    std::vector<std::shared_ptr<LoadBase>> loads;
-//    std::vector<Displacement> displace;
-//    std::vector<NodeLoad> react_force;
-//
-//    FEStaticResult(
-//        std::shared_ptr<FEModel> model,
-//        std::vector<std::shared_ptr<LoadBase>> loads,
-//        std::vector<Displacement> displace,
-//        std::vector<NodeLoad> react_force)
-//        : FEDeformOperator(model), loads(loads),
-//        displace(displace), react_force(react_force) {};
-//
-//    BeamStressData GetBeamStress(int eid, double p) override;
-//
-//    /// <summary>
-//    /// Obtain stress data for plate elements
-//    /// </summary>
-//    /// <param name="eid">element index</param>
-//    /// <param name="xi">
-//    /// xi for square isoparametric elements and L1 for triangular element
-//    /// area coordinate system in the first parameter.
-//    /// </param>
-//    /// <param name="eta">
-//    /// eta for square isoparametric elements and L2 for triangular element
-//    /// area coordinate system in the second parameter.
-//    /// </param>
-//    /// <returns>Plate element stress data</returns>
-//    PlateStressData GetPlateStressData(int eid, double xi, double eta) override;
-//
-//
-//    Displacement GetBeamDisplace(int eid, double p) override;
-//
-//    // FEDeformCase を介して継承されました
-//    std::vector<Displacement> GetDisplacements() override;
-//
-//    std::vector<NodeLoad> GetReactForces() override { return react_force; };
-//}; // FEStaticResult
-
-
 
 // Static Solver Package
 class FELinearStaticOp : public FEDeformOperator {
@@ -330,9 +276,7 @@ public:
     std::shared_ptr<FEModel> model;
     FEModeOperator() {};
 	FEModeOperator(std::shared_ptr<FEModel> model) : model(model) {};
-    // ModeOperator(std::shared_ptr<FEModel> model) : model(model) {};
 
-    // std::shared_ptr<FEModel> model;
     virtual std::vector<std::vector<Displacement>> ModeVectors() = 0;
     virtual std::vector<double> EigenValues() = 0;
     virtual int ModeNum() = 0;
@@ -343,14 +287,9 @@ private:
     std::vector<double> eigs; // Omegas
     std::vector<std::vector<Displacement>> mode_vectors;
 public:
-    //std::shared_ptr<FEModel> model;
-
     int ModeNum() override { return eigs.size(); };
     std::vector<std::vector<Displacement>> ModeVectors() override { return mode_vectors; };
     std::vector<double> EigenValues() override { return eigs; };
-
-    // int ModeNum() { return eigs.size(); };
-    
 
 	FEVibrateResult() {};
 
@@ -398,7 +337,6 @@ public:
     int mode_num = 1;
     std::vector<double> eigs;
     std::vector<std::vector<Displacement>> mode_vectors;
-
 };
 
 class DARecorder {
@@ -433,11 +371,7 @@ private:
 	Eigen::SparseMatrix<double> matM_aa, matM_ab, matM_bb;
 	Eigen::SparseMatrix<double> matK_aa, matK_ab, matK_bb;
 	Eigen::SparseMatrix<double> matC_aa, matC_ab, matC_bb;
-	/*Eigen::SparseMatrix<double> compute_mat;*/
-	// Eigen::SparseMatrix<double> m_sh, k_sh, d_sh;
-	// Eigen::SparseMatrix<double> m_sha, m_shb, m_shc, m_shd;
 	std::vector<int> free_indices, fixed_indices;
-	//std::vector<int> shrink_indices, other_indices;
 
     Eigen::VectorXd current_disp, current_vel, current_accel;
 	std::vector<NodeLoad> current_react_force;
@@ -447,43 +381,28 @@ private:
 	friend class DAEnergyRecorder;
 
 public:
-	//std::shared_ptr<FEModel> model;
 	DynamicAccelLoad accel_load;
 	FEDynamicDampInitializer* damp_initializer = nullptr;
 
 	int current_step = 0;
-	//double damping_rate = 0.05; // 減衰比
 
     std::vector<std::shared_ptr<DASampler>> samplers;
 	DAEnergyRecorder energy_recorder;
 	bool RecordEnabled = true;
 
-	//const double tmp_w1 = 720;
-	//const double tmp_w1 = 4200;
-	//const double tmp_w1 = PI * 4.0;
 	double beta = 0.25; // 平均加速度法
 	//double beta = 1.0/6.0; // 線形加速度法(発散しがち)
 	
-    //DynamicAnalysis(FEModel* model, DynamicAccelLoad accel_load)
-    //    : model(std::make_shared<FEModel>(model)), accel_load(accel_load) {
-    //}
-
     DynamicAnalysis(std::shared_ptr<FEModel> model, 
         DynamicAccelLoad accel_load, FEDynamicDampInitializer* damp = nullptr);
-	//	: model(model), accel_load(accel_load) {
-	//};
 
     bool Initialize();
 
 	void Clear() {
 		current_step = 0;
-		//current_disp.clear();
-		//current_vel.clear();
-		//current_accel.clear();
 		matM_aa.resize(0, 0);
 		matK_aa.resize(0, 0);
 		matC_aa.resize(0, 0);
-		//compute_mat.resize(0, 0);
 	}
 
 	// Newmarkのβ法による動的解析
@@ -550,37 +469,50 @@ enum ResponseSpectrumMethodType
 };
 
 
+enum class ResponseValueType {
+    Displacement,
+    Velocity,
+    Acceleration
+};
+
+
 class ResponseSpectrumMethod : public FEDeformOperator {
 private:
-    std::vector<Displacement> calculate_displacementsCQC();
-    std::vector<Displacement> calculate_displacementsSRSS();
-    std::vector<Displacement> calculate_displacementsABS();
-    std::vector<Displacement> calculate_displacements();
+    std::vector<Displacement> calculate_responseCQC(ResponseValueType vt);
+    std::vector<Displacement> calculate_responseSRSS(ResponseValueType vt);
+    std::vector<Displacement> calculate_responseABS(ResponseValueType vt);
+    std::vector<Displacement> calculate_response(ResponseValueType vt);
+    
     std::vector<Displacement> displacements; // 解析結果の変位ベクトル
+    std::vector<Displacement> velocities; // 解析結果の速度ベクトル
+    std::vector<Displacement> accelerations; // 解析結果の加速度ベクトル
 
+    bool m_computed = false;
 public:
     
     double damping_rate = 0.05; // 減衰比(CQC法の場合のみ計算に影響)
 	Vector Direction = Vector(1.0, 1.0, 1.0); // 応答スペクトルの方向
 
-    //std::shared_ptr<FEModel> model;
     FEVibrateResult VibrateResult;
     IResponseSpectrum* SpectrumFunction;
 	ResponseSpectrumMethodType MethodType = ResponseSpectrumMethodType::ABS;
-
+    
     ResponseSpectrumMethod() {}
     ResponseSpectrumMethod(std::shared_ptr<FEModel> model, FEVibrateResult vibrate_result, Vector direction,
         IResponseSpectrum* spectrum_function, ResponseSpectrumMethodType type);
 		
-
+    bool Computed() { return m_computed; }
+    void Compute();
     std::vector<Displacement> GetDisplacements() override;
-    //std::vector<Displacement> GetVelocities();
+    std::vector<Displacement> GetVelocities();
     std::vector<Displacement> GetAccelerations();
 
     // FEDeformCase を介して継承されました
     BeamStressData GetBeamStress(int eid, double p) override;
     PlateStressData GetPlateStressData(int eid, double xi, double eta) override;
     Displacement GetBeamDisplace(int eid, double p) override;
+
+    FELinearStaticOp GetLinearStaticCase();
 };
 
 #endif

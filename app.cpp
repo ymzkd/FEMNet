@@ -6,6 +6,11 @@
 
 #include "Element.h"
 #include "Model.h"
+#include "FELinearStaticOp.h"
+#include "FEBucklingAnalysis.h"
+#include "FEVibrateResult.h"
+#include "FEAnalysis.h"
+#include "FEDynamic.h"
 #include "LoadComponent.h"
 
 void TestMethod1() {

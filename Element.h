@@ -761,24 +761,4 @@ public:
 
 };
 
-//class TrussElement : public ElementBase {
-//private:
-//    const ElementType type = ElementType::Truss;
-//    static const int total_dof = 6;
-//    Eigen::MatrixXd stiffness_matrix_local();
-//
-//public:
-//    Node* Nodes[2];
-//    Section* Sec;
-//
-//    TrussElement() {};
-//    TrussElement(Node* n0, Node* n1, Section* sec, Material* mat);
-//
-//    Eigen::MatrixXd StiffnessMatrix();
-//    bool hasRotate() { return false; }
-//    ElementType Type() { return type; }
-//    int TotalDof() { return total_dof; }
-//    void AssembleStiffMatrix(Eigen::SparseMatrix<double>& mat);
-//};
-
 #endif

@@ -38,10 +38,17 @@ endif()
 # Add swig flags here
 set(CMAKE_SWIG_FLAGS "")
 
+# SWIGエントリ
+set(SWIG_MODULE_fem_EXTRA_DEPS
+    Elements/Elements.i
+    ModelOperator.i
+)
+
 set_property(SOURCE fem.i PROPERTY CPLUSPLUS ON)
-# set_property(SOURCE SeismicModule.i PROPERTY CPLUSPLUS ON)
-set_source_files_properties(fem.i PROPERTIES SWIG_FLAGS "-includeall")
-# set_source_files_properties(SeismicModule.i PROPERTIES SWIG_FLAGS "-includeall")
+
+set_source_files_properties(fem.i PROPERTIES
+    SWIG_FLAGS "-includeall"
+)
 
 swig_add_library(fem
     TYPE SHARED

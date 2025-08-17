@@ -58,9 +58,7 @@
     
     #include <Eigen/PardisoSupport>
 
-    #include "Element.h"
-    #include "BarElement.h"
-    #include "PlaneElement.h"
+    #include "Elements/Elements.h"
     #include "Components.h"
     #include "Model.h"
     #include "FEAnalysis.h"
@@ -250,9 +248,7 @@ namespace std {
 //     }
 // %}
 
-#include "Element.h"
-#include "BarElement.h"
-#include "PlaneElement.h"
+#include "Elements/Elements.h"
 #include "Components.h"
 #include "Model.h"
 #include "FEAnalysis.h"

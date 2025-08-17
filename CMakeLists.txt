@@ -46,7 +46,27 @@ set_source_files_properties(fem.i PROPERTIES SWIG_FLAGS "-includeall")
 swig_add_library(fem
     TYPE SHARED
     LANGUAGE CSharp
-    SOURCES fem.i Components.cpp Model.cpp Element.cpp BarElement.cpp PlaneElement.cpp LoadComponent.cpp SeismicModule.cpp FELinearStaticOp.cpp FEDynamic.cpp FEBucklingAnalysis.cpp FEVibrateResult.cpp ResponseSpectrumMethod.cpp
+    SOURCES 
+        fem.i 
+        Components.cpp 
+        Model.cpp 
+        Elements/ElementBase.cpp 
+        Elements/BarElement.cpp 
+        Elements/TrussElement.cpp 
+        Elements/BeamElement.cpp 
+        Elements/ComplexBeamElement.cpp 
+        Elements/PlaneElement.cpp 
+        Elements/TriPlaneElement.cpp 
+        Elements/QuadPlaneElement.cpp 
+        Elements/TriPlateElement.cpp 
+        Elements/QuadPlateElement.cpp 
+        LoadComponent.cpp 
+        SeismicModule.cpp 
+        FELinearStaticOp.cpp 
+        FEDynamic.cpp 
+        FEBucklingAnalysis.cpp 
+        FEVibrateResult.cpp 
+        ResponseSpectrumMethod.cpp
     OUTPUT_DIR ${SWIG_OUTPUT_DIR}
     OUTFILE_DIR ${SWIG_OUTPUT_DIR}
 )
@@ -78,7 +98,28 @@ set_target_properties( fem
 )
 
 # === App ===
-add_executable(sampleapp app.cpp Components.cpp Model.cpp Element.cpp BarElement.cpp PlaneElement.cpp LoadComponent.cpp SeismicModule.cpp FELinearStaticOp.cpp FEDynamic.cpp FEBucklingAnalysis.cpp FEVibrateResult.cpp ResponseSpectrumMethod.cpp)
+add_executable(sampleapp 
+    app.cpp 
+    Components.cpp 
+    Model.cpp 
+    Elements/ElementBase.cpp 
+    Elements/BarElement.cpp 
+    Elements/TrussElement.cpp 
+    Elements/BeamElement.cpp 
+    Elements/ComplexBeamElement.cpp 
+    Elements/PlaneElement.cpp 
+    Elements/TriPlaneElement.cpp 
+    Elements/QuadPlaneElement.cpp 
+    Elements/TriPlateElement.cpp 
+    Elements/QuadPlateElement.cpp 
+    LoadComponent.cpp 
+    SeismicModule.cpp 
+    FELinearStaticOp.cpp 
+    FEDynamic.cpp 
+    FEBucklingAnalysis.cpp 
+    FEVibrateResult.cpp 
+    ResponseSpectrumMethod.cpp
+)
 
 target_include_directories(sampleapp PUBLIC ${CMAKE_SOURCE_DIR})
 if (MKL_FOUND)

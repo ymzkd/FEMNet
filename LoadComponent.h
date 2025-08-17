@@ -4,13 +4,10 @@
 #ifndef SWIGCSHARP
 #include<iostream>
 #include <vector>
-//#include <numeric>
 #endif
 
 #include "Components.h"
-#include "Element.h"
-#include "BarElement.h"
-#include "PlaneElement.h"
+#include "Elements/Elements.h"
 
 enum class LoadType {
     None,

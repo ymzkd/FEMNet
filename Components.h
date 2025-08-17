@@ -257,24 +257,6 @@ public:
         : A(A), Iy(Iy), Iz(Iz), K(K){};
 };
 
-//struct Load {
-//    Load() : Load(-1, 0, 0, 0, 0, 0, 0) {};
-//    Load(int _id, double px, double py, double pz);
-//    Load(int _id, double px, double py, double pz, double mx, double my, double mz);
-//
-//    int id = -1;
-//    double loads[6];
-//    double& Px() { return loads[0]; }
-//    double& Py() { return loads[1]; }
-//    double& Pz() { return loads[2]; }
-//    double& Mx() { return loads[3]; }
-//    double& My() { return loads[4]; }
-//    double& Mz() { return loads[5]; }
-//};
-
-//__declspec(deprecated("Use NodeFix class instead."))
-//struct __declspec(deprecated("Use NodeFix class instead.")) Support {
-
 // True if Fixed
 //struct Support {
 class Support {
@@ -324,32 +306,8 @@ public:
             if (f) return true;
         }
         return false;
-        //return std::any_of(fixflags, fixflags + 6, [](bool x) { return x; });
     };
 };
-
-//struct NodeFix {
-//    int id;
-//    bool flags[6];
-//    NodeFix() : NodeFix(false, false, false, false, false, false) {};
-//    NodeFix(bool ux, bool uy, bool uz, bool rx, bool ry, bool rz);
-//    NodeFix(int _id, bool ux, bool uy, bool uz, bool rx, bool ry, bool rz)
-//        : NodeFix(ux, uy, uz, rx, ry, rz) {id = _id;};
-//
-//    bool& Ux() { return flags[0]; }
-//    bool& Uy() { return flags[1]; }
-//    bool& Uz() { return flags[2]; }
-//    bool& Rx() { return flags[3]; }
-//    bool& Ry() { return flags[4]; }
-//    bool& Rz() { return flags[5]; }
-//
-//    void FixAll();
-//    void PinFix();
-//    void ReleaseAll();
-//    bool IsAnyFix() {
-//        return std::any_of(flags, flags + 6, [](bool x) { return x; });
-//    };
-//};
 
 struct NodeMass {
 public:

@@ -29,7 +29,7 @@
 #include <Spectra/MatOp/DenseSymMatProd.h>
 #include <Spectra/MatOp/DenseCholesky.h>
 
-#include "Element.h"
+#include "Elements/Elements.h"
 #include "Components.h"
 #include "LoadComponent.h"
 

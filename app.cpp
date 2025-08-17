@@ -4,7 +4,7 @@
 //#define EIGEN_USE_MKL_ALL
 //#endif
 
-#include "Element.h"
+#include "Elements/Elements.h"
 #include "Model.h"
 #include "FELinearStaticOp.h"
 #include "FEBucklingAnalysis.h"
@@ -12,9 +12,6 @@
 #include "FEAnalysis.h"
 #include "FEDynamic.h"
 #include "LoadComponent.h"
-
-#include "PlaneElement.h"
-#include "BarElement.h"
 
 void TestMethod1() {
 

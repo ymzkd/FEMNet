@@ -1,19 +1,12 @@
-#ifndef _ELEMENT_
-#define _ELEMENT_
+#ifndef _ELEMENTBASE_
+#define _ELEMENTBASE_
 
 #ifndef SWIGCSHARP
-
-//#ifdef USE_MKL
-//#define EIGEN_USE_MKL_ALL
-//#endif
-
 #include <Eigen/Dense>
 #include <Eigen/Sparse>
 #endif
 
-#include "Components.h"
-//#include "LoadComponent.h"
-// #include "Model.h"
+#include "../Components.h"
 
 Eigen::Matrix3d trans_matrix3(const Point p0, const Point p1, const double beta);
 Eigen::Matrix3d trans_matrix3(const Plane plane);
@@ -25,9 +18,6 @@ enum class ElementType
 
 class ElementBase
 {
-protected:
-    // static Eigen::Matrix3d trans_matrix3(const Point p0, const Point p1, const double beta);
-    // static Eigen::Matrix3d trans_matrix3(const Plane plane);
 
 private:
     //static constexpr ElementType type = ElementType::None;

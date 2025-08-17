@@ -6,7 +6,6 @@
 #include <map>
 #include <array>
 
-// #include <Eigen/Dense>
 
 #ifdef EIGEN_USE_MKL_ALL
     //#define EIGEN_USE_MKL_ALL

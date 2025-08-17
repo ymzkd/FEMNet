@@ -1,11 +1,7 @@
-//#ifdef USE_MKL
-//#define EIGEN_USE_MKL_ALL
-//#endif
 #include <Eigen/Sparse>
 #include <Eigen/LU>
 
-#include "Components.h"
-#include "Element.h"
+#include "ElementBase.h"
 
 //Eigen::Matrix3d ElementBase::trans_matrix3(const Plane &plane)
 //{
@@ -114,7 +110,6 @@ Eigen::Matrix3d trans_matrix3(const Point p0, const Point p1, const double beta)
 //
 //	return X;
 //}
-
 
 
 

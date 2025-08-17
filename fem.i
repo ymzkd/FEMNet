@@ -56,8 +56,6 @@
     #include <Eigen/PardisoSupport>
     #endif
     
-    #include <Eigen/PardisoSupport>
-
     #include "Elements/Elements.h"
     #include "Components.h"
     #include "Model.h"

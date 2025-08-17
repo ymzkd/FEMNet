@@ -1,7 +1,5 @@
 // Elements.i - Elements module definitions for SWIG
 
-%include <std_shared_ptr.i>
-
 // Element Pointer definitions
 %shared_ptr(ElementBase);
 %shared_ptr(BarElementBase);
@@ -13,6 +11,10 @@
 %shared_ptr(QuadPlateElement);
 %shared_ptr(TriPlaneElement);
 %shared_ptr(QuadPlaneElement);
+
+%{
+    #include "Elements/Elements.h"
+%}
 
 // Ignore Element methods that use Eigen matrices
 %ignore BeamElement::StiffnessMatrix();
@@ -76,3 +78,5 @@ namespace std {
         return $self->Nodes[index];
     }
 }
+
+%include "Elements/Elements.h"

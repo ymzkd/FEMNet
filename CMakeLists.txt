@@ -2,12 +2,6 @@ cmake_minimum_required(VERSION 3.25)
 project(FEMNet VERSION 1.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17) # C++17
-# if ( MSVC )
-#   set(SWIG_DIR "C:/dev/swigwin-4.1.1/Lib")
-#   set(SWIG_EXECUTABLE "C:/dev/swigwin-4.1.1/swig.exe")
-# endif (MSVC)
-# find_package(MKL CONFIG REQUIRED)
-
 set(MKL_INTERFACE lp64)
 find_package(MKL CONFIG)
 find_package(Eigen3 3.4 REQUIRED NO_MODULE)
@@ -16,8 +10,6 @@ find_package(Spectra CONFIG REQUIRED)
 if (MKL_FOUND)
     message(STATUS "MKL found")
     add_definitions(-DUSE_MKL)
-    # target_compile_definitions(fem PUBLIC USE_MKL)
-    # target_link_libraries(fem PUBLIC MKL::MKL)
 else()
     message(STATUS "MKL not found, proceeding without MKL")
 endif()
@@ -41,14 +33,13 @@ set(CMAKE_SWIG_FLAGS "")
 # SWIGエントリ
 set(SWIG_MODULE_fem_EXTRA_DEPS
     Elements/Elements.i
+    Operator.i
     ModelOperator.i
 )
 
 set_property(SOURCE fem.i PROPERTY CPLUSPLUS ON)
-
 set_source_files_properties(fem.i PROPERTIES
-    SWIG_FLAGS "-includeall"
-)
+    SWIG_FLAGS "-includeall")
 
 swig_add_library(fem
     TYPE SHARED

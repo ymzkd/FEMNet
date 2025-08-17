@@ -1,5 +1,5 @@
 %module (directors="1") FEMNet
-// %include "SeismicModule.i"
+
 %include <std_vector.i>
 %include <std_map.i>
 %include <std_array.i>
@@ -19,11 +19,6 @@
 %shared_ptr(InertialForce);
 %shared_ptr(NodeBodyForce);
 
-
-// Director機能を有効化
-%feature("director") IResponseSpectrum;
-%feature("director") DASampler;
-
 %{
     #include <Eigen/Dense>
     #include <Eigen/Sparse>
@@ -32,47 +27,19 @@
     #include <Eigen/PardisoSupport>
     #endif
     
-    #include "Elements/Elements.h"
     #include "Components.h"
     #include "Model.h"
-    #include "FEAnalysis.h"
-    #include "FELinearStaticOp.h"
-    #include "FEDynamic.h"
-    #include "FEBucklingAnalysis.h"
-    #include "FEVibrateResult.h"
-    #include "ResponseSpectrumMethod.h"
-    #include "SeismicModule.h"
 %}
-
-// C#側で定義したIResponseSpectrumをGCに解放されないように
-// 保持するためのメソッドを追加
-%typemap(cscode) ResponseSpectrumMethod %{
-    private IResponseSpectrum __sptectrumRefs;
-
-    public void SetSpectrum(IResponseSpectrum spectrum) {
-        __sptectrumRefs = spectrum;
-        this.SpectrumFunction = spectrum;
-    }
-%}
-
-%include <std_string.i>
-// %include <carrays.i>
-// %array_class(double, doubleArray);
-// %array_functions(double, doubleArr);
 
 %ignore Eigen::SparseMatrix;
 %ignore Eigen::MatrixXd;
 %ignore extractSubMatrix();
 %ignore trans_matrix3(const Point p0, const Point p1, const double beta);
-
-
-
 %ignore Eigen::Matrix3d;
 %ignore Displacement::translate(Eigen::Matrix3d transmat);
 
 namespace std {
     // List
-    // %template(ListLoad) std::list<Load>;
     %template(ListBeamPolyLoad) std::list<BeamPolyLoad>;
     
     // Vector
@@ -100,8 +67,6 @@ namespace std {
    }
 };
 
-
-
 // C#のカスタムコードを追加
 %typemap(cscode) Material %{
     // ToStringメソッドをオーバーライド
@@ -118,37 +83,10 @@ namespace std {
 %ignore NodeLoadData::My();
 %ignore NodeLoadData::Mz();
 
-// %typemap(csout) double& %{
-//     $result = $imcall;
-// %}
-
-// %ignore ElementHandle(ElementBase data);
-// %ignore ElementHandle::ElementHandle(ElementBase data);
-// %typemap(csin) ElementBaseSetPtr data "getCPtrAndAddReference($csinput)"
-// %typemap(cscode) ElementHandle %{
-//     private ElementBase elementReference;
-//     private global::System.Runtime.InteropServices.HandleRef getCPtrAndAddReference(ElementBase element) {
-//         elementReference = element;
-//         return ElementBase.getCPtr(element);
-//     }
-//     public void SetElement(ElementBase element){
-//         getCPtrAndAddReference(element);
-//         set_element(element);
-//     }
-// %}
-
-// Include module-specific SWIG files after C++ headers
+%include "SeismicModule.i"
 %include "Elements/Elements.i"
-%include "ModelOperator.i"
+%include "Operator.i"
 
-
-%include "Elements/Elements.h"
 %include "Components.h"
 %include "Model.h"
-%include "FEAnalysis.h"
-%include "FELinearStaticOp.h"
-%include "FEDynamic.h"
-%include "FEBucklingAnalysis.h"
-%include "FEVibrateResult.h"
-%include "ResponseSpectrumMethod.h"
 %include "SeismicModule.h"

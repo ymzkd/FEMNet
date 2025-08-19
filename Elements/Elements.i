@@ -16,6 +16,10 @@
     #include "Elements/Elements.h"
 %}
 
+%ignore ShapeFunction4(double xi, double eta);
+%ignore ShapeFunctionTriangle6(double xi, double eta);
+%ignore ShapeFunctionSerendipity8(double xi, double eta);
+
 // Ignore Element methods that use Eigen matrices
 %ignore BeamElement::StiffnessMatrix();
 %ignore BeamElement::AssembleStiffMatrix(Eigen::SparseMatrix<double>& mat);

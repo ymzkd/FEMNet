@@ -30,12 +30,12 @@ endif()
 # Add swig flags here
 set(CMAKE_SWIG_FLAGS "")
 
-# SWIGエントリ
-set(SWIG_MODULE_fem_EXTRA_DEPS
-    Elements/Elements.i
-    Operator.i
-    ModelOperator.i
-)
+# SWIGエントリ -> 不要?
+# set(SWIG_MODULE_fem_EXTRA_DEPS
+#     Elements/Elements.i
+#     Operator.i
+#     ModelOperator.i
+# )
 
 set_property(SOURCE fem.i PROPERTY CPLUSPLUS ON)
 set_source_files_properties(fem.i PROPERTIES

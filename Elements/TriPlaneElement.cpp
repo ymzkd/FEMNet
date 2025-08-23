@@ -10,7 +10,7 @@ TriPlaneElement::TriPlaneElement(Node *n0, Node *n1, Node *n2,
     thickness = Thickness(t);
     Mat = mat;
     plane = Plane::CreateFromPoints(n0->Location, n1->Location, n2->Location);
-    plane.Rotate(beta, Vector::ZAxis());
+    plane.Rotate(beta, plane.ez);
 }
 
 TriPlaneElement::TriPlaneElement(Node *n0, Node *n1, Node *n2, Thickness t, Material mat, double beta)
@@ -22,7 +22,7 @@ TriPlaneElement::TriPlaneElement(Node *n0, Node *n1, Node *n2, Thickness t, Mate
     thickness = t;
     Mat = mat;
     plane = Plane::CreateFromPoints(n0->Location, n1->Location, n2->Location);
-    plane.Rotate(beta, Vector::ZAxis());
+    plane.Rotate(beta, plane.ez);
 }
 
 // Eigen::Matrix2d TriPlaneElement::invJMatrix()

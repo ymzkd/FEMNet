@@ -16,7 +16,10 @@ public:
     virtual BeamStressData GetBeamStress(int eid, double p) = 0;
     virtual PlateStressData GetPlateStressData(int eid, double xi, double eta) = 0;
     virtual Displacement GetBeamDisplace(int eid, double p) = 0;
+
     virtual std::vector<Displacement> GetDisplacements() = 0;
+    virtual std::vector<Displacement> GetVelocities(){return std::vector<Displacement>();};
+    virtual std::vector<Displacement> GetAccelerations(){return std::vector<Displacement>();};
 
     virtual std::vector<NodeLoad> GetReactForces()
     {

@@ -440,7 +440,7 @@ Eigen::MatrixXd TriPlateElement::geometric_local_stiffness_matrix(const std::vec
     return Kg;
 }
 
-TriPlateElement::TriPlateElement(Node *n0, Node *n1, Node *n2, Thickness t, Material mat)
+TriPlateElement::TriPlateElement(Node *n0, Node *n1, Node *n2, Thickness t, Material mat, double beta)
     : plane_element(n0, n1, n2, t, mat)
 {
     Nodes[0] = n0;
@@ -450,9 +450,10 @@ TriPlateElement::TriPlateElement(Node *n0, Node *n1, Node *n2, Thickness t, Mate
     Mat = mat;
     thickness = t;
     plane = Plane::CreateFromPoints(n0->Location, n1->Location, n2->Location);
+    plane.Rotate(beta, plane.ez);
 }
 
-TriPlateElement::TriPlateElement(Node *n0, Node *n1, Node *n2, double t, Material mat)
+TriPlateElement::TriPlateElement(Node *n0, Node *n1, Node *n2, double t, Material mat, double beta)
     : plane_element(n0, n1, n2, t, mat)
 {
     Nodes[0] = n0;
@@ -462,6 +463,7 @@ TriPlateElement::TriPlateElement(Node *n0, Node *n1, Node *n2, double t, Materia
     Mat = mat;
     thickness = Thickness(t);
     plane = Plane::CreateFromPoints(n0->Location, n1->Location, n2->Location);
+    plane.Rotate(beta, plane.ez);
 }
 
 /// <summary>

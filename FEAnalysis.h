@@ -37,6 +37,9 @@ public:
     virtual std::vector<std::vector<Displacement>> ModeVectors() = 0;
     virtual std::vector<double> EigenValues() = 0;
     virtual int ModeNum() = 0;
+
+    Displacement GetBeamDeform(int eid, int mode_id, double p);
+
 };
 
 #endif

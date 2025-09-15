@@ -51,30 +51,6 @@ void BeamElement::AssembleMatrix(Eigen::SparseMatrix<double> &mat, Eigen::Matrix
 void BeamElement::AssembleStiffMatrix(Eigen::SparseMatrix<double> &mat)
 {
     AssembleMatrix(mat, StiffnessMatrix());
-    // int indices[12];
-    // for (size_t i = 0; i < 6; i++)
-    // 	indices[i] = Nodes[0]->id * 6 + i;
-    // for (size_t i = 0; i < 6; i++)
-    // 	indices[i + 6] = Nodes[1]->id * 6 + i;
-
-    // Eigen::MatrixXd smat = StiffnessMatrix();
-    // for (size_t i = 0; i < 12; i++)
-    // {
-
-    // 	for (size_t j = 0; j < i + 1; j++)
-    // 	{
-    // 		int ci, rj;
-    // 		if (indices[j] <= indices[i]) {
-    // 			ci = indices[i];
-    // 			rj = indices[j];
-    // 		}
-    // 		else {
-    // 			ci = indices[j];
-    // 			rj = indices[i];
-    // 		}
-    // 		mat.coeffRef(rj,ci) += smat(i, j);
-    // 	}
-    // }
 }
 
 void BeamElement::AssembleGeometricStiffMatrix(
@@ -111,19 +87,7 @@ Eigen::MatrixXd BeamElement::NodeConsistentMass()
     double l = element_length();
     double l2 = l * l;
     double l3 = l2 * l;
-    // m << l / 3, 0, 0, 0, 0, 0, l / 6, 0, 0, 0, 0, 0,
-    //	0, 13.0 / 35.0 * l, 0, 0, 0, 11 / 210 * l2, 0, 9 / 70 * l, 0, 0, 0, -13 / 420 * l2,
-    //	0, 0, 13 / 35 * l, 0, -11 / 210 * l2, 0, 0, 0, 9 / 70 * l, 0, 13 / 420 * l2, 0,
-    //	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    //	0, 0, -11 / 210 * l2, 0, 1 / 105 * l3, 0, 0, 0, -13 / 420 * l2, 0, -1 / 140 * l3, 0,
-    //	0, 11 / 210 * l2, 0, 0, 0, 1 / 105 * l3, 0, 13 / 420 * l2, 0, 0, 0, -1 / 140 * l3,
-    //	l / 6, 0, 0, 0, 0, 0, l / 3, 0, 0, 0, 0, 0,
-    //	0, 9 / 70 * l, 0, 0, 0, 13 / 420 * l2, 0, 13 / 35 * l, 0, 0, 0, -11 / 210 * l2,
-    //	0, 0, 9 / 70 * l, 0, -13 / 420 * l2, 0, 0, 0, 13 / 35 * l, 0, 11 / 210 * l2, 0,
-    //	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    //	0, 0, 13 / 420 * l2, 0, -1 / 140 * l3, 0, 0, 0, 11 / 210 * l2, 0, 1 / 105 * l3, 0,
-    //	0, -13 / 420 * l2, 0, 0, 0, -1 / 140 * l3, 0, -11 / 210 * l2, 0, 0, 0, 1 / 105 * l3;
-
+    
     m << l / 3.0, 0, 0, 0, 0, 0, l / 6.0, 0, 0, 0, 0, 0,
         0, 13.0 / 35.0 * l, 0, 0, 0, 11.0 / 210.0 * l2, 0, 9.0 / 70.0 * l, 0, 0, 0, -13.0 / 420.0 * l2,
         0, 0, 13.0 / 35.0 * l, 0, -11.0 / 210.0 * l2, 0, 0, 0, 9.0 / 70.0 * l, 0, 13.0 / 420.0 * l2, 0,
@@ -148,7 +112,6 @@ BeamStress BeamElement::stress(Displacement d0, Displacement d1)
 
     wvec = trans_matrix() * wvec;
     wvec = stiffness_matrix_local() * wvec;
-    // wvec = StiffnessMatrix() * wvec;
 
     // N, Qy, Qz, Mx, My, Mz
     BeamStressData s0(-wvec(0), -wvec(1), -wvec(2), -wvec(3), -wvec(4), wvec(5));
@@ -235,156 +198,47 @@ Eigen::MatrixXd BeamElement::geometric_local_stiffness_matrix(const std::vector<
     Eigen::MatrixXd Kg_mat = Eigen::MatrixXd::Zero(total_dof, total_dof);
     double l = element_length();
     BeamStress s = stress(disp[0], disp[1]);
-    double Nx = s.S0.Nx;
-    double Qy = s.S0.Qy;
-    double Qz = s.S0.Qz;
+    double N = s.S0.Nx;
 
-    int indices_b[8]{1, 2, 4, 5, 7, 8, 10, 11};
+	double Mzi = s.S0.Mz;
+	double Mzj = s.S1.Mz;
+	double Myi = s.S0.My;
+	double Myj = s.S1.My;
+
+    double Qz = (Myj + Myi) / l;
+    double Qy = -(Mzj + Mzi) / l;
+
+	double R = (Sec->Iy + Sec->Iz) / Sec->A;
+
+    int indices_b[10]{1, 2, 3, 4, 5, 7, 8, 9, 10, 11};
     int indices_x[2]{0, 6};
 
     // 曲げによる幾何剛性
-    Eigen::MatrixXd Kg_b = Eigen::MatrixXd::Zero(8, 8);
-    Kg_b << 6.0 / (5.0 * l), 0, 0, 1.0 / 10.0, -6.0 / (5.0 * l), 0, 0, 1.0 / 10.0,
-        0, 6.0 / (5.0 * l), -1.0 / 10.0, 0, 0, -6.0 / (5.0 * l), -1.0 / 10.0, 0,
-        0, -1.0 / 10.0, 2.0 * l / 15.0, 0, 0, 1.0 / 10.0, -l / 30.0, 0,
-        1.0 / 10.0, 0, 0, 2.0 * l / 15.0, -1.0 / 10.0, 0, 0, -l / 30.0,
-        -6.0 / (5.0 * l), 0, 0, -1.0 / 10.0, 6.0 / (5.0 * l), 0, 0, -1.0 / 10.0,
-        0, -6.0 / (5.0 * l), 1.0 / 10.0, 0, 0, 6.0 / (5.0 * l), 1.0 / 10.0, 0,
-        0, -1.0 / 10.0, -l / 30.0, 0, 0, 1.0 / 10.0, 2.0 * l / 15.0, 0,
-        1.0 / 10.0, 0, 0, -l / 30.0, -1.0 / 10.0, 0, 0, 2.0 * l / 15.0;
-    Kg_b *= Nx;
-
+    Eigen::MatrixXd Kg_b = Eigen::MatrixXd::Zero(10, 10);
+    Kg_b << 6.0*N/(5.0*l), 0, Myi/l, 0, -N/10.0, -6.0*N/(5.0*l), 0, Myj/l, 0, N/10.0,
+        0, 6.0*N/(5.0*l), Mzi/l, N/10.0, 0, 0, -6.0*N/(5.0*l), Mzj/l, N*l/30.0, 0,
+        Myi/l, Mzi/l, N*R/l, -Qy*l/6.0, -Qz*l/6.0, Myj/l, -Mzi/l, -N*R/l, Qy*l/6.0, Qz*l/6.0,
+        0, N/10.0, -Qy*l/6.0, 2.0*l*N/15.0, 0, 0, -N/10.0, Qy*l/6.0, l*N/30.0, 0,
+        -N/10.0, 0, -Qz*l/6.0, 0, 2.0*l*N/15.0, N/10.0, 0, Qz*l/6.0, 0, N*l/30.0,
+        -6.0*N/(5.0*l), 0, Myj/l, 0, N/10.0, 6.0*N/(5.0*l), 0, Myi/l, 0, -N/10.0,
+        0, -6.0*N/(5.0*l), -Mzi/l, -N/10.0, 0, 0, 6.0*N/(5.0*l), -Mzj/l, N/10.0, 0,
+        Myj/l, Mzj/l, -N*R/l, Qy*l/6.0, Qz*l/6.0, Myi/l, -Mzj/l, N*R/l, -Qy*l/6.0, -Qz*l/6.0,
+        0, N*l/30.0, Qy*l/6.0, l*N/30.0, 0, 0, N/10.0, -Qy*l/6.0, 2.0*l*N/15.0, 0,
+        N/10.0, 0, Qz*l/6.0, 0, N*l/30.0, -N/10.0, 0, -Qz*l/6.0, 0, 2.0*l*N/15.0;
+    
+    for (size_t i = 0; i < 8; i++)
+        for (size_t j = 0; j < 8; j++)
+            Kg_mat(indices_b[i], indices_b[j]) += Kg_b(i, j);
+    
     // 軸方向幾何剛性
     Eigen::MatrixXd Kg_x = Eigen::MatrixXd::Zero(2, 2);
     Kg_x << 1, -1,
         -1, 1;
-    Kg_x *= Nx / l;
-
-    for (size_t i = 0; i < 8; i++)
-    {
-        int ir = indices_b[i];
-        for (size_t j = 0; j < 8; j++)
-        {
-            int ic = indices_b[j];
-            Kg_mat(ir, ic) += Kg_b(i, j);
-        }
-    }
+    Kg_x *= N / l;
 
     for (size_t i = 0; i < 2; i++)
-    {
-        int ir = indices_x[i];
         for (size_t j = 0; j < 2; j++)
-        {
-            int ic = indices_x[j];
-            Kg_mat(ir, ic) += Kg_x(i, j);
-        }
-    }
-
-    // Kg_mat << 1.0 / l, 0, 0, 0, 0, 0, -1.0 / l, 0, 0, 0, 0, 0,
-    // 	0, 6.0 / 5.0 / l, 0, 0, 0, 1.0 / 10.0, 0, -6.0 / 15.0 / l, 0, 0, 0, 1.0 / 10.0,
-    // 	0, 0, 6.0 / 5.0 / l, 0, -1.0 / 10.0, 0, 0, 0, -6.0 / 15.0 / l, 0, -1.0 / 10.0, 0,
-    // 	0, 0, 0, 1.0 / l, 0, 0, 0, 0, 0, -1.0 / l, 0, 0,
-    // 	0, 0, -1.0 / 10.0, 0, 2.0 * l / 15.0, 0, 0, 0, 1.0 / 10.0, 0, -l / 30.0, 0,
-    // 	0, 1.0 / 10.0, 0, 0, 0, 2.0 * l / 15.0, 0, -1.0 / 10.0, 0, 0, 0, -l / 30.0,
-    // 	-1.0 / l, 0, 0, 0, 0, 0, 1.0 / l, 0, 0, 0, 0, 0,
-    // 	0, -6.0 / 15.0 / l, 0, 0, 0, -1.0 / 10.0, 0, 6.0 / 5.0 / l, 0, 0, 0, -1.0 / 10.0,
-    // 	0, 0, -6.0 / 15.0 / l, 0, 1.0 / 10.0, 0, 0, 0, 6.0 / 5.0 / l, 0, 1.0 / 10.0, 0,
-    // 	0, 0, 0, -1.0 / l, 0, 0, 0, 0, 0, 1.0 / l, 0, 0,
-    // 	0, 0, -1.0 / 10.0, 0, -l / 30.0, 0, 0, 0, 1.0 / 10.0, 0, 2.0 * l / 15.0, 0,
-    // 	0, 1.0 / 10.0, 0, 0, 0, -l / 30.0, 0, -1 / 10.0, 0, 0, 0, 2.0 * l / 15.0;
-    // Kg_mat *= Nx;
-
-    // A1 A1^t
-    // Eigen::MatrixXd Kg_mat1 = Eigen::MatrixXd::Zero(total_dof, total_dof);
-    // Kg_mat1 << Nx / l, -(s.S0.Mz - s.S1.Mz) / (l * l), (s.S0.My - s.S1.My) / (l * l), 0, s.S0.My / l, -s.S0.Mz / l, -Nx / l, (s.S1.Mz - s.S0.Mz) / (l * l), (s.S1.My - s.S0.My) / (l * l), 0, -s.S1.My / l, s.S1.Mz / l,
-    //	-(s.S0.Mz - s.S1.Mz) / (l * l), (Nx * Sec->Iz * 12) / (Sec->A * l * l * l), 0, 0, 0, -(Nx * Sec->Iz * 6) / (Sec->A * l * l), -(s.S1.Mz - s.S0.Mz) / (l * l), -(-Nx * 12 * Sec->Iz) / (Sec->A * l * l * l), 0, 0, 0, -(Nx * 6 * Sec->Iz) / (Sec->A * l * l),
-    //	(s.S0.My - s.S1.My) / (l * l), 0, (Nx * Sec->Iy * 12) / (Sec->A * l * l * l), 0, (-Nx * Sec->Iy * 6) / (Sec->A * l * l), 0, (s.S1.My - s.S0.My) / (l * l), 0, (-Nx * 12 * Sec->Iy) / (Sec->A * l * l * l), 0, (-Nx * 6 * Sec->Iy) / (Sec->A * l * l), 0,
-    //	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    //	s.S0.My / l, 0, (-Nx * Sec->Iy * 6) / (Sec->A * l * l), 0, (Nx * Sec->Iy * 4) / (Sec->A * l), 0, -s.S0.My / l, 0, (Nx * Sec->Iy * 6) / (Sec->A * l * l), 0, (Nx * Sec->Iy * 2) / (Sec->A * l), 0,
-    //	-s.S0.Mz / l, -(Nx * Sec->Iz * 6) / (Sec->A * l * l), 0, 0, 0, (Nx * Sec->Iz * 4) / (Sec->A * l), s.S0.Mz / l, (-Nx * Sec->Iz * 6) / (Sec->A * l * l), 0, 0, 0, (Nx * Sec->Iz * 2) / (Sec->A * l),
-    //	-Nx / l, -(s.S1.Mz - s.S0.Mz) / (l * l), (s.S1.My - s.S0.My) / (l * l), 0, -s.S0.My / l, s.S0.Mz / l, Nx / l, (s.S0.Mz - s.S1.Mz) / (l * l), (s.S0.My - s.S1.My) / (l * l), 0, s.S1.My / l, -s.S1.Mz / l,
-    //	(s.S1.Mz - s.S0.Mz) / (l * l), (Nx * 12 * Sec->Iz) / (Sec->A * l * l * l), 0, 0, 0, (-Nx * Sec->Iz * 6) / (Sec->A * l * l), (s.S0.Mz - s.S1.Mz) / (l * l), (Nx * 12 * Sec->Iz) / (Sec->A * l * l * l), 0, 0, 0, (-Nx * 6 * Sec->Iz) / (Sec->A * l * l),
-    //	(s.S1.My - s.S0.My) / (l * l), 0, (-Nx * 12 * Sec->Iy) / (Sec->A * l * l * l), 0, (Nx * Sec->Iy * 6) / (Sec->A * l * l), 0, (s.S0.My - s.S1.My) / (l * l), 0, (Nx * 12 * Sec->Iy) / (Sec->A * l * l * l), 0, (Nx * 6 * Sec->Iy) / (Sec->A * l * l), 0,
-    //	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    //	-s.S1.My / l, 0, (-Nx * Sec->Iy * 6) / (Sec->A * l * l), 0, (Nx * Sec->Iy * 2) / (Sec->A * l), 0, s.S1.My / l, 0, (Nx * Sec->Iy * 6) / (Sec->A * l * l), 0, (Nx * Sec->Iy * 4) / (Sec->A * l), 0,
-    //	s.S1.Mz / l, -(Nx * Sec->Iz * 6) / (Sec->A * l * l), 0, 0, 0, (Nx * Sec->Iz * 2) / (Sec->A * l), -s.S1.Mz / l, (-Nx * Sec->Iz * 6) / (Sec->A * l * l), 0, 0, 0, (Nx * Sec->Iz * 4) / (Sec->A * l);
-
-    // Eigen::MatrixXd Kg_mat1 = Eigen::MatrixXd::Zero(total_dof, total_dof);
-    // Kg_mat1 << Nx / l, (s.S0.Mz - s.S1.Mz) / (l * l), (s.S0.My - s.S1.My) / (l * l), 0, s.S0.My / l, -s.S0.Mz / l, -Nx / l, (s.S1.Mz - s.S0.Mz) / (l * l), (s.S1.My - s.S0.My) / (l * l), 0, -s.S1.My / l, s.S1.Mz / l,
-    //	(s.S0.Mz - s.S1.Mz) / (l * l), (Nx * Sec->Iz * 12) / (Sec->A * l * l * l), 0, 0, 0, (Nx * Sec->Iz * 6) / (Sec->A * l * l), (s.S1.Mz - s.S0.Mz) / (l * l), (-Nx * 12 * Sec->Iz) / (Sec->A * l * l * l), 0, 0, 0, (Nx * 6 * Sec->Iz) / (Sec->A * l * l),
-    //	(s.S0.My - s.S1.My) / (l * l), 0, (Nx * Sec->Iy * 12) / (Sec->A * l * l * l), 0, (-Nx * Sec->Iy * 6) / (Sec->A * l * l), 0, (s.S1.My - s.S0.My) / (l * l), 0, (-Nx * 12 * Sec->Iy) / (Sec->A * l * l * l), 0, (-Nx * 6 * Sec->Iy) / (Sec->A * l * l), 0,
-    //	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    //	s.S0.My / l, 0, (-Nx * Sec->Iy * 6) / (Sec->A * l * l), 0, (Nx * Sec->Iy * 4) / (Sec->A * l), 0, -s.S0.My / l, 0, (Nx * Sec->Iy * 6) / (Sec->A * l * l), 0, (Nx * Sec->Iy * 2) / (Sec->A * l), 0,
-    //	-s.S0.Mz / l, (Nx * Sec->Iz * 6) / (Sec->A * l * l), 0, 0, 0, (Nx * Sec->Iz * 4) / (Sec->A * l), s.S0.Mz / l, (-Nx * Sec->Iz * 6) / (Sec->A * l * l), 0, 0, 0, (Nx * Sec->Iz * 2) / (Sec->A * l),
-    //	-Nx / l, (s.S1.Mz - s.S0.Mz) / (l * l), (s.S1.My - s.S0.My) / (l * l), 0, -s.S0.My / l, s.S0.Mz / l, Nx / l, (s.S0.Mz - s.S1.Mz) / (l * l), (s.S0.My - s.S1.My) / (l * l), 0, s.S1.My / l, -s.S1.Mz / l,
-    //	(s.S1.Mz - s.S0.Mz) / (l * l), (-Nx * 12 * Sec->Iz) / (Sec->A * l * l * l), 0, 0, 0, (-Nx * Sec->Iz * 6) / (Sec->A * l * l), (s.S0.Mz - s.S1.Mz) / (l * l), (Nx * 12 * Sec->Iz) / (Sec->A * l * l * l), 0, 0, 0, (-Nx * 6 * Sec->Iz) / (Sec->A * l * l),
-    //	(s.S1.My - s.S0.My) / (l * l), 0, (-Nx * 12 * Sec->Iy) / (Sec->A * l * l * l), 0, (Nx * Sec->Iy * 6) / (Sec->A * l * l), 0, (s.S0.My - s.S1.My) / (l * l), 0, (Nx * 12 * Sec->Iy) / (Sec->A * l * l * l), 0, (Nx * 6 * Sec->Iy) / (Sec->A * l * l), 0,
-    //	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    //	-s.S1.My / l, 0, (-Nx * Sec->Iy * 6) / (Sec->A * l * l), 0, (Nx * Sec->Iy * 2) / (Sec->A * l), 0, s.S1.My / l, 0, (Nx * Sec->Iy * 6) / (Sec->A * l * l), 0, (Nx * Sec->Iy * 4) / (Sec->A * l), 0,
-    //	s.S1.Mz / l, (Nx * Sec->Iz * 6) / (Sec->A * l * l), 0, 0, 0, (Nx * Sec->Iz * 2) / (Sec->A * l), -s.S1.Mz / l, (-Nx * Sec->Iz * 6) / (Sec->A * l * l), 0, 0, 0, (Nx * Sec->Iz * 4) / (Sec->A * l);
-
-    // A2 A2^t + A3 A3^t
-    // Eigen::MatrixXd Kg_mat2 = Eigen::MatrixXd::Zero(total_dof, total_dof);
-    // Kg_mat2 << 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    //	0, (6.0 * Nx) / (5.0 * l), 0, -(s.S0.My + s.S1.My) / (2.0 * l), 0, Nx / 10.0, 0, -(6.0 * Nx) / (5.0 * l), 0, (s.S0.My + s.S1.My) / (2.0 * l), 0, Nx / 10,
-    //	0, 0, (6.0 * Nx) / (5.0 * l), (s.S0.Mz + s.S1.Mz) / (2.0 * l), -Nx / 10.0, 0, 0, 0, -(6.0 * Nx) / (5.0 * l), -(s.S0.Mz + s.S1.Mz) / (2.0 * l), -Nx / 10, 0,
-    //	0, -(s.S0.My + s.S1.My) / (2.0 * l), (s.S0.Mz + s.S1.Mz) / (2.0 * l), Nx * (Sec->Iy + Sec->Iz) / (Sec->A * l * l), 0, 0, 0, (s.S0.My + s.S1.My) / (2.0 * l), -(s.S0.Mz + s.S1.Mz) / (2.0 * l), -Nx * (Sec->Iy + Sec->Iz) / (Sec->A * l * l), 0, 0,
-    //	0, 0, -Nx / 10, 0, 2 * Nx * l / 15, 0, 0, 0, Nx / 10, 0, -Nx * l / 30, 0,
-    //	0, Nx / 10, 0, 0, 0, 2.0 * Nx * l / 15, 0, -Nx / 10, 0, 0, 0, -Nx * l / 30,
-    //	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    //	0, -6.0 * Nx / (5 * l), 0, (s.S0.My + s.S1.My) / (2 * l), 0, -Nx / 10, 0, 6.0 * Nx / (5.0 * l), 0, -(s.S0.My + s.S1.My) / (2.0 * l), 0, -Nx / 10,
-    //	0, 0, -6.0 * Nx / (5.0 * l), -(s.S0.Mz + s.S1.Mz) / (2.0 * l), Nx / 10, 0, 0, 0, 6.0 * Nx / (5.0 * l), (s.S0.Mz + s.S1.Mz) / (2.0 * l), Nx / 10, 0,
-    //	0, (s.S0.My + s.S1.My) / (2.0 * l), -(s.S0.Mz + s.S1.Mz) / (2.0 * l), -Nx * (Sec->Iy + Sec->Iz) / (Sec->A * l * l), 0, 0, 0, -(s.S0.My + s.S1.My) / (2.0 * l), (s.S0.Mz + s.S1.Mz) / (2.0 * l), Nx * (Sec->Iy + Sec->Iz) / (Sec->A * l * l), 0, 0,
-    //	0, 0, -Nx / 10, 0, -Nx * l / 30.0, 0, 0, 0, Nx / 10.0, 0, 2.0 * Nx * l / 15.0, 0,
-    //	0, -Nx / 10.0, 0, 0, 0, -Nx * l / 30.0, 0, -Nx / 10.0, 0, 0, 0, 2.0 * l * Nx / 15.0;
-
-    // A6 A1^t + A1 A6^t + A7 A2^t + A2 A7^t
-    // Eigen::MatrixXd Kg_mat3 = Eigen::MatrixXd::Zero(total_dof, total_dof);
-    // Kg_mat3 << 0, 0, -1.0/l, 0, 0, 0, 0, 0, 1.0/l, 0, 0, 0,
-    //	0, 0, 0, 0.5, 0, 0, 0, 0, 0, 0.5, 0, 0,
-    //	-1.0/l, 0, 0, 0, 0, 0, 1.0/l, 0, 0, 0, 0, 0,
-    //	0, 0.5, 0, 0, 0, -l/12.0, 0, -0.5, 0, 0, 0, l/12.0,
-    //	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    //	0, 0, 0, -l/12.0, 0, 0, 0, 0, 0, l/12.0, 0, 0,
-    //	0, 0, 1.0/l, 0, 0, 0, 0, 0, -1.0/l, 0, 0, 0,
-    //	0, 0, 0, -0.5, 0, 0, 0, 0, 0, -0.5, 0, 0,
-    //	1.0 / l, 0, 0, 0, 0, 0, -1.0 / l, 0, 0, 0, 0, 0,
-    //	0, 0.5, 0, 0, 0, l / 12.0, 0, -0.5, 0, 0, 0, -l / 12.0,
-    //	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    //	0, 0, 0, l / 12.0, 0, 0, 0, 0, 0, -l / 12.0, 0, 0;
-    // Kg_mat3 *= Qz;
-    //
-    // A1 A4^t + A4 A1^t + A3 A5^t + A5 A3^t
-    // Eigen::MatrixXd Kg_mat4 = Eigen::MatrixXd::Zero(total_dof, total_dof);
-    // Kg_mat4 << 0, -1.0/l, 0, 0, 0, 0, 0, 1.0/l, 0, 0, 0, 0,
-    //	-1.0/l, 0, 0, 0, 0, 0, 1.0/l, 0, 0, 0, 0, 0,
-    //	0, 0, 0, -0.5, 0, 0, 0, 0, 0, -0.5, 0, 0,
-    //	0, 0, -0.5, 0, -l/12.0, 0, 0, 0, 0.5, 0, l/12.0, 0,
-    //	0, 0, 0, -l/12.0, 0, 0, 0, 0, 0, l/12.0, 0, 0,
-    //	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    //	0, 1.0/l, 0, 0, 0, 0, 0, -1.0/l, 0, 0, 0, 0,
-    //	1.0/l, 0, 0, 0, 0, 0, -1.0/l, 0, 0, 0, 0, 0,
-    //	0, 0, 0, 0.5, 0, 0, 0, 0, 0, 0.5, 0, 0,
-    //	0, 0, -0.5, 0, l / 12.0, 0, 0, 0, 0.5, 0, -l / 12.0, 0,
-    //	0, 0, 0, l / 12.0, 0, 0, 0, 0, 0, -l / 12.0, 0, 0,
-    //	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0;
-    // Kg_mat4 *= Qy;
-
-    // Kg_mat = Kg_mat1 + Kg_mat2 + Kg_mat3 + Kg_mat4;
-    // Kg_mat *= 0.5;
-
-    // Kg_mat << 1.0 / l, 0, 0, 0, 0, 0, -1.0 / l, 0, 0, 0, 0, 0,
-    // 	0, 6.0 / 5.0 / l, 0, 0, 0, 1.0 / 10.0, 0, -6.0 / 5.0 / l, 0, 0, 0, 1.0 / 10.0,
-    // 	0, 0, 6.0 / 5.0 / l, 0, -1.0 / 10.0, 0, 0, 0, -6.0 / 5.0 / l, 0, -1.0 / 10.0, 0,
-    // 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    // 	0, 0, -1.0 / 10.0, 0, 2.0 * l / 15.0, 0, 0, 0, 1.0 / 10.0, 0, -l / 30.0, 0,
-    // 	0, 1.0 / 10.0, 0, 0, 0, 2.0 * l / 15.0, 0, -1.0 / 10.0, 0, 0, 0, -l / 30.0,
-    // 	-1.0 / l, 0, 0, 0, 0, 0, 1.0 / l, 0, 0, 0, 0, 0,
-    // 	0, -6.0 / 5.0 / l, 0, 0, 0, -1.0 / 10.0, 0, 6.0 / 5.0 / l, 0, 0, 0, -1.0 / 10.0,
-    // 	0, 0, -6.0 / 5.0 / l, 0, 1.0 / 10.0, 0, 0, 0, 6.0 / 5.0 / l, 0, 1.0 / 10.0, 0,
-    // 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    // 	0, 0, -1.0 / 10.0, 0, -l / 30.0, 0, 0, 0, 1.0 / 10.0, 0, 2.0 * l / 15.0, 0,
-    // 	0, 1.0 / 10.0, 0, 0, 0, -l / 30.0, 0, -1 / 10.0, 0, 0, 0, 2.0 * l / 15.0;
+            Kg_mat(indices_x[i], indices_x[j]) += Kg_x(i, j);
 
     Eigen::MatrixXd tr = trans_matrix();
     return tr.transpose() * Kg_mat * tr;

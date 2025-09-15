@@ -60,6 +60,7 @@ swig_add_library(fem
         Elements/QuadPlateElement.cpp 
         LoadComponent.cpp 
         SeismicModule.cpp 
+        FEAnalysis.cpp
         FELinearStaticOp.cpp 
         FEDynamic.cpp 
         FEBucklingAnalysis.cpp 
@@ -112,6 +113,7 @@ add_executable(sampleapp
     Elements/QuadPlateElement.cpp 
     LoadComponent.cpp 
     SeismicModule.cpp 
+    FEAnalysis.cpp
     FELinearStaticOp.cpp 
     FEDynamic.cpp 
     FEBucklingAnalysis.cpp 

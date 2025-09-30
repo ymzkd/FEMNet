@@ -193,52 +193,107 @@ Eigen::MatrixXd BeamElement::stiffness_matrix_local()
     return m;
 }
 
-Eigen::MatrixXd BeamElement::geometric_local_stiffness_matrix(const std::vector<Displacement> &disp)
+//250930_ひずみ成分を増やした実装。横座屈とか対応したい。まだ未完成
+//Eigen::MatrixXd BeamElement::geometric_local_stiffness_matrix(const std::vector<Displacement> &disp)
+//{
+//    Eigen::MatrixXd Kg_mat = Eigen::MatrixXd::Zero(total_dof, total_dof);
+//    double l = element_length();
+//    BeamStress s = stress(disp[0], disp[1]);
+//    double N = s.S0.Nx;
+//
+//	double Mzi = s.S0.Mz;
+//	double Mzj = s.S1.Mz;
+//	double Myi = s.S0.My;
+//	double Myj = s.S1.My;
+//
+//    double Qz = (Myj + Myi) / l;
+//    double Qy = -(Mzj + Mzi) / l;
+//
+//	double R = (Sec->Iy + Sec->Iz) / Sec->A;
+//
+//    int indices_b[10]{1, 2, 3, 4, 5, 7, 8, 9, 10, 11};
+//    int indices_x[2]{0, 6};
+//
+//    // 曲げによる幾何剛性
+//    Eigen::MatrixXd Kg_b = Eigen::MatrixXd::Zero(10, 10);
+//    Kg_b << 6.0*N/(5.0*l), 0, Myi/l, 0, -N/10.0, -6.0*N/(5.0*l), 0, Myj/l, 0, N/10.0,
+//        0, 6.0*N/(5.0*l), Mzi/l, N/10.0, 0, 0, -6.0*N/(5.0*l), Mzj/l, N*l/30.0, 0,
+//        Myi/l, Mzi/l, N*R/l, -Qy*l/6.0, -Qz*l/6.0, Myj/l, -Mzi/l, -N*R/l, Qy*l/6.0, Qz*l/6.0,
+//        0, N/10.0, -Qy*l/6.0, 2.0*l*N/15.0, 0, 0, -N/10.0, Qy*l/6.0, l*N/30.0, 0,
+//        -N/10.0, 0, -Qz*l/6.0, 0, 2.0*l*N/15.0, N/10.0, 0, Qz*l/6.0, 0, N*l/30.0,
+//        -6.0*N/(5.0*l), 0, Myj/l, 0, N/10.0, 6.0*N/(5.0*l), 0, Myi/l, 0, -N/10.0,
+//        0, -6.0*N/(5.0*l), -Mzi/l, -N/10.0, 0, 0, 6.0*N/(5.0*l), -Mzj/l, N/10.0, 0,
+//        Myj/l, Mzj/l, -N*R/l, Qy*l/6.0, Qz*l/6.0, Myi/l, -Mzj/l, N*R/l, -Qy*l/6.0, -Qz*l/6.0,
+//        0, N*l/30.0, Qy*l/6.0, l*N/30.0, 0, 0, N/10.0, -Qy*l/6.0, 2.0*l*N/15.0, 0,
+//        N/10.0, 0, Qz*l/6.0, 0, N*l/30.0, -N/10.0, 0, -Qz*l/6.0, 0, 2.0*l*N/15.0;
+//    
+//    for (size_t i = 0; i < 10; i++)
+//        for (size_t j = 0; j < 10; j++)
+//            Kg_mat(indices_b[i], indices_b[j]) += Kg_b(i, j);
+//    
+//    // 軸方向幾何剛性
+//    Eigen::MatrixXd Kg_x = Eigen::MatrixXd::Zero(2, 2);
+//    Kg_x << 1, -1,
+//        -1, 1;
+//    Kg_x *= N / l;
+//
+//    for (size_t i = 0; i < 2; i++)
+//        for (size_t j = 0; j < 2; j++)
+//            Kg_mat(indices_x[i], indices_x[j]) += Kg_x(i, j);
+//
+//    Eigen::MatrixXd tr = trans_matrix();
+//    return tr.transpose() * Kg_mat * tr;
+//}
+
+Eigen::MatrixXd BeamElement::geometric_local_stiffness_matrix(const std::vector<Displacement>& disp)
 {
     Eigen::MatrixXd Kg_mat = Eigen::MatrixXd::Zero(total_dof, total_dof);
     double l = element_length();
     BeamStress s = stress(disp[0], disp[1]);
-    double N = s.S0.Nx;
+    double Nx = s.S0.Nx;
+    //double Qy = s.S0.Qy;
+    //double Qz = s.S0.Qz;
 
-	double Mzi = s.S0.Mz;
-	double Mzj = s.S1.Mz;
-	double Myi = s.S0.My;
-	double Myj = s.S1.My;
-
-    double Qz = (Myj + Myi) / l;
-    double Qy = -(Mzj + Mzi) / l;
-
-	double R = (Sec->Iy + Sec->Iz) / Sec->A;
-
-    int indices_b[10]{1, 2, 3, 4, 5, 7, 8, 9, 10, 11};
-    int indices_x[2]{0, 6};
+    int indices_b[8]{ 1, 2, 4, 5, 7, 8, 10, 11 };
+    int indices_x[2]{ 0, 6 };
 
     // 曲げによる幾何剛性
-    Eigen::MatrixXd Kg_b = Eigen::MatrixXd::Zero(10, 10);
-    Kg_b << 6.0*N/(5.0*l), 0, Myi/l, 0, -N/10.0, -6.0*N/(5.0*l), 0, Myj/l, 0, N/10.0,
-        0, 6.0*N/(5.0*l), Mzi/l, N/10.0, 0, 0, -6.0*N/(5.0*l), Mzj/l, N*l/30.0, 0,
-        Myi/l, Mzi/l, N*R/l, -Qy*l/6.0, -Qz*l/6.0, Myj/l, -Mzi/l, -N*R/l, Qy*l/6.0, Qz*l/6.0,
-        0, N/10.0, -Qy*l/6.0, 2.0*l*N/15.0, 0, 0, -N/10.0, Qy*l/6.0, l*N/30.0, 0,
-        -N/10.0, 0, -Qz*l/6.0, 0, 2.0*l*N/15.0, N/10.0, 0, Qz*l/6.0, 0, N*l/30.0,
-        -6.0*N/(5.0*l), 0, Myj/l, 0, N/10.0, 6.0*N/(5.0*l), 0, Myi/l, 0, -N/10.0,
-        0, -6.0*N/(5.0*l), -Mzi/l, -N/10.0, 0, 0, 6.0*N/(5.0*l), -Mzj/l, N/10.0, 0,
-        Myj/l, Mzj/l, -N*R/l, Qy*l/6.0, Qz*l/6.0, Myi/l, -Mzj/l, N*R/l, -Qy*l/6.0, -Qz*l/6.0,
-        0, N*l/30.0, Qy*l/6.0, l*N/30.0, 0, 0, N/10.0, -Qy*l/6.0, 2.0*l*N/15.0, 0,
-        N/10.0, 0, Qz*l/6.0, 0, N*l/30.0, -N/10.0, 0, -Qz*l/6.0, 0, 2.0*l*N/15.0;
-    
-    for (size_t i = 0; i < 8; i++)
-        for (size_t j = 0; j < 8; j++)
-            Kg_mat(indices_b[i], indices_b[j]) += Kg_b(i, j);
-    
+    Eigen::MatrixXd Kg_b = Eigen::MatrixXd::Zero(8, 8);
+    Kg_b << 6.0 / (5.0 * l), 0, 0, 1.0 / 10.0, -6.0 / (5.0 * l), 0, 0, 1.0 / 10.0,
+        0, 6.0 / (5.0 * l), -1.0 / 10.0, 0, 0, -6.0 / (5.0 * l), -1.0 / 10.0, 0,
+        0, -1.0 / 10.0, 2.0 * l / 15.0, 0, 0, 1.0 / 10.0, -l / 30.0, 0,
+        1.0 / 10.0, 0, 0, 2.0 * l / 15.0, -1.0 / 10.0, 0, 0, -l / 30.0,
+        -6.0 / (5.0 * l), 0, 0, -1.0 / 10.0, 6.0 / (5.0 * l), 0, 0, -1.0 / 10.0,
+        0, -6.0 / (5.0 * l), 1.0 / 10.0, 0, 0, 6.0 / (5.0 * l), 1.0 / 10.0, 0,
+        0, -1.0 / 10.0, -l / 30.0, 0, 0, 1.0 / 10.0, 2.0 * l / 15.0, 0,
+        1.0 / 10.0, 0, 0, -l / 30.0, -1.0 / 10.0, 0, 0, 2.0 * l / 15.0;
+    Kg_b *= Nx;
+
     // 軸方向幾何剛性
     Eigen::MatrixXd Kg_x = Eigen::MatrixXd::Zero(2, 2);
     Kg_x << 1, -1,
         -1, 1;
-    Kg_x *= N / l;
+    Kg_x *= Nx / l;
+
+    for (size_t i = 0; i < 8; i++)
+    {
+        int ir = indices_b[i];
+        for (size_t j = 0; j < 8; j++)
+        {
+            int ic = indices_b[j];
+            Kg_mat(ir, ic) += Kg_b(i, j);
+        }
+    }
 
     for (size_t i = 0; i < 2; i++)
+    {
+        int ir = indices_x[i];
         for (size_t j = 0; j < 2; j++)
-            Kg_mat(indices_x[i], indices_x[j]) += Kg_x(i, j);
+        {
+            int ic = indices_x[j];
+            Kg_mat(ir, ic) += Kg_x(i, j);
+        }
+    }
 
     Eigen::MatrixXd tr = trans_matrix();
     return tr.transpose() * Kg_mat * tr;

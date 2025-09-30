@@ -134,6 +134,7 @@ QuadPlaneElement::QuadPlaneElement(Node *n0, Node *n1, Node *n2, Node *n3, doubl
     Nodes[3] = n3;
 
     thickness = Thickness(t);
+    Beta = beta;
     Mat = mat;
 
     Point p12 = (n1->Location + n2->Location) / 2;
@@ -151,6 +152,7 @@ QuadPlaneElement::QuadPlaneElement(Node *n0, Node *n1, Node *n2, Node *n3, Thick
     Nodes[3] = n3;
 
     thickness = t;
+    Beta = beta;
     Mat = mat;
 
     Point p12 = (n1->Location + n2->Location) / 2;

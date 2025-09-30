@@ -462,8 +462,8 @@ void CheckQuadPlateBuckling() {
 	mat.dense = 4.3;
 	Thickness thickness(2.0);
 	// QuadPlateElementのインスタンスを作成
-	QuadPlateElement element1(&n0, &n1, &n4, &n3, thickness, mat);
-	QuadPlateElement element2(&n1, &n2, &n5, &n4, thickness, mat);
+	QuadPlateElement element1(&n0, &n1, &n4, &n3, thickness, mat, 0.1);
+	QuadPlateElement element2(&n1, &n2, &n5, &n4, thickness, mat, -0.1);
 	// FEModelの作成
 	FEModel model;
 	model.Nodes.push_back(n0);
@@ -720,7 +720,6 @@ void TestBeamTorsionMethod1() {
 	// std::cout << "TransMat: \n" << pel.trans_matrix() << std::endl;
 }
 
-// �Ў�����(������)�T���v��
 void TestBeamSemiRigidMethod() {
 
 	FEModel model;
@@ -734,8 +733,8 @@ void TestBeamSemiRigidMethod() {
 
 	// ComplexBeamElement b0(&n0, &n1, &s0, m0);
 	std::shared_ptr<ComplexBeamElement> b0 = std::make_shared<ComplexBeamElement>(&n0, &n1, &s0, m0);
-	b0->Lambda_bz_ = 0.6;
-	b0->Lambda_by_ = 0.6;
+	b0->Lambda_bzj = 0.6;
+	b0->Lambda_byj = 0.6;
 	//b0->Lambda_sz_ = 0.7;
 	//b0->Lambda_sy_ = 0.4;
 
@@ -894,6 +893,83 @@ void TestDynamicAnalysis() {
 
 }
 
+
+void TestSimplaFrame() {
+
+	std::cout << "TestSimplaFrame Start" << std::endl;
+
+	FEModel model;
+
+	Node n0(0, 0, 0); n0.id = 0;
+	Node n1(1000, 0, 0); n1.id = 1;
+	Node n2(0, 0, 1000); n2.id = 2;
+	Node n3(1000, 0, 1000); n3.id = 3;
+	n0.Fix.FixAll();
+	n1.Fix.FixAll();
+
+	Material m0(5000, 0.2);
+	Section s0(600, 45000, 20000, 10000); // 20 x 30
+
+	// ComplexBeamElement b0(&n0, &n1, &s0, m0);
+	std::shared_ptr<ComplexBeamElement> b0 = std::make_shared<ComplexBeamElement>(&n2, &n3, &s0, m0);
+	b0->Lambda_bzj = 0.01;
+	//b0->Lambda_byj = 0.6;
+	//b0->Lambda_sz_ = 0.7;
+	//b0->Lambda_sy_ = 0.4;
+	std::shared_ptr<BeamElement> b1 = std::make_shared<BeamElement>(&n0, &n2, &s0, m0);
+	std::shared_ptr<BeamElement> b2 = std::make_shared<BeamElement>(&n1, &n3, &s0, m0);
+
+
+	model.Nodes.push_back(n0);
+	model.Nodes.push_back(n1);
+	model.Nodes.push_back(n2);
+	model.Nodes.push_back(n3);
+
+	model.Materials.push_back(m0);
+	model.Sections.push_back(s0);
+
+	model.Elements.push_back(b0);
+	model.Elements.push_back(b1);
+	model.Elements.push_back(b2);
+
+	NodeLoad nl = NodeLoad(2, 10, 0, 0, 0, 0, 0);
+	std::vector<std::shared_ptr<LoadBase>> loads;
+	loads.push_back(std::make_shared<NodeLoad>(nl));
+	//model.Loads.push_back(std::make_shared<NodeLoad>(nl));
+
+	//std::vector<Displacement> disp;// = model.Solve();
+	//std::vector<NodeLoad> react;// = model.Solve();
+	//model.SolveLinearStatic(loads, disp, react);
+	FELinearStaticOp result = FELinearStaticOp(std::make_shared<FEModel>(model), loads);
+	result.Compute();
+
+	std::cout << "React Forces" << std::endl;
+	for (const NodeLoad& nl : result.GetReactForces())
+	{
+		std::cout << nl << std::endl;
+	}
+
+	for (size_t i = 0; i < result.GetDisplacements().size(); i++)
+	{
+		std::cout << "id: " << i << std::endl;
+		std::cout << result.GetDisplacements()[i] << std::endl;
+	}
+
+	std::cout << "OUTPUT BEAM STRESS" << std::endl;
+	std::cout << result.GetBeamStress(0, 0) << std::endl;
+	std::cout << result.GetBeamStress(0, 0.5) << std::endl;
+	std::cout << result.GetBeamStress(0, 1) << std::endl;
+
+	std::cout << "OUTPUT BEAM Displace" << std::endl;
+	std::cout << result.GetBeamDisplace(0, 0) << std::endl;
+	std::cout << result.GetBeamDisplace(0, 0.5) << std::endl;
+	std::cout << result.GetBeamDisplace(0, 1) << std::endl;
+
+	std::cout << "TestSimplaFrame End" << std::endl;
+
+}
+
+
 int main(void) {
 	//std::cout << "TestMethod1 Start" << std::endl;
 	//TestMethod1();
@@ -918,12 +994,13 @@ int main(void) {
 	// CheckCantiBeamBuckling();
 
 	// 座屈検討用のピラミッド型トラスサンプル
-	CheckCantiPyramidTrussBuckling(1000, 4, 100);
+	//CheckCantiPyramidTrussBuckling(1000, 4, 100);
 	CheckQuadPlateBuckling();
 
 	// CheckSparseSolver();
 
-
+	// 250929_Debug
+	// TestSimplaFrame();
 
 
 	//CheckQuadElement1();

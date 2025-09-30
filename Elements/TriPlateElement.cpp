@@ -365,11 +365,20 @@ Eigen::MatrixXd TriPlateElement::localStiffnessMatrix()
 
 Eigen::MatrixXd TriPlateElement::geometric_local_stiffness_matrix(const std::vector<Displacement> &disp)
 {
-    Eigen::MatrixXd Kg = Eigen::MatrixXd::Zero(9, 9);
+    // 3-Point Gauss Quadrature
+    const Eigen::Vector3d intg_weights(1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0);
+    const Eigen::Vector3d xi_params(0.5, 0.5, 0);
+    const Eigen::Vector3d eta_params(0, 0.5, 0.5);
 
-    double weight = 1.0 / 3.0;
-    double xi_list[3]{0.5, 0.5, 0};
-    double eta_list[3]{0, 0.5, 0.5};
+    // 7-Point Gauss Quadrature
+    // Eigen::Vector<double, 7> intg_weights;
+    // Eigen::Vector<double, 7> xi_params;
+    // Eigen::Vector<double, 7> eta_params;
+    // intg_weights << 0.225, 0.1323941527, 0.1323941527, 0.1323941527, 0.1259391805, 0.1259391805, 0.1259391805;
+    // xi_params << 1.0 / 3.0, 0.0597158717, 0.4701420641, 0.4701420641, 0.7974269853, 0.1012865073, 0.1012865073;
+    // eta_params << 1.0 / 3.0, 0.4701420641, 0.0597158717, 0.4701420641, 0.1012865073, 0.7974269853, 0.1012865073;
+
+    Eigen::MatrixXd Kg = Eigen::MatrixXd::Zero(9, 9);
 
     Point p1 = plane.PointToCoord(Nodes[0]->Location);
     Point p2 = plane.PointToCoord(Nodes[1]->Location);
@@ -392,11 +401,11 @@ Eigen::MatrixXd TriPlateElement::geometric_local_stiffness_matrix(const std::vec
     double s6 = v12.x / l12;
     double area = Area();
 
-    for (size_t i = 0; i < 3; i++)
+    for (size_t i = 0; i < intg_weights.size(); i++)
     {
-        double L2 = xi_list[i];
-        double L3 = eta_list[i];
-        double L1 = 1 - L2 - L3;
+        double L2 = xi_params[i];
+        double L3 = eta_params[i];
+        double L1 = 1.0 - L2 - L3;
 
         Eigen::VectorXd shape_func(6);
         shape_func << 2 * L1 * L1 - L1, 2 * L2 * L2 - L2, 2 * L3 * L3 - L3,
@@ -432,16 +441,14 @@ Eigen::MatrixXd TriPlateElement::geometric_local_stiffness_matrix(const std::vec
         Gmat.row(0) = Hx;
         Gmat.row(1) = Hy;
 
-        Kg += Gmat.transpose() * SigMat * Gmat * weight * area;
+        Kg += Gmat.transpose() * SigMat * Gmat * intg_weights[i] * area;
     }
 
-    // Eigen::MatrixXd trMat = trans_matrix();
-    // return trMat.transpose() * Kg * trMat;
     return Kg;
 }
 
 TriPlateElement::TriPlateElement(Node *n0, Node *n1, Node *n2, Thickness t, Material mat, double beta)
-    : plane_element(n0, n1, n2, t, mat)
+    : plane_element(n0, n1, n2, t, mat, beta)
 {
     Nodes[0] = n0;
     Nodes[1] = n1;
@@ -449,12 +456,13 @@ TriPlateElement::TriPlateElement(Node *n0, Node *n1, Node *n2, Thickness t, Mate
 
     Mat = mat;
     thickness = t;
+	Beta = beta;
     plane = Plane::CreateFromPoints(n0->Location, n1->Location, n2->Location);
     plane.Rotate(beta, plane.ez);
 }
 
 TriPlateElement::TriPlateElement(Node *n0, Node *n1, Node *n2, double t, Material mat, double beta)
-    : plane_element(n0, n1, n2, t, mat)
+    : plane_element(n0, n1, n2, t, mat, beta)
 {
     Nodes[0] = n0;
     Nodes[1] = n1;
@@ -462,6 +470,7 @@ TriPlateElement::TriPlateElement(Node *n0, Node *n1, Node *n2, double t, Materia
 
     Mat = mat;
     thickness = Thickness(t);
+    Beta = beta;
     plane = Plane::CreateFromPoints(n0->Location, n1->Location, n2->Location);
     plane.Rotate(beta, plane.ez);
 }
@@ -707,8 +716,10 @@ Eigen::MatrixXd TriPlateElement::GeometricStiffnessMatrix(const std::vector<Disp
 
     // int indices_rotz[3]{ 5,11,17 };
     int indices_pln[9]{0, 1, 2, 6, 7, 8, 12, 13, 14};
-    // int indices_pln[9]{ 0,1,-1,6,7,-1,12,13,-1 };
-    int indices_plt[9]{2, 3, 4, 8, 9, 10, 14, 15, 16};
+    //int indices_pln[9]{ 0,1,-1,6,7,-1,12,13,-1 };
+    
+    //int indices_plt[9]{2, 3, 4, 8, 9, 10, 14, 15, 16};
+    int indices_plt[9]{-1, 3, 4, -1, 9, 10, -1, 15, 16};
 
     Eigen::MatrixXd mat = Eigen::MatrixXd::Zero(total_dof, total_dof);
 
@@ -726,15 +737,20 @@ Eigen::MatrixXd TriPlateElement::GeometricStiffnessMatrix(const std::vector<Disp
         }
     }
 
-    for (size_t i = 0; i < 9; i++)
-    {
-        int ir = indices_plt[i];
-        for (size_t j = 0; j < 9; j++)
-        {
-            int ic = indices_plt[j];
-            mat(ir, ic) += KGplt(i, j);
-        }
-    }
+    // 250928: 板成分を除いたほうがMidas応答に合う。
+    //for (size_t i = 0; i < 9; i++)
+    //{
+    //    int ir = indices_plt[i];
+    //    if (ir < 0)
+    //        continue; // -1は無視
+    //    for (size_t j = 0; j < 9; j++)
+    //    {
+    //        int ic = indices_plt[j];
+    //        if (ic < 0)
+    //            continue; // -1は無視
+    //        mat(ir, ic) += KGplt(i, j);
+    //    }
+    //}
 
     Eigen::MatrixXd trMat = trans_matrix();
     return trMat.transpose() * mat * trMat;

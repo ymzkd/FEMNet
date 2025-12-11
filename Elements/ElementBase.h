@@ -1,7 +1,7 @@
 #ifndef _ELEMENTBASE_
 #define _ELEMENTBASE_
 
-#ifndef SWIGCSHARP
+#ifndef SWIG
 #include <Eigen/Dense>
 #include <Eigen/Sparse>
 #endif

@@ -1,7 +1,7 @@
 #ifndef _MODEL_
 #define _MODEL_
 
-#ifndef SWIGCSHARP
+#ifndef SWIG
 #include <vector>
 #include <map>
 #include <array>

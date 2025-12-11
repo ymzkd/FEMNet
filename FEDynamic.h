@@ -1,7 +1,7 @@
 #ifndef _FEDYNAMIC_
 #define _FEDYNAMIC_
 
-#ifndef SWIGCSHARP
+#ifndef SWIG
 #include <vector>
 #include <map>
 #include <array>

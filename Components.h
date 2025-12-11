@@ -1,7 +1,7 @@
 #ifndef _COMPONENTS_
 #define _COMPONENTS_
 
-#ifndef SWIGCSHARP
+#ifndef SWIG
 #include<iostream>
 #include <cmath>
 #include <vector>

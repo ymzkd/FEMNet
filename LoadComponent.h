@@ -1,7 +1,7 @@
 #ifndef _LOAD_COMPONENT_
 #define _LOAD_COMPONENT_
 
-#ifndef SWIGCSHARP
+#ifndef SWIG
 #include<iostream>
 #include <vector>
 #endif

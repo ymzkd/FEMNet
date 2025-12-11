@@ -1,0 +1,49 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "femnet"
+version = "1.0.0"
+description = "Python bindings for the FEMNet finite element analysis library"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.8"
+authors = [
+    {name = "FEMNet Contributors"}
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: C++",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Scientific/Engineering :: Physics",
+]
+keywords = ["fem", "finite element", "structural analysis", "engineering"]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "numpy>=1.20",
+]
+
+[project.urls]
+Homepage = "https://github.com/yourusername/FEMNet"
+Repository = "https://github.com/yourusername/FEMNet.git"
+Issues = "https://github.com/yourusername/FEMNet/issues"
+
+[tool.setuptools]
+packages = ["femnet"]
+package-dir = {"" = "."}
+
+[tool.setuptools.package-data]
+femnet = ["*.so", "*.pyd", "*.dll", "*.dylib"]

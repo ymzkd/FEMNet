@@ -55,8 +55,7 @@ cmake --build . --config Release
 
 ```bash
 mkdir build-python && cd build-python
-cmake .. -DBUILD_PYTHON=ON \
-         -DBUILD_CSHARP=OFF
+cmake .. -DBUILD_PYTHON=ON -DBUILD_CSHARP=OFF
 cmake --build . --config Release
 ```
 

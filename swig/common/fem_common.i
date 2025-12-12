@@ -54,10 +54,10 @@
 %ignore NodeLoadData::Mz();
 
 // STL templates for common types
+// Note: Classes without default constructors (BeamPolyLoad, DynamicAccelLoad)
+// cannot be used in STL container templates for Python bindings.
+// Use shared_ptr vectors instead if needed.
 namespace std {
-    // List
-    %template(ListBeamPolyLoad) std::list<BeamPolyLoad>;
-
     // Vector
     %template(VectorNode) std::vector<Node>;
     %template(VectorDisp) std::vector<Displacement>;
@@ -67,11 +67,13 @@ namespace std {
     %template(VectorInt) std::vector<int>;
     %template(VectorDouble) std::vector<double>;
 
-    %template(VectorBeamPolyLoad) std::vector<BeamPolyLoad>;
     %template(VectorLoad) std::vector<std::shared_ptr<LoadBase>>;
     %template(VectorNodeLoad) std::vector<NodeLoad>;
     %template(VectorNodeBodyForce) std::vector<NodeBodyForce>;
     %template(VectorNodeLoadData) std::vector<NodeLoadData>;
+
+    // For BeamPolyLoad, use shared_ptr vector instead
+    %template(VectorBeamPolyLoadPtr) std::vector<std::shared_ptr<BeamPolyLoad>>;
 }
 
 // Material extension (language independent)

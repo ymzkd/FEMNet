@@ -1,15 +1,6 @@
 // Operator_common.i - Common Analysis/Operator definitions (language independent)
 
-// Ignore DynamicAccelLoad member to avoid default constructor issues
-// (DynamicAccelLoad has no default constructor, and SWIG generates code that requires it)
-%ignore DynamicAnalysis::accel_load;
-
-// Provide access to accel_load through a method returning a pointer
-%extend DynamicAnalysis {
-    const DynamicAccelLoad* get_accel_load() const {
-        return &($self->accel_load);
-    }
-}
+// Note: DynamicAccelLoad now has a default constructor, so accel_load can be accessed directly
 
 // Helper method to get reaction forces as NodeLoadData vector (avoids shared_ptr issues)
 %extend FEDeformOperator {

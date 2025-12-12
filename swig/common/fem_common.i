@@ -7,15 +7,8 @@
 %include <std_shared_ptr.i>
 %include <std_string.i>
 
-// Disable default constructor generation for classes without default constructors
-%nodefaultctor BeamPolyLoad;
-%nodefaultctor DynamicAccelLoad;
-%nodefaultctor Node;
-%nodefaultctor Section;
-
-// Ignore the entire DynamicAccelLoad class for now (no default constructor causes issues)
-// We can access it through get_accel_load() method instead
-%ignore DynamicAccelLoad;
+// Note: Default constructors have been added to BeamPolyLoad, DynamicAccelLoad, Node, and Section
+// so they can now be used in STL containers
 
 // Shared pointer declarations for base classes
 %shared_ptr(FEModel);
@@ -94,9 +87,6 @@
 // ===================================================================
 // STEP 4: STL templates (AFTER all classes are defined)
 // ===================================================================
-// Note: Classes without default constructors (BeamPolyLoad, DynamicAccelLoad, Node, Section)
-// cannot be used in STL container templates for Python bindings directly.
-// Use pointer-based vectors or access through methods instead.
 namespace std {
     // Basic types
     %template(VectorInt) std::vector<int>;
@@ -107,6 +97,10 @@ namespace std {
     %template(VectorMode) std::vector<std::vector<Displacement>>;
     %template(VectorMaterial) std::vector<Material>;
 
+    // Node and Section vectors (default constructors added)
+    %template(VectorNode) std::vector<Node>;
+    %template(VectorSection) std::vector<Section>;
+
     // Load-related vectors
     %template(VectorLoad) std::vector<std::shared_ptr<LoadBase>>;
     %template(VectorNodeLoad) std::vector<NodeLoad>;
@@ -116,7 +110,9 @@ namespace std {
     // BeamStressData vector
     %template(VectorBeamStressData) std::vector<BeamStressData>;
 
-    // For classes without default constructors, use pointer vectors
+    // BeamPolyLoad vectors and lists (default constructors added)
+    %template(VectorBeamPolyLoad) std::vector<BeamPolyLoad>;
+    %template(ListBeamPolyLoad) std::list<BeamPolyLoad>;
     %template(VectorBeamPolyLoadPtr) std::vector<std::shared_ptr<BeamPolyLoad>>;
 }
 

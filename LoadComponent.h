@@ -269,11 +269,13 @@ private:
 public:
     std::vector<double> w;
     std::vector<double> params;
-    
+
     // BeamElement* element;
 
-    BeamPolyLoad(const std::vector<double> w, 
-        const std::vector<double> params, 
+    BeamPolyLoad() : BeamLoadBase(nullptr, BeamLoadAxis::YAxis) {};
+
+    BeamPolyLoad(const std::vector<double> w,
+        const std::vector<double> params,
         BeamElement* element, BeamLoadAxis axis)
             : w(w), params(params), BeamLoadBase(element, axis) {
 
@@ -406,6 +408,8 @@ public:
     size_t DataCount() {
 		return Accels.size();
     }
+
+	DynamicAccelLoad() : timestep(0), Direction(0, 0, 0) {};
 
 	DynamicAccelLoad(double timestep, Vector Direction, std::vector<double> Accels)
 		: timestep(timestep), Direction(Direction), Accels(Accels) {

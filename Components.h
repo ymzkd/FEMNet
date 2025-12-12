@@ -253,6 +253,7 @@ public:
     double Iyz = 0;
     double K;
 
+    Section() : A(0), Iy(0), Iz(0), K(0) {};
     Section(double A, double Iy, double Iz, double K)
         : A(A), Iy(Iy), Iz(Iz), K(K){};
 };
@@ -333,6 +334,7 @@ public:
 	//double Mass = 0;
 	NodeMass MassData;
 
+    Node() : id(-1), Location(0, 0, 0) {};
     Node(int id, double x, double y, double z)
         : id(id), Location(x, y, z) {};
     Node(double x, double y, double z) : Location(x, y, z) {};

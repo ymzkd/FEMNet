@@ -1,10 +1,8 @@
 // fem_csharp.i - C#-specific SWIG interface file
 %module(directors="1") FEMNet
 
-// Include common definitions
-%include "fem_common.i"
-
-// C#-specific typemaps and extensions
+// C#-specific typemaps - MUST be defined BEFORE class definitions
+// (i.e., before %include "fem_common.i")
 
 // Material: Override ToString() method
 %typemap(cscode) Material %{
@@ -43,3 +41,6 @@
     /// </summary>
     public virtual string OperationDescription { get; set; } = "";
 %}
+
+// Include common definitions (AFTER typemaps are defined)
+%include "fem_common.i"

@@ -471,3 +471,11 @@ FodyWeavers.xsd
 # Additional files built by Visual Studio
 
 # End of https://www.toptal.com/developers/gitignore/api/visualstudiocode,visualstudio,cmake,c++
+# Claude Code local settings
+.claude/
+
+# Python SWIG generated files
+python/femnet/_femnet.pyd
+python/femnet/femnet.py
+python/femnet/*_wrap.cxx
+python/femnet/*_wrap.h

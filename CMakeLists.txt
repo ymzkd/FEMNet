@@ -22,29 +22,71 @@ find_package(SWIG REQUIRED)
 include(${SWIG_USE_FILE})
 
 # Python settings
-# Use user's default Python (from PATH) instead of vcpkg's Python
+# Use system Python (Anaconda/user Python) instead of vcpkg's Python
 if(BUILD_PYTHON)
-    # First, find Python from system PATH (bypassing vcpkg search paths)
-    find_program(PYTHON_FROM_PATH python3 python
-        NO_CMAKE_PATH
-        NO_CMAKE_ENVIRONMENT_PATH
-        NO_CMAKE_SYSTEM_PATH
+    # List of common Anaconda/Miniconda installation paths
+    set(CONDA_SEARCH_PATHS
+        "C:/ProgramData/anaconda3"
+        "C:/ProgramData/miniconda3"
+        "$ENV{USERPROFILE}/anaconda3"
+        "$ENV{USERPROFILE}/miniconda3"
+        "C:/tools/anaconda3"
+        "C:/tools/miniconda3"
     )
 
-    if(PYTHON_FROM_PATH)
-        # Get the directory containing Python executable
-        get_filename_component(PYTHON_DIR "${PYTHON_FROM_PATH}" DIRECTORY)
-        get_filename_component(PYTHON_ROOT "${PYTHON_DIR}" DIRECTORY)
+    # Search for Anaconda Python with development files
+    foreach(CONDA_PATH ${CONDA_SEARCH_PATHS})
+        if(EXISTS "${CONDA_PATH}/python.exe" AND
+           EXISTS "${CONDA_PATH}/include/Python.h" AND
+           EXISTS "${CONDA_PATH}/libs")
+            set(FOUND_PYTHON_ROOT "${CONDA_PATH}")
+            break()
+        endif()
+    endforeach()
 
-        # Set hints for find_package to prefer user's Python
-        set(Python3_ROOT_DIR "${PYTHON_ROOT}")
-        message(STATUS "Using Python from PATH: ${PYTHON_FROM_PATH}")
+    if(FOUND_PYTHON_ROOT)
+        message(STATUS "Found Anaconda/Miniconda at: ${FOUND_PYTHON_ROOT}")
+
+        # Get Python version by running python --version
+        execute_process(
+            COMMAND "${FOUND_PYTHON_ROOT}/python.exe" -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"
+            OUTPUT_VARIABLE PYTHON_VERSION_SHORT
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+            ERROR_QUIET
+        )
+
+        execute_process(
+            COMMAND "${FOUND_PYTHON_ROOT}/python.exe" -c "import sys; print(f'{sys.version_info.major}{sys.version_info.minor}')"
+            OUTPUT_VARIABLE PYTHON_VERSION_NODOT
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+            ERROR_QUIET
+        )
+
+        message(STATUS "Python version: ${PYTHON_VERSION_SHORT}")
+
+        # Set Python variables to bypass vcpkg's wrapper
+        set(Python3_EXECUTABLE "${FOUND_PYTHON_ROOT}/python.exe" CACHE FILEPATH "" FORCE)
+        set(Python3_INCLUDE_DIRS "${FOUND_PYTHON_ROOT}/include" CACHE PATH "" FORCE)
+        set(Python3_LIBRARIES "${FOUND_PYTHON_ROOT}/libs/python${PYTHON_VERSION_NODOT}.lib" CACHE FILEPATH "" FORCE)
+
+        # Create imported target manually since vcpkg wrapper may override find_package
+        add_library(Python3::Python SHARED IMPORTED)
+        set_target_properties(Python3::Python PROPERTIES
+            IMPORTED_LOCATION "${FOUND_PYTHON_ROOT}/python${PYTHON_VERSION_NODOT}.dll"
+            IMPORTED_IMPLIB "${FOUND_PYTHON_ROOT}/libs/python${PYTHON_VERSION_NODOT}.lib"
+            INTERFACE_INCLUDE_DIRECTORIES "${FOUND_PYTHON_ROOT}/include"
+        )
+
+        message(STATUS "Python3 found: ${Python3_EXECUTABLE}")
+        message(STATUS "Python3 include dirs: ${Python3_INCLUDE_DIRS}")
+        message(STATUS "Python3 libraries: ${Python3_LIBRARIES}")
+    else()
+        message(STATUS "No Anaconda/Miniconda found, falling back to find_package")
+        find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
+        message(STATUS "Python3 found: ${Python3_EXECUTABLE}")
+        message(STATUS "Python3 include dirs: ${Python3_INCLUDE_DIRS}")
+        message(STATUS "Python3 libraries: ${Python3_LIBRARIES}")
     endif()
-
-    find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
-    message(STATUS "Python3 found: ${Python3_EXECUTABLE}")
-    message(STATUS "Python3 include dirs: ${Python3_INCLUDE_DIRS}")
-    message(STATUS "Python3 libraries: ${Python3_LIBRARIES}")
 endif()
 
 # === Common source files ===
@@ -156,6 +198,11 @@ if(BUILD_PYTHON)
     set_target_properties(femnet
         PROPERTIES
         LIBRARY_OUTPUT_DIRECTORY ${PYTHON_OUTPUT_DIR}
+        LIBRARY_OUTPUT_DIRECTORY_RELEASE ${PYTHON_OUTPUT_DIR}
+        LIBRARY_OUTPUT_DIRECTORY_DEBUG ${PYTHON_OUTPUT_DIR}
+        RUNTIME_OUTPUT_DIRECTORY ${PYTHON_OUTPUT_DIR}
+        RUNTIME_OUTPUT_DIRECTORY_RELEASE ${PYTHON_OUTPUT_DIR}
+        RUNTIME_OUTPUT_DIRECTORY_DEBUG ${PYTHON_OUTPUT_DIR}
         INCLUDE_DIRECTORIES ${CMAKE_CURRENT_SOURCE_DIR}
     )
 endif()

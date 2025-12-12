@@ -8,9 +8,10 @@ TriPlaneElement::TriPlaneElement(Node *n0, Node *n1, Node *n2,
     Nodes[2] = n2;
 
     thickness = Thickness(t);
+    Beta = beta;
     Mat = mat;
     plane = Plane::CreateFromPoints(n0->Location, n1->Location, n2->Location);
-    plane.Rotate(beta, Vector::ZAxis());
+    plane.Rotate(beta, plane.ez);
 }
 
 TriPlaneElement::TriPlaneElement(Node *n0, Node *n1, Node *n2, Thickness t, Material mat, double beta)
@@ -20,9 +21,10 @@ TriPlaneElement::TriPlaneElement(Node *n0, Node *n1, Node *n2, Thickness t, Mate
     Nodes[2] = n2;
 
     thickness = t;
+    Beta = beta;
     Mat = mat;
     plane = Plane::CreateFromPoints(n0->Location, n1->Location, n2->Location);
-    plane.Rotate(beta, Vector::ZAxis());
+    plane.Rotate(beta, plane.ez);
 }
 
 // Eigen::Matrix2d TriPlaneElement::invJMatrix()
@@ -98,7 +100,7 @@ double TriPlaneElement::Area()
     Vector v01 = Nodes[1]->Location - Nodes[0]->Location;
     Vector v02 = Nodes[2]->Location - Nodes[0]->Location;
     Vector vn = Vector::cross(v01, v02);
-    return vn.norm() / 2;
+    return vn.norm() / 2.0;
 }
 
 Eigen::MatrixXd TriPlaneElement::StiffnessMatrix()
@@ -251,7 +253,7 @@ Eigen::MatrixXd TriPlaneElement::geometric_local_stiffness_matrix(const std::vec
         0, p3.x - p2.x, 0, 0, p1.x - p3.x, 0, 0, p2.x - p1.x, 0,
         0, 0, p2.y - p3.y, 0, 0, p3.y - p1.y, 0, 0, p1.y - p2.y,
         0, 0, p3.x - p2.x, 0, 0, p1.x - p3.x, 0, 0, p2.x - p1.x;
-    Gmat /= (2 * area);
+    Gmat /= (2.0 * area);
 
     MembraneStressData strs = stress(disp[0], disp[1], disp[2]);
     Eigen::Matrix2d SigMat;

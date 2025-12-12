@@ -538,27 +538,27 @@ Eigen::MatrixXd QuadPlateElement::geometric_local_stiffness_matrix(const std::ve
     return Kg;
 }
 
-QuadPlateElement::QuadPlateElement(Node *n0, Node *n1, Node *n2, Node *n3, double t, Material mat)
-    : plane_element(n0, n1, n2, n3, t, mat)
+QuadPlateElement::QuadPlateElement(Node *n0, Node *n1, Node *n2, Node *n3, double t, Material mat, double beta)
+    : plane_element(n0, n1, n2, n3, t, mat, beta)
 {
     Nodes[0] = n0;
     Nodes[1] = n1;
     Nodes[2] = n2;
     Nodes[3] = n3;
 
-    // thickness = t;
     thickness = Thickness(t);
+    Beta = beta;
     Mat = mat;
 
     Point p12 = (n1->Location + n2->Location) / 2;
     Point p23 = (n2->Location + n3->Location) / 2;
     Point p30 = (n3->Location + n0->Location) / 2;
     plane = Plane::CreateFromPoints(p30, p12, p23);
-    // plane = Plane::CreateFromPoints(n0->Location, n1->Location, n2->Location);
+	plane.Rotate(beta, plane.ez); // 回転角を設定
 }
 
-QuadPlateElement::QuadPlateElement(Node *n0, Node *n1, Node *n2, Node *n3, Thickness t, Material mat)
-    : plane_element(n0, n1, n2, n3, t, mat)
+QuadPlateElement::QuadPlateElement(Node *n0, Node *n1, Node *n2, Node *n3, Thickness t, Material mat, double beta)
+    : plane_element(n0, n1, n2, n3, t, mat, beta)
 {
     Nodes[0] = n0;
     Nodes[1] = n1;
@@ -566,12 +566,14 @@ QuadPlateElement::QuadPlateElement(Node *n0, Node *n1, Node *n2, Node *n3, Thick
     Nodes[3] = n3;
 
     thickness = t;
+    Beta = beta;
     Mat = mat;
 
     Point p12 = (n1->Location + n2->Location) / 2;
     Point p23 = (n2->Location + n3->Location) / 2;
     Point p30 = (n3->Location + n0->Location) / 2;
     plane = Plane::CreateFromPoints(p30, p12, p23);
+	plane.Rotate(beta, plane.ez); // 回転角を設定
 }
 
 QuadPlateElement::LocalMatrixd
@@ -1078,30 +1080,41 @@ Eigen::MatrixXd QuadPlateElement::GeometricStiffnessMatrix(const std::vector<Dis
     Eigen::MatrixXd KGpln = plane_element.geometric_local_stiffness_matrix(disp);
     Eigen::MatrixXd KGplt = geometric_local_stiffness_matrix(disp);
 
+    //int indices_pln[12]{0, 1, -1, 6, 7, -1, 12, 13, -1, 18, 19, -1};
     int indices_pln[12]{0, 1, 2, 6, 7, 8, 12, 13, 14, 18, 19, 20};
-    int indices_plt[12]{2, 3, 4, 8, 9, 10, 14, 15, 16, 20, 21, 22};
+    //int indices_plt[12]{2, 3, 4, 8, 9, 10, 14, 15, 16, 20, 21, 22};
+    int indices_plt[12]{-1, 3, 4, -1, 9, 10, -1, 15, 16, -1, 21, 22};
 
     Eigen::MatrixXd mat = Eigen::MatrixXd::Zero(total_dof, total_dof);
 
     for (size_t i = 0; i < 12; i++)
     {
         int ir = indices_pln[i];
+        if (ir < 0)
+            continue; // -1は無視
         for (size_t j = 0; j < 12; j++)
         {
             int ic = indices_pln[j];
+            if (ic < 0)
+                continue; // -1は無視
             mat(ir, ic) += KGpln(i, j);
         }
     }
 
-    for (size_t i = 0; i < 12; i++)
-    {
-        int ir = indices_plt[i];
-        for (size_t j = 0; j < 12; j++)
-        {
-            int ic = indices_plt[j];
-            mat(ir, ic) += KGplt(i, j);
-        }
-    }
+    // 250928: 板成分を除いたほうがMidas応答に合う。
+    //for (size_t i = 0; i < 12; i++)
+    //{
+    //    int ir = indices_plt[i];
+    //    if (ir < 0)
+    //        continue; // -1は無視
+    //    for (size_t j = 0; j < 12; j++)
+    //    {
+    //        int ic = indices_plt[j];
+    //        if (ic < 0)
+    //            continue; // -1は無視
+    //        mat(ir, ic) += KGplt(i, j);
+    //    }
+    //}
 
     Eigen::MatrixXd trMat = trans_matrix();
     return trMat.transpose() * mat * trMat;

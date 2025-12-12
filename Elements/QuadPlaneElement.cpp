@@ -126,7 +126,7 @@ Eigen::MatrixXd QuadPlaneElement::geometric_local_stiffness_matrix(const std::ve
     return Kg;
 }
 
-QuadPlaneElement::QuadPlaneElement(Node *n0, Node *n1, Node *n2, Node *n3, double t, Material mat)
+QuadPlaneElement::QuadPlaneElement(Node *n0, Node *n1, Node *n2, Node *n3, double t, Material mat, double beta)
 {
     Nodes[0] = n0;
     Nodes[1] = n1;
@@ -134,17 +134,17 @@ QuadPlaneElement::QuadPlaneElement(Node *n0, Node *n1, Node *n2, Node *n3, doubl
     Nodes[3] = n3;
 
     thickness = Thickness(t);
+    Beta = beta;
     Mat = mat;
 
-    // Point p01 = (n0->Location + n1->Location) / 2;
     Point p12 = (n1->Location + n2->Location) / 2;
     Point p23 = (n2->Location + n3->Location) / 2;
     Point p30 = (n3->Location + n0->Location) / 2;
     plane = Plane::CreateFromPoints(p30, p12, p23);
-    // plane = Plane::CreateFromPoints(n0->Location, n1->Location, n2->Location);
+	plane.Rotate(beta, plane.ez); // 回転角を設定
 }
 
-QuadPlaneElement::QuadPlaneElement(Node *n0, Node *n1, Node *n2, Node *n3, Thickness t, Material mat)
+QuadPlaneElement::QuadPlaneElement(Node *n0, Node *n1, Node *n2, Node *n3, Thickness t, Material mat, double beta)
 {
     Nodes[0] = n0;
     Nodes[1] = n1;
@@ -152,13 +152,14 @@ QuadPlaneElement::QuadPlaneElement(Node *n0, Node *n1, Node *n2, Node *n3, Thick
     Nodes[3] = n3;
 
     thickness = t;
+    Beta = beta;
     Mat = mat;
 
-    // Point p01 = (n0->Location + n1->Location) / 2;
     Point p12 = (n1->Location + n2->Location) / 2;
     Point p23 = (n2->Location + n3->Location) / 2;
     Point p30 = (n3->Location + n0->Location) / 2;
     plane = Plane::CreateFromPoints(p30, p12, p23);
+    plane.Rotate(beta, plane.ez); // 回転角を設定
 }
 
 Eigen::MatrixXd QuadPlaneElement::trans_matrix()

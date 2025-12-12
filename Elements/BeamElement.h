@@ -66,7 +66,7 @@ public:
 
     // double length();
     BeamStress stress(Displacement d0, Displacement d1);
-    Displacement DisplaceAt(Displacement d0, Displacement d1, double p);
+    virtual Displacement DisplaceAt(Displacement d0, Displacement d1, double p);
 };
 
 #endif

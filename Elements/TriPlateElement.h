@@ -34,15 +34,15 @@ public:
     TriPlaneElement plane_element;
 
     TriPlateElement() {};
-    TriPlateElement(Node *n0, Node *n1, Node *n2, Thickness t, Material mat);
-    TriPlateElement(Node *n0, Node *n1, Node *n2, double t, Material mat);
-    TriPlateElement(int _id, Node *n0, Node *n1, Node *n2, Thickness t, Material mat)
-        : TriPlateElement(n0, n1, n2, t, mat)
+    TriPlateElement(Node *n0, Node *n1, Node *n2, Thickness t, Material mat, double beta = 0);
+    TriPlateElement(Node *n0, Node *n1, Node *n2, double t, Material mat, double beta = 0);
+    TriPlateElement(int _id, Node *n0, Node *n1, Node *n2, Thickness t, Material mat, double beta = 0)
+        : TriPlateElement(n0, n1, n2, t, mat, beta)
     {
         id = _id;
     };
-    TriPlateElement(int _id, Node *n0, Node *n1, Node *n2, double t, Material mat)
-        : TriPlateElement(n0, n1, n2, t, mat)
+    TriPlateElement(int _id, Node *n0, Node *n1, Node *n2, double t, Material mat, double beta = 0)
+        : TriPlateElement(n0, n1, n2, t, mat, beta)
     {
         id = _id;
     };

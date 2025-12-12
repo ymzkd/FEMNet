@@ -51,15 +51,15 @@ public:
     QuadPlaneElement plane_element;
 
     QuadPlateElement() {};
-    QuadPlateElement(Node *n0, Node *n1, Node *n2, Node *n3, double t, Material mat);
-    QuadPlateElement(Node *n0, Node *n1, Node *n2, Node *n3, Thickness t, Material mat);
-    QuadPlateElement(int _id, Node *n0, Node *n1, Node *n2, Node *n3, double t, Material mat)
-        : QuadPlateElement(n0, n1, n2, n3, t, mat)
+    QuadPlateElement(Node *n0, Node *n1, Node *n2, Node *n3, double t, Material mat, double beta = 0);
+    QuadPlateElement(Node *n0, Node *n1, Node *n2, Node *n3, Thickness t, Material mat, double beta = 0);
+    QuadPlateElement(int _id, Node *n0, Node *n1, Node *n2, Node *n3, double t, Material mat, double beta = 0)
+        : QuadPlateElement(n0, n1, n2, n3, t, mat, beta)
     {
         id = _id;
     };
-    QuadPlateElement(int _id, Node *n0, Node *n1, Node *n2, Node *n3, Thickness t, Material mat)
-        : QuadPlateElement(n0, n1, n2, n3, t, mat)
+    QuadPlateElement(int _id, Node *n0, Node *n1, Node *n2, Node *n3, Thickness t, Material mat, double beta = 0)
+        : QuadPlateElement(n0, n1, n2, n3, t, mat, beta)
     {
         id = _id;
     };

@@ -105,6 +105,7 @@ set(FEMNET_SOURCES
     Elements/QuadPlateElement.cpp
     LoadComponent.cpp
     SeismicModule.cpp
+    FEAnalysis.cpp
     FELinearStaticOp.cpp
     FEDynamic.cpp
     FEBucklingAnalysis.cpp
@@ -208,27 +209,9 @@ if(BUILD_PYTHON)
 endif()
 
 # === App ===
-add_executable(sampleapp 
-    app.cpp 
-    Components.cpp 
-    Model.cpp 
-    Elements/ElementBase.cpp 
-    Elements/BarElement.cpp 
-    Elements/TrussElement.cpp 
-    Elements/BeamElement.cpp 
-    Elements/ComplexBeamElement.cpp 
-    Elements/PlaneElement.cpp 
-    Elements/TriPlaneElement.cpp 
-    Elements/QuadPlaneElement.cpp 
-    Elements/TriPlateElement.cpp 
-    Elements/QuadPlateElement.cpp 
-    LoadComponent.cpp 
-    SeismicModule.cpp 
-    FELinearStaticOp.cpp 
-    FEDynamic.cpp 
-    FEBucklingAnalysis.cpp 
-    FEVibrateResult.cpp 
-    ResponseSpectrumMethod.cpp
+add_executable(sampleapp
+    app.cpp
+    ${FEMNET_SOURCES}
 )
 
 target_include_directories(sampleapp PUBLIC ${CMAKE_SOURCE_DIR})

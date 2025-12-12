@@ -49,8 +49,8 @@ public:
     bool Computed() { return m_computed; }
     void Compute();
     std::vector<Displacement> GetDisplacements() override;
-    std::vector<Displacement> GetVelocities();
-    std::vector<Displacement> GetAccelerations();
+    std::vector<Displacement> GetVelocities() override;
+    std::vector<Displacement> GetAccelerations() override;
 
     // FEDeformCase を介して継承されました
     BeamStressData GetBeamStress(int eid, double p) override;

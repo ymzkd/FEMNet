@@ -123,9 +123,9 @@ public:
     bool SetVelocities(std::vector<Displacement> vels);
     bool SetAccelerations(std::vector<Displacement> accs);
 
-    std::vector<Displacement> GetDisplacements();
-    std::vector<Displacement> GetVelocities();
-    std::vector<Displacement> GetAccelerations();
+    std::vector<Displacement> GetDisplacements() override;
+    std::vector<Displacement> GetVelocities() override;
+    std::vector<Displacement> GetAccelerations() override;
 
     std::vector<BarElementBase *> GetBarElements()
     {

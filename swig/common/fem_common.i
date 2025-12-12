@@ -7,6 +7,10 @@
 %include <std_shared_ptr.i>
 %include <std_string.i>
 
+// Disable default constructor generation for classes without default constructors
+%nodefaultctor BeamPolyLoad;
+%nodefaultctor DynamicAccelLoad;
+
 // Shared pointer declarations for base classes
 %shared_ptr(FEModel);
 // Load Pointer
@@ -28,7 +32,9 @@
     #endif
 
     #include "Components.h"
+    #include "LoadComponent.h"
     #include "Model.h"
+    #include "SeismicModule.h"
 %}
 
 // Ignore Eigen types that cannot be wrapped

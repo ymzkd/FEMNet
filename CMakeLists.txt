@@ -22,7 +22,25 @@ find_package(SWIG REQUIRED)
 include(${SWIG_USE_FILE})
 
 # Python settings
+# Use user's default Python (from PATH) instead of vcpkg's Python
 if(BUILD_PYTHON)
+    # First, find Python from system PATH (bypassing vcpkg search paths)
+    find_program(PYTHON_FROM_PATH python3 python
+        NO_CMAKE_PATH
+        NO_CMAKE_ENVIRONMENT_PATH
+        NO_CMAKE_SYSTEM_PATH
+    )
+
+    if(PYTHON_FROM_PATH)
+        # Get the directory containing Python executable
+        get_filename_component(PYTHON_DIR "${PYTHON_FROM_PATH}" DIRECTORY)
+        get_filename_component(PYTHON_ROOT "${PYTHON_DIR}" DIRECTORY)
+
+        # Set hints for find_package to prefer user's Python
+        set(Python3_ROOT_DIR "${PYTHON_ROOT}")
+        message(STATUS "Using Python from PATH: ${PYTHON_FROM_PATH}")
+    endif()
+
     find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
     message(STATUS "Python3 found: ${Python3_EXECUTABLE}")
     message(STATUS "Python3 include dirs: ${Python3_INCLUDE_DIRS}")

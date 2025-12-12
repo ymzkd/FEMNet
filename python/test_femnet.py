@@ -1,5 +1,5 @@
 """
-FEMNet Python bindings test script
+FEMNet Python bindings test script - Full solver example
 """
 import sys
 sys.path.insert(0, '.')
@@ -7,106 +7,150 @@ sys.path.insert(0, '.')
 from femnet import *
 
 print("=" * 60)
-print("FEMNet Python Bindings Test")
+print("FEMNet Python Bindings - Linear Static Analysis Test")
 print("=" * 60)
 
-# Create a simple beam model
-print("\n1. Creating FEM model...")
+# ============================================================
+# 1. Create a cantilever beam model
+# ============================================================
+print("\n1. Creating cantilever beam model...")
+
 model = FEModel()
 
-# Add nodes using the helper method
-print("   Adding nodes...")
-model.AddNode(0, 0, 0, 0)
-model.AddNode(1, 1000, 0, 0)
-model.AddNode(2, 2000, 0, 0)
-model.AddNode(3, 3000, 0, 0)
+# Beam parameters
+L = 3000.0       # Total length [mm]
+n_elem = 3       # Number of elements
+elem_L = L / n_elem
 
+# Add nodes
+print("   Adding nodes...")
+for i in range(n_elem + 1):
+    model.AddNode(i, i * elem_L, 0, 0)
 print(f"   Number of nodes: {model.NodeNum()}")
 
-# Set boundary conditions (fix first node)
-print("   Setting boundary conditions...")
+# Fix first node (cantilever support)
+print("   Setting boundary conditions (fixed at node 0)...")
 model.GetNode(0).Fix.FixAll()
 
-# Add material (Material has default constructor so append works)
-print("   Adding material...")
-mat = model.AddMaterial(205e3, 0.3)  # Steel: E=205GPa, nu=0.3
+# Add material: Steel
+print("   Adding material (Steel: E=205GPa, nu=0.3)...")
+model.AddMaterial(205e3, 0.3)
 
-# Add section using helper method
-print("   Adding section...")
-model.AddSection(100*10, 1000, 500, 100)  # A, Iy, Iz, K
+# Add section: Rectangular 100x10 mm
+print("   Adding section (A=1000mm2, Iy=8333mm4, Iz=833333mm4, K=100mm4)...")
+A = 100 * 10            # Area
+Iy = 100 * 10**3 / 12   # I about y-axis (weak axis)
+Iz = 10 * 100**3 / 12   # I about z-axis (strong axis)
+K = 100                 # Torsion constant
+model.AddSection(A, Iy, Iz, K)
 
 # Add beam elements
 print("   Adding beam elements...")
-for i in range(3):
-    model.add_beam_element(
-        i,          # element id
-        i,          # node i
-        i + 1,      # node j
-        0,          # section id
-        0,          # material id
-        0.0         # beta angle
-    )
-
+for i in range(n_elem):
+    model.add_beam_element(i, i, i + 1, 0, 0, 0.0)
 print(f"   Number of elements: {len(model.Elements)}")
 
-# Create loads
-print("   Creating loads...")
+print(f"\n   Model summary:")
+print(f"     Total DOF: {model.DOFNum()}")
+print(f"     Free DOF: {model.FreeDOFNum()}")
+
+# ============================================================
+# 2. Create loads
+# ============================================================
+print("\n2. Creating loads...")
+
+# Apply point load at tip (node 3): P = 1000 N downward (-Y direction)
+P = 1000.0
+tip_node_id = n_elem  # Last node
+print(f"   Applying {P} N downward load at node {tip_node_id}...")
+
+# Create load vector
 loads = VectorLoad()
-node_load = NodeLoad(3, 0, -1000, 0)  # 1000N downward at node 3
-# NodeLoad needs to be wrapped in shared_ptr for VectorLoad
-# For now, let's try a different approach using make_shared
 
-# Create linear static operator using shared model
-print("\n2. Creating shared model pointer...")
-shared_model = FEModel()
+# Create NodeLoad and add to vector
+node_load = NodeLoad(tip_node_id, 0, -P, 0)  # Py = -1000 N
+loads.append(node_load)
 
-# Copy nodes
-for i in range(4):
-    shared_model.AddNode(i, i * 1000, 0, 0)
-shared_model.GetNode(0).Fix.FixAll()
+print(f"   Number of load cases: {len(loads)}")
 
-# Add material and section
-shared_model.AddMaterial(205e3, 0.3)
-shared_model.AddSection(100*10, 1000, 500, 100)
+# ============================================================
+# 3. Run linear static analysis
+# ============================================================
+print("\n3. Running linear static analysis...")
 
-# Add elements
-for i in range(3):
-    shared_model.add_beam_element(i, i, i + 1, 0, 0, 0.0)
+# Create solver
+solver = FELinearStaticOp(model, loads)
 
-print("   Model setup complete")
-print(f"   Nodes: {shared_model.NodeNum()}")
-print(f"   DOF: {shared_model.DOFNum()}")
-print(f"   Free DOF: {shared_model.FreeDOFNum()}")
+# Compute
+solver.Compute()
 
-# Test basic functionality
-print("\n3. Testing basic functionality...")
-print("   Testing Material:")
-test_mat = Material(205e3, 0.3)
-print(f"   Young's modulus: {test_mat.Young}")
-print(f"   Poisson's ratio: {test_mat.Poisson}")
-print(f"   Shear modulus G: {test_mat.G()}")
+if solver.Computed():
+    print("   Analysis completed successfully!")
+else:
+    print("   Analysis failed!")
+    sys.exit(1)
 
-print("\n   Testing Displacement:")
-disp = Displacement(1.0, 2.0, 3.0, 0.1, 0.2, 0.3)
-print(f"   Dx: {disp.Dx()}, Dy: {disp.Dy()}, Dz: {disp.Dz()}")
-print(f"   Rx: {disp.Rx()}, Ry: {disp.Ry()}, Rz: {disp.Rz()}")
+# ============================================================
+# 4. Get and display results
+# ============================================================
+print("\n4. Results:")
 
-print("\n   Testing Vector:")
-v1 = Vector(1, 2, 3)
-print(f"   Vector: ({v1.x}, {v1.y}, {v1.z})")
-print(f"   Norm: {v1.norm()}")
+# Get nodal displacements
+print("\n   === Nodal Displacements ===")
+displacements = solver.GetDisplacements()
+print(f"   {'Node':<6} {'Dx [mm]':<12} {'Dy [mm]':<12} {'Dz [mm]':<12} {'Rx [rad]':<12} {'Ry [rad]':<12} {'Rz [rad]':<12}")
+print("   " + "-" * 78)
 
-print("\n   Testing Point:")
-p1 = Point(0, 0, 0)
-p2 = Point(3, 4, 0)
-print(f"   Point 1: ({p1.x}, {p1.y}, {p1.z})")
-print(f"   Point 2: ({p2.x}, {p2.y}, {p2.z})")
-print(f"   Distance: {p1.distance_to(p2)}")
+for i, disp in enumerate(displacements):
+    print(f"   {i:<6} {disp.Dx():<12.6f} {disp.Dy():<12.6f} {disp.Dz():<12.6f} {disp.Rx():<12.6e} {disp.Ry():<12.6e} {disp.Rz():<12.6e}")
 
-print("\n   Testing NodeLoadData:")
-nld = NodeLoadData(1, 100, 200, 300)
-print(f"   NodeLoadData ID: {nld.id}")
+# Theoretical tip deflection for cantilever beam: delta = P*L^3 / (3*E*Iz)
+E = 205e3
+delta_theory = P * L**3 / (3 * E * Iz)
+delta_fem = displacements[tip_node_id].Dy()
+print(f"\n   Theoretical tip deflection (Dy): {delta_theory:.6f} mm")
+print(f"   FEM tip deflection (Dy):         {delta_fem:.6f} mm")
+print(f"   Error: {abs(delta_fem - (-delta_theory)) / delta_theory * 100:.4f} %")
+
+# Get reaction forces using GetReactionData() helper method
+print("\n   === Reaction Forces ===")
+try:
+    reactions = solver.GetReactionData()
+    if len(reactions) > 0:
+        for i in range(len(reactions)):
+            react = reactions[i]
+            # NodeLoadData has id, Px(), Py(), Pz(), Mx(), My(), Mz() accessors
+            print(f"   Reaction {i}: node_id={react.id}")
+            print(f"     Px={react.Px():.2f} N, Py={react.Py():.2f} N, Pz={react.Pz():.2f} N")
+            print(f"     Mx={react.Mx():.2f} N-mm, My={react.My():.2f} N-mm, Mz={react.Mz():.2f} N-mm")
+    else:
+        print("   No reaction forces returned (check fixed DOFs)")
+except Exception as e:
+    print(f"   Could not get reaction forces: {e}")
+    import traceback
+    traceback.print_exc()
+
+# Get beam stress at specific locations
+print("\n   === Beam Stress (Element 0, mid-span p=0.5) ===")
+try:
+    stress_data = solver.GetBeamStress(0, 0.5)
+    print(f"   Axial force Nx:      {stress_data.Nx:.2f} N")
+    print(f"   Shear force Qy:      {stress_data.Qy:.2f} N")
+    print(f"   Shear force Qz:      {stress_data.Qz:.2f} N")
+    print(f"   Torsion Mx:          {stress_data.Mx:.2f} N-mm")
+    print(f"   Bending moment My:   {stress_data.My:.2f} N-mm")
+    print(f"   Bending moment Mz:   {stress_data.Mz:.2f} N-mm")
+except Exception as e:
+    print(f"   Error accessing stress data: {e}")
+
+# Get beam displacement along element
+print("\n   === Beam Displacement along Element 2 ===")
+print(f"   {'p':<8} {'Dx [mm]':<12} {'Dy [mm]':<12} {'Rz [rad]':<12}")
+print("   " + "-" * 44)
+for p in [0.0, 0.25, 0.5, 0.75, 1.0]:
+    beam_disp = solver.GetBeamDisplace(2, p)
+    print(f"   {p:<8.2f} {beam_disp.Dx():<12.6f} {beam_disp.Dy():<12.6f} {beam_disp.Rz():<12.6e}")
 
 print("\n" + "=" * 60)
-print("Basic tests completed successfully!")
+print("Linear static analysis completed successfully!")
 print("=" * 60)

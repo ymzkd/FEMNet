@@ -13,6 +13,10 @@
 %nodefaultctor Node;
 %nodefaultctor Section;
 
+// Ignore the entire DynamicAccelLoad class for now (no default constructor causes issues)
+// We can access it through get_accel_load() method instead
+%ignore DynamicAccelLoad;
+
 // Shared pointer declarations for base classes
 %shared_ptr(FEModel);
 // Load Pointer
@@ -21,6 +25,8 @@
 %shared_ptr(BeamPolyLoad);
 %shared_ptr(AxialPolyLoad);
 %shared_ptr(BeamLoadBase);
+// NodeLoad inherits from LoadBase, so it must also be marked as shared_ptr
+// to avoid SWIG generating inconsistent destructor code (smartarg1 error)
 %shared_ptr(NodeLoad);
 %shared_ptr(InertialForce);
 %shared_ptr(NodeBodyForce);
@@ -34,20 +40,13 @@
     #endif
 
     #include "Components.h"
+    #include "Elements/Elements.h"
     #include "LoadComponent.h"
     #include "Model.h"
     #include "SeismicModule.h"
 %}
 
-// Ignore Eigen types that cannot be wrapped
-%ignore Eigen::SparseMatrix;
-%ignore Eigen::MatrixXd;
-%ignore extractSubMatrix();
-%ignore trans_matrix3(const Point p0, const Point p1, const double beta);
-%ignore Eigen::Matrix3d;
-%ignore Displacement::translate(Eigen::Matrix3d transmat);
-
-// Ignore NodeLoadData accessors
+// Ignore non-const accessors that return references (use const versions instead)
 %ignore NodeLoadData::Px();
 %ignore NodeLoadData::Py();
 %ignore NodeLoadData::Pz();
@@ -55,7 +54,46 @@
 %ignore NodeLoadData::My();
 %ignore NodeLoadData::Mz();
 
-// STL templates for common types
+// Ignore Eigen types that cannot be wrapped
+%ignore Eigen::SparseMatrix;
+%ignore Eigen::MatrixXd;
+%ignore Eigen::VectorXd;
+%ignore Eigen::Vector3d;
+%ignore extractSubMatrix();
+%ignore trans_matrix3(const Point p0, const Point p1, const double beta);
+%ignore trans_matrix3(const Plane plane);
+%ignore Eigen::Matrix3d;
+%ignore Displacement::translate(Eigen::Matrix3d transmat);
+%ignore Vector::toEigen;
+
+// Ignore pure virtual methods that use Eigen types
+%ignore ElementBase::geometric_local_stiffness_matrix;
+%ignore ElementBase::InertialForceToNodeLoadData;
+%ignore ElementBase::NodeLumpedMass;
+%ignore ElementBase::NodeConsistentMass;
+%ignore ElementBase::StiffnessMatrix;
+%ignore ElementBase::AssembleStiffMatrix;
+%ignore ElementBase::AssembleGeometricStiffMatrix;
+%ignore ElementBase::AssembleMassMatrix;
+
+// ===================================================================
+// STEP 1: Include Components.h first (defines basic types)
+// ===================================================================
+%include "Components.h"
+
+// ===================================================================
+// STEP 2: Include Elements module (depends on Components.h)
+// ===================================================================
+%include "Elements_common.i"
+
+// ===================================================================
+// STEP 3: Include LoadComponent.h (depends on Components.h and Elements)
+// ===================================================================
+%include "LoadComponent.h"
+
+// ===================================================================
+// STEP 4: STL templates (AFTER all classes are defined)
+// ===================================================================
 // Note: Classes without default constructors (BeamPolyLoad, DynamicAccelLoad, Node, Section)
 // cannot be used in STL container templates for Python bindings directly.
 // Use pointer-based vectors or access through methods instead.
@@ -75,9 +113,26 @@ namespace std {
     %template(VectorNodeBodyForce) std::vector<NodeBodyForce>;
     %template(VectorNodeLoadData) std::vector<NodeLoadData>;
 
+    // BeamStressData vector
+    %template(VectorBeamStressData) std::vector<BeamStressData>;
+
     // For classes without default constructors, use pointer vectors
     %template(VectorBeamPolyLoadPtr) std::vector<std::shared_ptr<BeamPolyLoad>>;
 }
+
+// ===================================================================
+// STEP 5: Include remaining modules
+// ===================================================================
+%include "Operator_common.i"
+%include "SeismicModule_common.i"
+
+// Include Model.h and SeismicModule.h
+%include "Model.h"
+%include "SeismicModule.h"
+
+// ===================================================================
+// Class extensions (AFTER all classes are fully defined)
+// ===================================================================
 
 // Material extension (language independent)
 %extend Material {
@@ -135,14 +190,3 @@ namespace std {
         return $self->Materials[index];
     }
 };
-
-// Include sub-modules
-%include "Elements_common.i"
-%include "Operator_common.i"
-%include "SeismicModule_common.i"
-
-// Include headers
-%include "Components.h"
-%include "LoadComponent.h"
-%include "Model.h"
-%include "SeismicModule.h"

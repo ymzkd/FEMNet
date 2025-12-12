@@ -11,6 +11,20 @@
     }
 }
 
+// Helper method to get reaction forces as NodeLoadData vector (avoids shared_ptr issues)
+%extend FEDeformOperator {
+    std::vector<NodeLoadData> GetReactionData() {
+        std::vector<NodeLoadData> result;
+        auto reactions = $self->GetReactForces();
+        for (const auto& r : reactions) {
+            NodeLoadData nld = r.data;
+            nld.id = r.id;
+            result.push_back(nld);
+        }
+        return result;
+    }
+}
+
 // Analysis Pointer definitions
 %shared_ptr(DASampler);
 %shared_ptr(DASampler_MaxDisplacement);

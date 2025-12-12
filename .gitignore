@@ -479,3 +479,6 @@ python/femnet/_femnet.pyd
 python/femnet/femnet.py
 python/femnet/*_wrap.cxx
 python/femnet/*_wrap.h
+
+# Python build directory
+build-python/

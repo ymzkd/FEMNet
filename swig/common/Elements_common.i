@@ -27,6 +27,11 @@
 %ignore BeamElement::AssembleMassMatrix(Eigen::SparseMatrix<double>& mat);
 %ignore BeamElement::NodeLumpedMass();
 
+%ignore TrussElement::StiffnessMatrix();
+%ignore TrussElement::AssembleStiffMatrix(Eigen::SparseMatrix<double>& mat);
+%ignore TrussElement::AssembleMassMatrix(Eigen::SparseMatrix<double>& mat);
+%ignore TrussElement::NodeLumpedMass();
+
 %ignore TriPlaneElement::StiffnessMatrix();
 %ignore TriPlaneElement::AssembleStiffMatrix(Eigen::SparseMatrix<double>& mat);
 %ignore TriPlaneElement::AssembleMassMatrix(Eigen::SparseMatrix<double>& mat);
@@ -56,6 +61,30 @@
 %ignore BarElementBase::AssembleStiffMatrix(Eigen::SparseMatrix<double>& mat);
 %ignore BarElementBase::AssembleMassMatrix(Eigen::SparseMatrix<double>& mat);
 %ignore BarElementBase::NodeLumpedMass();
+%ignore BarElementBase::stress;
+
+%ignore ComplexBeamElement::StiffnessMatrix();
+%ignore ComplexBeamElement::AssembleStiffMatrix(Eigen::SparseMatrix<double>& mat);
+%ignore ComplexBeamElement::AssembleMassMatrix(Eigen::SparseMatrix<double>& mat);
+%ignore ComplexBeamElement::NodeLumpedMass();
+
+%ignore PlaneElementBase::StiffnessMatrix();
+%ignore PlaneElementBase::AssembleStiffMatrix(Eigen::SparseMatrix<double>& mat);
+%ignore PlaneElementBase::AssembleMassMatrix(Eigen::SparseMatrix<double>& mat);
+%ignore PlaneElementBase::NodeLumpedMass();
+
+// Explicitly include individual element headers for proper SWIG parsing
+// IMPORTANT: These must come AFTER %ignore directives
+%include "Elements/ElementBase.h"
+%include "Elements/BarElement.h"
+%include "Elements/TrussElement.h"
+%include "Elements/BeamElement.h"
+%include "Elements/ComplexBeamElement.h"
+%include "Elements/PlaneElement.h"
+%include "Elements/TriPlaneElement.h"
+%include "Elements/QuadPlaneElement.h"
+%include "Elements/TriPlateElement.h"
+%include "Elements/QuadPlateElement.h"
 
 // STL templates for Elements
 namespace std {
@@ -65,7 +94,7 @@ namespace std {
     %template(VectorBeams) std::vector<BeamElement*>;
 }
 
-// Element extensions for accessing nodes
+// Element extensions for accessing nodes (after includes)
 %extend BarElementBase {
     Node* getNodes(int index) {
         return $self->Nodes[index];
@@ -83,5 +112,3 @@ namespace std {
         return $self->Nodes[index];
     }
 }
-
-%include "Elements/Elements.h"

@@ -67,6 +67,12 @@ public:
         : cases(cases) {
           };
 
+    LinearStaticCombinationOperator(
+        std::shared_ptr<FEModel> model,
+        std::vector<LinearStaticDeformFactor> cases)
+        : FEDeformOperator(model), cases(cases) {
+          };
+
     // FEDeformCase を介して継承されました
     BeamStressData GetBeamStress(int eid, double p) override;
 

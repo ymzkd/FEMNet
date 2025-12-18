@@ -45,6 +45,7 @@
 // STL templates for Analysis
 namespace std {
     %template(VectorDASampler) std::vector<std::shared_ptr<DASampler>>;
+    %template(LinearStaticDeformFactorVector) std::vector<LinearStaticDeformFactor>;
 }
 
 %include "FEAnalysis.h"

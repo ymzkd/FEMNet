@@ -787,6 +787,7 @@ void TriPlateElement::AssembleMatrix(Eigen::SparseMatrix<double> &mat, Eigen::Ma
     }
 }
 
+// 非推奨: GetStiffnessTriplets()を使用してください（coeffRef方式は非効率）
 void TriPlateElement::AssembleStiffMatrix(Eigen::SparseMatrix<double> &mat)
 {
     AssembleMatrix(mat, StiffnessMatrix());
@@ -818,10 +819,69 @@ void TriPlateElement::AssembleStiffMatrix(Eigen::SparseMatrix<double> &mat)
     // }
 }
 
+// 非推奨: GetGeometricStiffnessTriplets()を使用してください（coeffRef方式は非効率）
 void TriPlateElement::AssembleGeometricStiffMatrix(
     Eigen::SparseMatrix<double> &mat, const std::vector<Displacement> &disp)
 {
     AssembleMatrix(mat, GeometricStiffnessMatrix(disp));
+}
+
+void TriPlateElement::GetStiffnessTriplets(std::vector<Eigen::Triplet<double>>& triplets)
+{
+    Eigen::MatrixXd K = StiffnessMatrix();
+    int total_dof = TotalDof();  // 18 for TriPlateElement
+
+    // Map to global DOFs - TriPlateElement uses all 6 DOF/node
+    int indices[18];
+    for (size_t i = 0; i < node_dof; i++)
+        indices[i] = Nodes[0]->id * 6 + i;
+    for (size_t i = 0; i < node_dof; i++)
+        indices[i + node_dof] = Nodes[1]->id * 6 + i;
+    for (size_t i = 0; i < node_dof; i++)
+        indices[i + node_dof * 2] = Nodes[2]->id * 6 + i;
+
+    // Add upper triangle to triplets
+    for (int i = 0; i < total_dof; i++) {
+        for (int j = 0; j <= i; j++) {
+            double value = K(i, j);
+            if (std::abs(value) > 1e-20) {
+                int row = indices[i];
+                int col = indices[j];
+                if (row > col) std::swap(row, col);
+                triplets.emplace_back(row, col, value);
+            }
+        }
+    }
+}
+
+void TriPlateElement::GetGeometricStiffnessTriplets(
+    const std::vector<Displacement>& disp,
+    std::vector<Eigen::Triplet<double>>& triplets)
+{
+    Eigen::MatrixXd Kg = GeometricStiffnessMatrix(disp);
+    int total_dof = TotalDof();  // 18 for TriPlateElement
+
+    // Map to global DOFs - TriPlateElement uses all 6 DOF/node
+    int indices[18];
+    for (size_t i = 0; i < node_dof; i++)
+        indices[i] = Nodes[0]->id * 6 + i;
+    for (size_t i = 0; i < node_dof; i++)
+        indices[i + node_dof] = Nodes[1]->id * 6 + i;
+    for (size_t i = 0; i < node_dof; i++)
+        indices[i + node_dof * 2] = Nodes[2]->id * 6 + i;
+
+    // Add upper triangle to triplets
+    for (int i = 0; i < total_dof; i++) {
+        for (int j = 0; j <= i; j++) {
+            double value = Kg(i, j);
+            if (std::abs(value) > 1e-20) {
+                int row = indices[i];
+                int col = indices[j];
+                if (row > col) std::swap(row, col);
+                triplets.emplace_back(row, col, value);
+            }
+        }
+    }
 }
 
 void TriPlateElement::AssembleMassMatrix(Eigen::SparseMatrix<double> &mat)

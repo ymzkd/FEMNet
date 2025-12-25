@@ -53,6 +53,7 @@ struct LinearStaticDeformFactor
 public:
     std::shared_ptr<FELinearStaticOp> op;
     double factor;
+    LinearStaticDeformFactor() : op(nullptr), factor(0.0) {};
     LinearStaticDeformFactor(std::shared_ptr<FELinearStaticOp> op, double factor)
         : op(op), factor(factor) {
           };

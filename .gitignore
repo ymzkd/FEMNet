@@ -482,3 +482,6 @@ python/femnet/*_wrap.h
 
 # Python build directory
 build-python/
+
+# Windows NUL device file artifact
+NUL

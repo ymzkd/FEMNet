@@ -89,13 +89,20 @@ public:
     void AssembleMatrix(Eigen::SparseMatrix<double> &mat, Eigen::MatrixXd K);
 
     // 剛性行列を組み込む
+    [[deprecated("Use GetStiffnessTriplets() instead. This coeffRef-based method is less efficient and will be removed in a future version.")]]
     void AssembleStiffMatrix(Eigen::SparseMatrix<double> &mat) override;
 
     // 幾何剛性行列を組み込む
+    [[deprecated("Use GetGeometricStiffnessTriplets() instead. This coeffRef-based method is less efficient and will be removed in a future version.")]]
     void AssembleGeometricStiffMatrix(Eigen::SparseMatrix<double> &mat, const std::vector<Displacement> &disp) override;
 
     // 集中質量行列を組み込む
     void AssembleMassMatrix(Eigen::SparseMatrix<double> &mat);
+
+    // Triplet方式での行列組立
+    void GetStiffnessTriplets(std::vector<Eigen::Triplet<double>>& triplets) override;
+    void GetGeometricStiffnessTriplets(const std::vector<Displacement>& disp,
+                                        std::vector<Eigen::Triplet<double>>& triplets) override;
 
     // 応力を計算
     PlateStressData stress(

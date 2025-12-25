@@ -48,9 +48,16 @@ public:
     virtual ElementType Type() { return ElementType::None; }
     virtual int TotalDof() = 0;
     virtual Eigen::MatrixXd StiffnessMatrix() = 0;
+    [[deprecated("Use GetStiffnessTriplets() instead. This coeffRef-based method is less efficient and will be removed in a future version.")]]
     virtual void AssembleStiffMatrix(Eigen::SparseMatrix<double>& mat) = 0;
+    [[deprecated("Use GetGeometricStiffnessTriplets() instead. This coeffRef-based method is less efficient and will be removed in a future version.")]]
     virtual void AssembleGeometricStiffMatrix(Eigen::SparseMatrix<double>& mat, const std::vector<Displacement>& disp) = 0;
     virtual void AssembleMassMatrix(Eigen::SparseMatrix<double>& mat) = 0;
+
+    // Triplet方式での行列組立用メソッド
+    virtual void GetStiffnessTriplets(std::vector<Eigen::Triplet<double>>& triplets) = 0;
+    virtual void GetGeometricStiffnessTriplets(const std::vector<Displacement>& disp,
+                                                std::vector<Eigen::Triplet<double>>& triplets) = 0;
 };
 
 

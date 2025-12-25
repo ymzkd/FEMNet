@@ -63,9 +63,6 @@ class LinearStaticCombinationOperator : public FEDeformOperator
 public:
     std::vector<LinearStaticDeformFactor> cases;
     LinearStaticCombinationOperator() {};
-    LinearStaticCombinationOperator(std::vector<LinearStaticDeformFactor> cases)
-        : cases(cases) {
-          };
 
     LinearStaticCombinationOperator(
         std::shared_ptr<FEModel> model,

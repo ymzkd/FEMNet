@@ -71,9 +71,6 @@ std::vector<NodeLoadData> BeamElement::InertialForceToNodeLoadData(Eigen::Vector
 
     f = m * f;
 
-    std::cout << "Mass Matrix: " << m.diagonal() << std::endl;
-    // std::cout << "BodyforceToNodeLoadData: " << f.transpose() << std::endl;
-
     std::vector<NodeLoadData> loads;
     loads.push_back(NodeLoadData(Nodes[0]->id, f(0), f(1), f(2), f(3), f(4), f(5)));
     loads.push_back(NodeLoadData(Nodes[1]->id, f(6), f(7), f(8), f(9), f(10), f(11)));

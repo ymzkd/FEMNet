@@ -16,7 +16,9 @@
 #endif
 
 #endif
+
 #include "LoadComponent.h"
+#include "RigidLink.h"
 
 #define PI 3.141592653589793238462643
 

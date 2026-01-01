@@ -35,6 +35,7 @@
     #include "Components.h"
     #include "Elements/Elements.h"
     #include "LoadComponent.h"
+    #include "RigidLink.h"
     #include "Model.h"
     #include "SeismicModule.h"
 %}
@@ -58,6 +59,10 @@
 %ignore Eigen::Matrix3d;
 %ignore Displacement::translate(Eigen::Matrix3d transmat);
 %ignore Vector::toEigen;
+
+// Ignore RigidLink methods that return Eigen types
+%ignore RigidLink::TransformationMatrix;
+%ignore RigidLinks::TransformationMatrix;
 
 // Ignore pure virtual methods that use Eigen types
 %ignore ElementBase::geometric_local_stiffness_matrix;
@@ -114,6 +119,9 @@ namespace std {
     %template(VectorBeamPolyLoad) std::vector<BeamPolyLoad>;
     %template(ListBeamPolyLoad) std::list<BeamPolyLoad>;
     %template(VectorBeamPolyLoadPtr) std::vector<std::shared_ptr<BeamPolyLoad>>;
+
+    // RigidLink vectors
+    %template(VectorRigidLink) std::vector<RigidLink>;
 }
 
 // ===================================================================
@@ -123,6 +131,7 @@ namespace std {
 %include "SeismicModule_common.i"
 
 // Include Model.h and SeismicModule.h
+%include "RigidLink.h"
 %include "Model.h"
 %include "SeismicModule.h"
 

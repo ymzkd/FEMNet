@@ -38,6 +38,7 @@ public:
     Vector operator-(const Vector v1) { return subtract(*this, v1); }
     double operator*(const Vector v1) { return multiply(*this, v1); }
     Vector operator*(const double v1) { return multiply(*this, v1); }
+    friend Vector operator*(const double v1, const Vector v0) { return multiply(v0, v1); }
 
 	Eigen::Vector3d toEigen() const {
 		return Eigen::Vector3d(x, y, z);

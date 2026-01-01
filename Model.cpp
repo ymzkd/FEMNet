@@ -140,36 +140,196 @@ void FEModel::splitMatrixWithResize(
     free_matrix.setFromTriplets(free_triplets.begin(), free_triplets.end());
 }
 
-Eigen::SparseMatrix<double> FEModel::extractSubMatrix(
-    const Eigen::SparseMatrix<double>& mat,
-    const std::vector<int>& rowIndices,
-    const std::vector<int>& colIndices) {
+// 2x2ブロック行列を単一の対称疎行列に結合
+void FEModel::mergeMatrixWithResize(
+    const Eigen::SparseMatrix<double>& free_free,
+    const Eigen::SparseMatrix<double>& free_fixed,
+    const Eigen::SparseMatrix<double>& fixed_fixed,
+    Eigen::SparseMatrix<double>& A)
+{
+    // 各ブロックのサイズから全体サイズを計算
+    int size_free = free_free.rows();
+    int size_fixed = fixed_fixed.rows();
+    int total_size = size_free + size_fixed;
 
-    // 新しい疎行列を作成
-    Eigen::SparseMatrix<double> subMat(rowIndices.size(), colIndices.size());
-    
+    // インデックスオフセット
+    int offset_free = 0;
+    int offset_fixed = size_free;
 
-    // インデックス変換用のマップ
-    std::unordered_map<int, int> rowMap;
-    for (int i = 0; i < rowIndices.size(); ++i)
-        rowMap[rowIndices[i]] = i;
+    // Tripletベクトルの準備
+    std::vector<Eigen::Triplet<double>> triplets;
 
-    std::unordered_map<int, int> colMap;
-    for (int j = 0; j < colIndices.size(); ++j)
-        colMap[colIndices[j]] = j;
+    // メモリ最適化: 全ブロックの非零要素数を事前計算
+    size_t estimated_nnz = free_free.nonZeros() + fixed_fixed.nonZeros()
+                         + 2 * free_fixed.nonZeros();
+    triplets.reserve(estimated_nnz);
 
-    // 指定された行と列の要素を新しい疎行列にコピー
-    for (int k = 0; k < mat.outerSize(); ++k) {
-        for (Eigen::SparseMatrix<double>::InnerIterator it(mat, k); it; ++it) {
-            auto rowMapItem = rowMap.find(it.row());
-            auto colMapItem = colMap.find(it.col());
+    // ブロック11 (free_free): オフセット(0, 0)
+    // 対角ブロックなので、上三角のみの場合は対称化が必要
+    for (int k = 0; k < free_free.outerSize(); ++k) {
+        for (Eigen::SparseMatrix<double>::InnerIterator it(free_free, k); it; ++it) {
+            int row = offset_free + it.row();
+            int col = offset_free + it.col();
+            triplets.emplace_back(row, col, it.value());
 
-            if (rowMapItem != rowMap.end() && colMapItem != colMap.end())
-                subMat.insert(rowMapItem->second, colMapItem->second) = it.value();
+            // 非対角要素は転置も追加
+            if (row != col) {
+                triplets.emplace_back(col, row, it.value());
+            }
         }
     }
 
-    return subMat;
+    // ブロック12 (free_fixed): オフセット(0, size_free)
+    for (int k = 0; k < free_fixed.outerSize(); ++k) {
+        for (Eigen::SparseMatrix<double>::InnerIterator it(free_fixed, k); it; ++it) {
+            int global_row = offset_free + it.row();
+            int global_col = offset_fixed + it.col();
+
+            // 上三角要素を追加
+            triplets.emplace_back(global_row, global_col, it.value());
+
+            // 対称性: 下三角要素（ブロック21 = fixed_free）も追加
+            triplets.emplace_back(global_col, global_row, it.value());
+        }
+    }
+
+    // ブロック22 (fixed_fixed): オフセット(size_free, size_free)
+    // 対角ブロックなので、上三角のみの場合は対称化が必要
+    for (int k = 0; k < fixed_fixed.outerSize(); ++k) {
+        for (Eigen::SparseMatrix<double>::InnerIterator it(fixed_fixed, k); it; ++it) {
+            int row = offset_fixed + it.row();
+            int col = offset_fixed + it.col();
+            triplets.emplace_back(row, col, it.value());
+
+            // 非対角要素は転置も追加
+            if (row != col) {
+                triplets.emplace_back(col, row, it.value());
+            }
+        }
+    }
+
+    // 疎行列の構築
+    A.resize(total_size, total_size);
+    A.setFromTriplets(triplets.begin(), triplets.end());
+}
+
+// 対称疎行列を3x3ブロックに分割
+void FEModel::splitMatrix3x3(
+    const Eigen::SparseMatrix<double>& A,
+    const std::vector<int>& indices_group1,
+    const std::vector<int>& indices_group2,
+    Eigen::SparseMatrix<double>& mat_11,
+    Eigen::SparseMatrix<double>& mat_12,
+    Eigen::SparseMatrix<double>& mat_13,
+    Eigen::SparseMatrix<double>& mat_22,
+    Eigen::SparseMatrix<double>& mat_23,
+    Eigen::SparseMatrix<double>& mat_33)
+{
+    // グループ分類用の列挙型
+    enum class GroupType : uint8_t {
+        GROUP_1 = 0,
+        GROUP_2 = 1,
+        GROUP_3 = 2
+    };
+
+    // インデックス属性構造体
+    struct idx_attr_three {
+        GroupType group;
+        int new_index;
+    };
+
+    // 高速検索用のunordered_set
+    std::unordered_set<int> set1(indices_group1.begin(), indices_group1.end());
+    std::unordered_set<int> set2(indices_group2.begin(), indices_group2.end());
+
+    // 各グループのサイズ計算（重複除去済み）
+    int size_1 = static_cast<int>(set1.size());
+    int size_2 = static_cast<int>(set2.size());
+    int size_3 = A.cols() - size_1 - size_2;
+
+    // インデックスマッピングテーブル構築
+    std::vector<idx_attr_three> index_map(A.cols());
+    int counter_1 = 0, counter_2 = 0, counter_3 = 0;
+
+    for (int i = 0; i < A.cols(); ++i) {
+        if (set1.find(i) != set1.end()) {
+            index_map[i] = {GroupType::GROUP_1, counter_1++};
+        } else if (set2.find(i) != set2.end()) {
+            index_map[i] = {GroupType::GROUP_2, counter_2++};
+        } else {
+            index_map[i] = {GroupType::GROUP_3, counter_3++};
+        }
+    }
+
+    // 6つのTripletベクトル（上三角6ブロック用）
+    std::vector<Eigen::Triplet<double>> trip_11, trip_12, trip_13;
+    std::vector<Eigen::Triplet<double>> trip_22, trip_23, trip_33;
+
+    // メモリ最適化: 事前容量確保
+    size_t estimated_nnz = A.nonZeros();
+    trip_11.reserve(estimated_nnz / 9);
+    trip_12.reserve(estimated_nnz / 9);
+    trip_13.reserve(estimated_nnz / 9);
+    trip_22.reserve(estimated_nnz / 9);
+    trip_23.reserve(estimated_nnz / 9);
+    trip_33.reserve(estimated_nnz / 9);
+
+    // 疎行列の非零要素を1回だけ走査
+    for (int k = 0; k < A.outerSize(); ++k) {
+        for (Eigen::SparseMatrix<double>::InnerIterator it(A, k); it; ++it) {
+            int i = it.row();
+            int j = it.col();
+            double value = it.value();
+
+            const idx_attr_three& attr_i = index_map[i];
+            const idx_attr_three& attr_j = index_map[j];
+
+            // 9パターンを判定（対称性を考慮して6パターンのみ処理）
+            if (attr_i.group == GroupType::GROUP_1) {
+                if (attr_j.group == GroupType::GROUP_1) {
+                    trip_11.emplace_back(attr_i.new_index, attr_j.new_index, value);
+                } else if (attr_j.group == GroupType::GROUP_2) {
+                    trip_12.emplace_back(attr_i.new_index, attr_j.new_index, value);
+                } else {
+                    trip_13.emplace_back(attr_i.new_index, attr_j.new_index, value);
+                }
+            } else if (attr_i.group == GroupType::GROUP_2) {
+                if (attr_j.group == GroupType::GROUP_1) {
+                    // 転置: ブロック21 → ブロック12
+                    trip_12.emplace_back(attr_j.new_index, attr_i.new_index, value);
+                } else if (attr_j.group == GroupType::GROUP_2) {
+                    trip_22.emplace_back(attr_i.new_index, attr_j.new_index, value);
+                } else {
+                    trip_23.emplace_back(attr_i.new_index, attr_j.new_index, value);
+                }
+            } else {  // GROUP_3
+                if (attr_j.group == GroupType::GROUP_1) {
+                    // 転置: ブロック31 → ブロック13
+                    trip_13.emplace_back(attr_j.new_index, attr_i.new_index, value);
+                } else if (attr_j.group == GroupType::GROUP_2) {
+                    // 転置: ブロック32 → ブロック23
+                    trip_23.emplace_back(attr_j.new_index, attr_i.new_index, value);
+                } else {
+                    trip_33.emplace_back(attr_i.new_index, attr_j.new_index, value);
+                }
+            }
+        }
+    }
+
+    // 疎行列の再構築
+    mat_11.resize(size_1, size_1);
+    mat_12.resize(size_1, size_2);
+    mat_13.resize(size_1, size_3);
+    mat_22.resize(size_2, size_2);
+    mat_23.resize(size_2, size_3);
+    mat_33.resize(size_3, size_3);
+
+    mat_11.setFromTriplets(trip_11.begin(), trip_11.end());
+    mat_12.setFromTriplets(trip_12.begin(), trip_12.end());
+    mat_13.setFromTriplets(trip_13.begin(), trip_13.end());
+    mat_22.setFromTriplets(trip_22.begin(), trip_22.end());
+    mat_23.setFromTriplets(trip_23.begin(), trip_23.end());
+    mat_33.setFromTriplets(trip_33.begin(), trip_33.end());
 }
 
 int FEModel::SolveVibration(const int nev, std::vector<double>& eigen_values, 
@@ -272,14 +432,22 @@ int FEModel::SolveVibration(const int nev, std::vector<double>& eigen_values,
 
 std::vector<int> FEModel::FreeIndices()
 {
+    std::vector<int> slave_indices = RigidLinkData.SlaveDOFIndices();
+    std::unordered_set<int> slaveid_set(slave_indices.begin(), slave_indices.end());
     std::vector<int> indices;
     int idx = 0;
     for (Node n : Nodes)
         for (const bool f : n.Fix.isdof_fixed()) {
-            if (!f) indices.push_back(idx);
+            bool is_slave = (slaveid_set.find(idx) != slaveid_set.end());
+            if (!f && !is_slave) indices.push_back(idx);
             idx++;
         }
     return indices;
+}
+
+std::vector<int> FEModel::SlaveIndices()
+{
+    return RigidLinkData.SlaveDOFIndices();
 }
 
 /// <summary>
@@ -594,10 +762,24 @@ void FEModel::SolveLinearStatic(std::vector<std::shared_ptr<LoadBase>>& loads,
         }
     }
 
+    std::vector<int> slave_indices = RigidLinkData.SlaveDOFIndices();
     std::vector<int> free_indices = FreeIndices();
     std::vector<int> fixed_indices = FixIndices();
+
+    Eigen::SparseMatrix<double> m11, m12, m13, m22, m23, m33;
+    FEModel::splitMatrix3x3(AssembleStiffnessMatrix(), slave_indices, free_indices,
+        m11, m12, m13, m22, m23, m33);
+
+    Eigen::MatrixXd linkTransMat = RigidLinkData.TransformationMatrix();
     Eigen::SparseMatrix<double> m, mb, mc;
-    FEModel::splitMatrixWithResize(AssembleStiffnessMatrix(), fixed_indices, m, mb, mc);
+    m = linkTransMat.transpose() * m11.selfadjointView<Eigen::Upper>() * linkTransMat;
+    mb = linkTransMat.transpose() * m12;
+    mc = linkTransMat.transpose() * m13;
+
+    FEModel::mergeMatrixWithResize(m, mb, m22, m);
+    
+
+    // FEModel::splitMatrixWithResize(AssembleStiffnessMatrix(), fixed_indices, m, mb, mc);
 
     Eigen::VectorXd f_free(free_indices.size());
     Eigen::VectorXd f_fix(fixed_indices.size());

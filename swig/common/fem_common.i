@@ -53,7 +53,6 @@
 %ignore Eigen::MatrixXd;
 %ignore Eigen::VectorXd;
 %ignore Eigen::Vector3d;
-%ignore extractSubMatrix();
 %ignore trans_matrix3(const Point p0, const Point p1, const double beta);
 %ignore trans_matrix3(const Plane plane);
 %ignore Eigen::Matrix3d;

@@ -78,7 +78,7 @@ public:
         return count;
     }
 
-    // ???
+    // ???要る？
     std::vector<int> MasterDOFIndices() {
         std::vector<int> indices;
         for (RigidLink& link : links) {

@@ -995,7 +995,10 @@ int main(void) {
 
 	// 座屈検討用のピラミッド型トラスサンプル
 	//CheckCantiPyramidTrussBuckling(1000, 4, 100);
-	CheckQuadPlateBuckling();
+	//CheckQuadPlateBuckling();
+
+	// Test mergeMatrixWithResize
+	// TestMergeMatrixWithResize();
 
 	// CheckSparseSolver();
 

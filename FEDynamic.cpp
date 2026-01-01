@@ -90,7 +90,7 @@ void DAEnergyRecorder::Record(DynamicAnalysis &da)
     RecordInputEnergy(da);
 }
 
-DynamicAnalysis::DynamicAnalysis(std::shared_ptr<FEModel> model, DynamicAccelLoad accel_load, FEDynamicDampInitializer *damp)
+DynamicAnalysis::DynamicAnalysis(std::shared_ptr<FEModel> model, const DynamicAccelLoad& accel_load, FEDynamicDampInitializer *damp)
     : FEDeformOperator(model), accel_load(accel_load)
 {
     if (!damp_initializer)

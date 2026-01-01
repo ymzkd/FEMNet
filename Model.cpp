@@ -476,9 +476,20 @@ double FEModel::SumNodeMass()
 Eigen::SparseMatrix<double> FEModel::AssembleStiffnessMatrix()
 {
     int mat_size = Nodes.size() * 6;
+
+    // 非零要素数を推定
+    size_t estimated_nnz = Elements.size() * 100;
+    std::vector<Eigen::Triplet<double>> tripletList;
+    tripletList.reserve(estimated_nnz);
+
+    // 各要素からTripletを収集
+    for (const std::shared_ptr<ElementBase>& eh : Elements) {
+        eh->GetStiffnessTriplets(tripletList);
+    }
+
+    // Tripletから疎行列を一括構築
     Eigen::SparseMatrix<double> mat(mat_size, mat_size);
-    for (const std::shared_ptr<ElementBase>& eh : Elements)
-        eh->AssembleStiffMatrix(mat);
+    mat.setFromTriplets(tripletList.begin(), tripletList.end());
 
     return mat;
 }
@@ -514,16 +525,24 @@ Eigen::SparseMatrix<double> FEModel::AssembleGeometricStiffnessMatrix(
     const std::vector<Displacement>& displacements)
 {
     int mat_size = Nodes.size() * 6;
-    Eigen::SparseMatrix<double> mat(mat_size, mat_size);
-    for (const std::shared_ptr<ElementBase>& eh : Elements) {
 
+    size_t estimated_nnz = Elements.size() * 100;
+    std::vector<Eigen::Triplet<double>> tripletList;
+    tripletList.reserve(estimated_nnz);
+
+    // 各要素の節点変位を準備して Triplet を収集
+    for (const std::shared_ptr<ElementBase>& eh : Elements) {
         std::vector<Displacement> disp_vec(eh->NodeNum());
         std::vector<Node*> nodes = eh->NodesList();
         for (size_t i = 0; i < eh->NodeNum(); i++)
             disp_vec[i] = displacements[nodes[i]->id];
-        eh->AssembleGeometricStiffMatrix(mat, disp_vec);
+
+        eh->GetGeometricStiffnessTriplets(disp_vec, tripletList);
     }
-        
+
+    Eigen::SparseMatrix<double> mat(mat_size, mat_size);
+    mat.setFromTriplets(tripletList.begin(), tripletList.end());
+
     return mat;
 }
 

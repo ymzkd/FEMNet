@@ -108,6 +108,7 @@ void TrussElement::AssembleMatrix(Eigen::SparseMatrix<double> &mat, Eigen::Matri
     }
 }
 
+// 非推奨: GetStiffnessTriplets()を使用してください（coeffRef方式は非効率）
 void TrussElement::AssembleStiffMatrix(Eigen::SparseMatrix<double> &mat)
 {
     AssembleMatrix(mat, StiffnessMatrix());
@@ -137,10 +138,65 @@ void TrussElement::AssembleStiffMatrix(Eigen::SparseMatrix<double> &mat)
     // }
 }
 
+// 非推奨: GetGeometricStiffnessTriplets()を使用してください（coeffRef方式は非効率）
 void TrussElement::AssembleGeometricStiffMatrix(
     Eigen::SparseMatrix<double> &mat, const std::vector<Displacement> &disp)
 {
     AssembleMatrix(mat, geometric_local_stiffness_matrix(disp));
+}
+
+void TrussElement::GetStiffnessTriplets(std::vector<Eigen::Triplet<double>>& triplets)
+{
+    Eigen::MatrixXd K = StiffnessMatrix();
+    int total_dof = TotalDof();  // 6 for TrussElement
+
+    // Map to global DOFs - TrussElement uses only 3 DOF/node (X,Y,Z)
+    int indices[6];
+    for (size_t i = 0; i < 3; i++)
+        indices[i] = Nodes[0]->id * 6 + i;
+    for (size_t i = 0; i < 3; i++)
+        indices[i + 3] = Nodes[1]->id * 6 + i;
+
+    // Add lower triangle to triplets
+    for (int i = 0; i < total_dof; i++) {
+        for (int j = 0; j <= i; j++) {
+            double value = K(i, j);
+            if (std::abs(value) > 1e-20) {
+                int row = indices[i];
+                int col = indices[j];
+                if (col > row) std::swap(row, col);
+                triplets.emplace_back(row, col, value);
+            }
+        }
+    }
+}
+
+void TrussElement::GetGeometricStiffnessTriplets(
+    const std::vector<Displacement>& disp,
+    std::vector<Eigen::Triplet<double>>& triplets)
+{
+    Eigen::MatrixXd Kg = geometric_local_stiffness_matrix(disp);
+    int total_dof = TotalDof();  // 6 for TrussElement
+
+    // Map to global DOFs - TrussElement uses only 3 DOF/node (X,Y,Z)
+    int indices[6];
+    for (size_t i = 0; i < 3; i++)
+        indices[i] = Nodes[0]->id * 6 + i;
+    for (size_t i = 0; i < 3; i++)
+        indices[i + 3] = Nodes[1]->id * 6 + i;
+
+    // Add lower triangle to triplets
+    for (int i = 0; i < total_dof; i++) {
+        for (int j = 0; j <= i; j++) {
+            double value = Kg(i, j);
+            if (std::abs(value) > 1e-20) {
+                int row = indices[i];
+                int col = indices[j];
+                if (col > row) std::swap(row, col);
+                triplets.emplace_back(row, col, value);
+            }
+        }
+    }
 }
 
 Eigen::MatrixXd TrussElement::NodeConsistentMass()

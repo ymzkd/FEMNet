@@ -40,8 +40,15 @@ public:
     int TotalDof() { return total_dof; }
 
     void AssembleMatrix(Eigen::SparseMatrix<double> &mat, Eigen::MatrixXd K);
+    [[deprecated("Use GetStiffnessTriplets() instead. This coeffRef-based method is less efficient and will be removed in a future version.")]]
     void AssembleStiffMatrix(Eigen::SparseMatrix<double> &mat) override;
+    [[deprecated("Use GetGeometricStiffnessTriplets() instead. This coeffRef-based method is less efficient and will be removed in a future version.")]]
     void AssembleGeometricStiffMatrix(Eigen::SparseMatrix<double> &mat, const std::vector<Displacement> &disp) override;
+
+    // Triplet方式での行列組立
+    void GetStiffnessTriplets(std::vector<Eigen::Triplet<double>>& triplets) override;
+    void GetGeometricStiffnessTriplets(const std::vector<Displacement>& disp,
+                                        std::vector<Eigen::Triplet<double>>& triplets) override;
 
     Eigen::MatrixXd NodeConsistentMass() override;
 

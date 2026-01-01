@@ -1,7 +1,7 @@
 #ifndef _FEDYNAMIC_
 #define _FEDYNAMIC_
 
-#ifndef SWIGCSHARP
+#ifndef SWIG
 #include <vector>
 #include <map>
 #include <array>
@@ -103,7 +103,7 @@ public:
                         // double beta = 1.0/6.0; // 線形加速度法(発散しがち)
 
     DynamicAnalysis(std::shared_ptr<FEModel> model,
-                    DynamicAccelLoad accel_load, FEDynamicDampInitializer *damp = nullptr);
+                    const DynamicAccelLoad& accel_load, FEDynamicDampInitializer *damp = nullptr);
 
     bool Initialize();
 

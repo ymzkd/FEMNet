@@ -1,7 +1,7 @@
 #ifndef _LOAD_COMPONENT_
 #define _LOAD_COMPONENT_
 
-#ifndef SWIGCSHARP
+#ifndef SWIG
 #include<iostream>
 #include <vector>
 #endif
@@ -25,16 +25,16 @@ public:
 class InertialForce: public LoadBase {
 public:
 
-	Vector accels;
-	InertialForce() : InertialForce(0, 0, 0) {};
-	InertialForce(double x, double y, double z) : accels(x, y, z) {};
-	InertialForce(Vector v) : accels(v) {};
-	
-	LoadType Type() override { return LoadType::BodyForce; }
-	
+    Vector accels;
+    InertialForce() : InertialForce(0, 0, 0) {};
+    InertialForce(double x, double y, double z) : accels(x, y, z) {};
+    InertialForce(Vector v) : accels(v) {};
+    
+    LoadType Type() override { return LoadType::BodyForce; }
+    
     std::vector<NodeLoadData> NodeLoads() override {
-		return std::vector<NodeLoadData>();
-	}
+        return std::vector<NodeLoadData>();
+    }
 };
 
 enum class BodyForaceSelector : unsigned int {
@@ -47,17 +47,17 @@ enum class BodyForaceSelector : unsigned int {
 
 class NodeBodyForce : public LoadBase {
 public:
-	Node* node;
+    Node* node;
     Vector Accels;
-	BodyForaceSelector selector = BodyForaceSelector::All;
+    BodyForaceSelector selector = BodyForaceSelector::All;
 
-	NodeBodyForce() : node(nullptr), Accels(0, 0, 0) {};
-	NodeBodyForce(Node* node, double x, double y, double z) : node(node), Accels(x, y, z) {};
+    NodeBodyForce() : node(nullptr), Accels(0, 0, 0) {};
+    NodeBodyForce(Node* node, double x, double y, double z) : node(node), Accels(x, y, z) {};
 
     LoadType Type() override { return LoadType::BodyForce; }
 
     std::vector<NodeLoadData> NodeLoads() override {
-		Vector f = Accels * node->MassData.SumMass(); // ここで質量を掛けて加速度を計算
+        Vector f = Accels * node->MassData.SumMass(); // ここで質量を掛けて加速度を計算
         return std::vector<NodeLoadData>{ NodeLoadData(node->id, f.x, f.y, f.z) };
     }
 };
@@ -95,58 +95,94 @@ public:
 // 面荷重(WIP)
 class PlateLoad : public LoadBase {
 public:
-	PlaneElementBase* element;
-	std::vector<Vector> load_vecs;
+    PlaneElementBase* element;
+    std::vector<Vector> load_vecs;
 
     PlateLoad() {};
     
-    PlateLoad(ElementBase* el, double px, double py, double pz) {
-
+    PlateLoad(ElementBase* el, double px, double py, double pz, bool local = false) {
         element = dynamic_cast<PlaneElementBase*>(el);
-        //if (!element) {
-        //    throw std::runtime_error("Failed to cast ElementBase* to PlaneElementBase*");
-        //}
-        load_vecs.push_back(Vector(px, py, pz));
-        load_vecs.push_back(Vector(px, py, pz));
-        load_vecs.push_back(Vector(px, py, pz));
-        if (element->NodeNum() == 4)
-            load_vecs.push_back(Vector(px, py, pz));
-
-    }
-
-    PlateLoad(PlaneElementBase* el, double px, double py, double pz){ 
-		element = el;
-        load_vecs.push_back(Vector(px, py, pz));
-        load_vecs.push_back(Vector(px, py, pz));
-        load_vecs.push_back(Vector(px, py, pz));
-        if (element->NodeNum() == 4)
-            load_vecs.push_back(Vector(px, py, pz));
+        Vector lv(px, py, pz);
         
-    }
-	
-    PlateLoad(PlaneElementBase* el, Vector v) {
-		element = el;
-		load_vecs.push_back(v);
-		load_vecs.push_back(v);
-		load_vecs.push_back(v);
-
+        if (local) {
+            Plane pl = element->plane;
+            lv = lv.x * pl.ex + lv.y * pl.ey + lv.z * pl.ez;
+        }
+        
+        load_vecs.push_back(Vector(lv.x, lv.y, lv.z));
+        load_vecs.push_back(Vector(lv.x, lv.y, lv.z));
+        load_vecs.push_back(Vector(lv.x, lv.y, lv.z));
         if (element->NodeNum() == 4)
-            load_vecs.push_back(v);
-	}
-	
-    PlateLoad(PlaneElementBase* el, Vector p1, Vector p2, Vector p3) {
-		element = el;
-		load_vecs.push_back(p1);
-		load_vecs.push_back(p2);
-		load_vecs.push_back(p3);
-	}
+            load_vecs.push_back(Vector(lv.x, lv.y, lv.z));
+    }
 
-    PlateLoad(PlaneElementBase* el, Vector p1, Vector p2, Vector p3, Vector p4) {
+    PlateLoad(PlaneElementBase* el, double px, double py, double pz, bool local = false) { 
         element = el;
-        load_vecs.push_back(p1);
-        load_vecs.push_back(p2);
-        load_vecs.push_back(p3);
-        load_vecs.push_back(p4);
+        Vector lv(px, py, pz);
+        
+        if (local) {
+            Plane pl = element->plane;
+            lv = lv.x * pl.ex + lv.y * pl.ey + lv.z * pl.ez;
+        }
+        
+        load_vecs.push_back(lv);
+        load_vecs.push_back(lv);
+        load_vecs.push_back(lv);
+        if (element->NodeNum() == 4)
+            load_vecs.push_back(lv);
+    }
+    
+    PlateLoad(PlaneElementBase* el, Vector v, bool local = false) {
+        element = el;
+        Vector lv = v;
+        if (local) {
+            Plane pl = element->plane;
+            lv = lv.x * pl.ex + lv.y * pl.ey + lv.z * pl.ez;
+        }
+        load_vecs.push_back(lv);
+        load_vecs.push_back(lv);
+        load_vecs.push_back(lv);
+        if (element->NodeNum() == 4)
+            load_vecs.push_back(lv);
+    }
+    
+    PlateLoad(PlaneElementBase* el, Vector p1, Vector p2, Vector p3, bool local = false) {
+        element = el;
+        Vector lv1 = p1;
+        Vector lv2 = p2;
+        Vector lv3 = p3;
+
+        if (local) {
+            Plane pl = element->plane;
+            lv1 = lv1.x * pl.ex + lv1.y * pl.ey + lv1.z * pl.ez;
+            lv2 = lv2.x * pl.ex + lv2.y * pl.ey + lv2.z * pl.ez;
+            lv3 = lv3.x * pl.ex + lv3.y * pl.ey + lv3.z * pl.ez;
+        }
+
+        load_vecs.push_back(lv1);
+        load_vecs.push_back(lv2);
+        load_vecs.push_back(lv3);
+    }
+
+    PlateLoad(PlaneElementBase* el, Vector p1, Vector p2, Vector p3, Vector p4, bool local = false) {
+        element = el;
+        Vector lv1 = p1;
+        Vector lv2 = p2;
+        Vector lv3 = p3;
+        Vector lv4 = p4;
+
+        if (local) {
+            Plane pl = element->plane;
+            lv1 = lv1.x * pl.ex + lv1.y * pl.ey + lv1.z * pl.ez;
+            lv2 = lv2.x * pl.ex + lv2.y * pl.ey + lv2.z * pl.ez;
+            lv3 = lv3.x * pl.ex + lv3.y * pl.ey + lv3.z * pl.ez;
+            lv4 = lv4.x * pl.ex + lv4.y * pl.ey + lv4.z * pl.ez;
+        }
+
+        load_vecs.push_back(lv1);
+        load_vecs.push_back(lv2);
+        load_vecs.push_back(lv3);
+        load_vecs.push_back(lv4);
     }
 
     std::vector<NodeLoadData> NodeLoads() override;
@@ -269,11 +305,13 @@ private:
 public:
     std::vector<double> w;
     std::vector<double> params;
-    
+
     // BeamElement* element;
 
-    BeamPolyLoad(const std::vector<double> w, 
-        const std::vector<double> params, 
+    BeamPolyLoad() : BeamLoadBase(nullptr, BeamLoadAxis::YAxis) {};
+
+    BeamPolyLoad(const std::vector<double> w,
+        const std::vector<double> params,
         BeamElement* element, BeamLoadAxis axis)
             : w(w), params(params), BeamLoadBase(element, axis) {
 
@@ -379,8 +417,8 @@ public:
     }
 
     AxialPolyLoad(const std::vector<double>& w, 
-		const std::vector<double>& params)
-		: w(w), params(params), BeamLoadBase(NULL, BeamLoadAxis::XAxis) {}
+        const std::vector<double>& params)
+        : w(w), params(params), BeamLoadBase(NULL, BeamLoadAxis::XAxis) {}
 
     double axial_force(double x);
     double N0();
@@ -401,21 +439,23 @@ class DynamicAccelLoad {
 public:
     double timestep;
     Vector Direction;
-	std::vector<double> Accels;
+    std::vector<double> Accels;
 
     size_t DataCount() {
-		return Accels.size();
+        return Accels.size();
     }
 
-	DynamicAccelLoad(double timestep, Vector Direction, std::vector<double> Accels)
-		: timestep(timestep), Direction(Direction), Accels(Accels) {
-	}
-	DynamicAccelLoad(double timestep, double x, double y, double z, std::vector<double> Accels)
-		: timestep(timestep), Direction(x, y, z), Accels(Accels) {
-	}
-	DynamicAccelLoad(double timestep, double x, double y, double z)
-		: timestep(timestep), Direction(x, y, z) {
-	}
+    DynamicAccelLoad() : timestep(0), Direction(0, 0, 0) {};
+
+    DynamicAccelLoad(double timestep, Vector Direction, std::vector<double> Accels)
+        : timestep(timestep), Direction(Direction), Accels(Accels) {
+    }
+    DynamicAccelLoad(double timestep, double x, double y, double z, std::vector<double> Accels)
+        : timestep(timestep), Direction(x, y, z), Accels(Accels) {
+    }
+    DynamicAccelLoad(double timestep, double x, double y, double z)
+        : timestep(timestep), Direction(x, y, z) {
+    }
 };
 
 

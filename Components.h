@@ -1,7 +1,7 @@
 #ifndef _COMPONENTS_
 #define _COMPONENTS_
 
-#ifndef SWIGCSHARP
+#ifndef SWIG
 #include<iostream>
 #include <cmath>
 #include <vector>
@@ -38,6 +38,7 @@ public:
     Vector operator-(const Vector v1) { return subtract(*this, v1); }
     double operator*(const Vector v1) { return multiply(*this, v1); }
     Vector operator*(const double v1) { return multiply(*this, v1); }
+    friend Vector operator*(const double v1, const Vector v0) { return multiply(v0, v1); }
 
 	Eigen::Vector3d toEigen() const {
 		return Eigen::Vector3d(x, y, z);
@@ -253,6 +254,7 @@ public:
     double Iyz = 0;
     double K;
 
+    Section() : A(0), Iy(0), Iz(0), K(0) {};
     Section(double A, double Iy, double Iz, double K)
         : A(A), Iy(Iy), Iz(Iz), K(K){};
 };
@@ -333,6 +335,7 @@ public:
 	//double Mass = 0;
 	NodeMass MassData;
 
+    Node() : id(-1), Location(0, 0, 0) {};
     Node(int id, double x, double y, double z)
         : id(id), Location(x, y, z) {};
     Node(double x, double y, double z) : Location(x, y, z) {};

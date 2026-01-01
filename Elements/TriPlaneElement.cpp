@@ -142,6 +142,7 @@ void TriPlaneElement::AssembleMatrix(Eigen::SparseMatrix<double> &mat, Eigen::Ma
     }
 }
 
+// 非推奨: GetStiffnessTriplets()を使用してください（coeffRef方式は非効率）
 void TriPlaneElement::AssembleStiffMatrix(Eigen::SparseMatrix<double> &mat)
 {
     AssembleMatrix(mat, StiffnessMatrix());
@@ -173,10 +174,69 @@ void TriPlaneElement::AssembleStiffMatrix(Eigen::SparseMatrix<double> &mat)
     // }
 }
 
+// 非推奨: GetGeometricStiffnessTriplets()を使用してください（coeffRef方式は非効率）
 void TriPlaneElement::AssembleGeometricStiffMatrix(
     Eigen::SparseMatrix<double> &mat, const std::vector<Displacement> &disp)
 {
     AssembleMatrix(mat, geometric_local_stiffness_matrix(disp));
+}
+
+void TriPlaneElement::GetStiffnessTriplets(std::vector<Eigen::Triplet<double>>& triplets)
+{
+    Eigen::MatrixXd K = StiffnessMatrix();
+    int total_dof = TotalDof();  // 9 for TriPlaneElement
+
+    // Map to global DOFs - TriPlaneElement uses 3 DOF/node (X,Y,Z)
+    int indices[9];
+    for (size_t i = 0; i < node_dof; i++)
+        indices[i] = Nodes[0]->id * 6 + i;
+    for (size_t i = 0; i < node_dof; i++)
+        indices[i + node_dof] = Nodes[1]->id * 6 + i;
+    for (size_t i = 0; i < node_dof; i++)
+        indices[i + node_dof * 2] = Nodes[2]->id * 6 + i;
+
+    // Add lower triangle to triplets
+    for (int i = 0; i < total_dof; i++) {
+        for (int j = 0; j <= i; j++) {
+            double value = K(i, j);
+            if (std::abs(value) > 1e-20) {
+                int row = indices[i];
+                int col = indices[j];
+                if (row > col) std::swap(row, col);
+                triplets.emplace_back(row, col, value);
+            }
+        }
+    }
+}
+
+void TriPlaneElement::GetGeometricStiffnessTriplets(
+    const std::vector<Displacement>& disp,
+    std::vector<Eigen::Triplet<double>>& triplets)
+{
+    Eigen::MatrixXd Kg = geometric_local_stiffness_matrix(disp);
+    int total_dof = TotalDof();  // 9 for TriPlaneElement
+
+    // Map to global DOFs - TriPlaneElement uses 3 DOF/node (X,Y,Z)
+    int indices[9];
+    for (size_t i = 0; i < node_dof; i++)
+        indices[i] = Nodes[0]->id * 6 + i;
+    for (size_t i = 0; i < node_dof; i++)
+        indices[i + node_dof] = Nodes[1]->id * 6 + i;
+    for (size_t i = 0; i < node_dof; i++)
+        indices[i + node_dof * 2] = Nodes[2]->id * 6 + i;
+
+    // Add lower triangle to triplets
+    for (int i = 0; i < total_dof; i++) {
+        for (int j = 0; j <= i; j++) {
+            double value = Kg(i, j);
+            if (std::abs(value) > 1e-20) {
+                int row = indices[i];
+                int col = indices[j];
+                if (row > col) std::swap(row, col);
+                triplets.emplace_back(row, col, value);
+            }
+        }
+    }
 }
 
 void TriPlaneElement::AssembleMassMatrix(Eigen::SparseMatrix<double> &mat)

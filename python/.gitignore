@@ -1,0 +1,22 @@
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# SWIG generated files
+femnet/_femnet.pyd
+femnet/_femnet.so
+femnet/_femnet*.so
+femnet/femnet.py
+femnet/fem_pythonPYTHON_wrap.cxx
+femnet/fem_pythonPYTHON_wrap.h
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+*.egg
+
+# Virtual environments
+venv/
+.venv/

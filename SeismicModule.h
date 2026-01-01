@@ -1,7 +1,7 @@
 #ifndef SEISMIC_MODULE_H
 #define SEISMIC_MODULE_H
 
-#ifndef SWIGCSHARP
+#ifndef SWIG
 #include <vector>
 #endif
 

@@ -53,6 +53,7 @@ struct LinearStaticDeformFactor
 public:
     std::shared_ptr<FELinearStaticOp> op;
     double factor;
+    LinearStaticDeformFactor() : op(nullptr), factor(0.0) {};
     LinearStaticDeformFactor(std::shared_ptr<FELinearStaticOp> op, double factor)
         : op(op), factor(factor) {
           };
@@ -63,8 +64,11 @@ class LinearStaticCombinationOperator : public FEDeformOperator
 public:
     std::vector<LinearStaticDeformFactor> cases;
     LinearStaticCombinationOperator() {};
-    LinearStaticCombinationOperator(std::vector<LinearStaticDeformFactor> cases)
-        : cases(cases) {
+
+    LinearStaticCombinationOperator(
+        std::shared_ptr<FEModel> model,
+        std::vector<LinearStaticDeformFactor> cases)
+        : FEDeformOperator(model), cases(cases) {
           };
 
     // FEDeformCase を介して継承されました

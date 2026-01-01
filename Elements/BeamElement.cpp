@@ -48,15 +48,71 @@ void BeamElement::AssembleMatrix(Eigen::SparseMatrix<double> &mat, Eigen::Matrix
     }
 }
 
+// 非推奨: GetStiffnessTriplets()を使用してください（coeffRef方式は非効率）
 void BeamElement::AssembleStiffMatrix(Eigen::SparseMatrix<double> &mat)
 {
     AssembleMatrix(mat, StiffnessMatrix());
 }
 
+// 非推奨: GetGeometricStiffnessTriplets()を使用してください（coeffRef方式は非効率）
 void BeamElement::AssembleGeometricStiffMatrix(
     Eigen::SparseMatrix<double> &mat, const std::vector<Displacement> &disp)
 {
     AssembleMatrix(mat, geometric_local_stiffness_matrix(disp));
+}
+
+void BeamElement::GetStiffnessTriplets(std::vector<Eigen::Triplet<double>>& triplets)
+{
+    Eigen::MatrixXd K = StiffnessMatrix();
+    int total_dof = TotalDof();  // 12 for BeamElement
+
+    // Map to global DOFs - BeamElement uses all 6 DOF/node
+    int indices[12];
+    for (size_t i = 0; i < 6; i++)
+        indices[i] = Nodes[0]->id * 6 + i;
+    for (size_t i = 0; i < 6; i++)
+        indices[i + 6] = Nodes[1]->id * 6 + i;
+
+    // Add lower triangle to triplets
+    for (int i = 0; i < total_dof; i++) {
+        for (int j = 0; j <= i; j++) {
+            double value = K(i, j);
+            if (std::abs(value) > 1e-20) {
+                int row = indices[i];
+                int col = indices[j];
+                if (row > col) std::swap(row, col);
+                triplets.emplace_back(row, col, value);
+            }
+        }
+    }
+}
+
+void BeamElement::GetGeometricStiffnessTriplets(
+    const std::vector<Displacement>& disp,
+    std::vector<Eigen::Triplet<double>>& triplets)
+{
+    Eigen::MatrixXd Kg = geometric_local_stiffness_matrix(disp);
+    int total_dof = TotalDof();  // 12 for BeamElement
+
+    // Map to global DOFs - BeamElement uses all 6 DOF/node
+    int indices[12];
+    for (size_t i = 0; i < 6; i++)
+        indices[i] = Nodes[0]->id * 6 + i;
+    for (size_t i = 0; i < 6; i++)
+        indices[i + 6] = Nodes[1]->id * 6 + i;
+
+    // Add lower triangle to triplets
+    for (int i = 0; i < total_dof; i++) {
+        for (int j = 0; j <= i; j++) {
+            double value = Kg(i, j);
+            if (std::abs(value) > 1e-20) {
+                int row = indices[i];
+                int col = indices[j];
+                if (row > col) std::swap(row, col);
+                triplets.emplace_back(row, col, value);
+            }
+        }
+    }
 }
 
 std::vector<NodeLoadData> BeamElement::InertialForceToNodeLoadData(Eigen::Vector3d accel_vec)
@@ -70,9 +126,6 @@ std::vector<NodeLoadData> BeamElement::InertialForceToNodeLoadData(Eigen::Vector
         accel_vec.x(), accel_vec.y(), accel_vec.z(), 0, 0, 0;
 
     f = m * f;
-
-    std::cout << "Mass Matrix: " << m.diagonal() << std::endl;
-    // std::cout << "BodyforceToNodeLoadData: " << f.transpose() << std::endl;
 
     std::vector<NodeLoadData> loads;
     loads.push_back(NodeLoadData(Nodes[0]->id, f(0), f(1), f(2), f(3), f(4), f(5)));

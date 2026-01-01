@@ -1147,6 +1147,7 @@ void QuadPlateElement::AssembleMatrix(Eigen::SparseMatrix<double> &mat, Eigen::M
     }
 }
 
+// 非推奨: GetStiffnessTriplets()を使用してください（coeffRef方式は非効率）
 void QuadPlateElement::AssembleStiffMatrix(Eigen::SparseMatrix<double> &mat)
 {
     AssembleMatrix(mat, StiffnessMatrix());
@@ -1174,10 +1175,63 @@ void QuadPlateElement::AssembleStiffMatrix(Eigen::SparseMatrix<double> &mat)
     // }
 }
 
+// 非推奨: GetGeometricStiffnessTriplets()を使用してください（coeffRef方式は非効率）
 void QuadPlateElement::AssembleGeometricStiffMatrix(
     Eigen::SparseMatrix<double> &mat, const std::vector<Displacement> &disp)
 {
     AssembleMatrix(mat, GeometricStiffnessMatrix(disp));
+}
+
+void QuadPlateElement::GetStiffnessTriplets(std::vector<Eigen::Triplet<double>>& triplets)
+{
+    Eigen::MatrixXd K = StiffnessMatrix();
+    int total_dof = TotalDof();  // 24 for QuadPlateElement
+
+    // Map to global DOFs - QuadPlateElement uses all 6 DOF/node
+    int indices[24];
+    for (size_t i = 0; i < node_num; i++)
+        for (size_t j = 0; j < node_dof; j++)
+            indices[node_dof * i + j] = Nodes[i]->id * 6 + j;
+
+    // Add upper triangle to triplets
+    for (int i = 0; i < total_dof; i++) {
+        for (int j = 0; j <= i; j++) {
+            double value = K(i, j);
+            if (std::abs(value) > 1e-20) {
+                int row = indices[i];
+                int col = indices[j];
+                if (row > col) std::swap(row, col);
+                triplets.emplace_back(row, col, value);
+            }
+        }
+    }
+}
+
+void QuadPlateElement::GetGeometricStiffnessTriplets(
+    const std::vector<Displacement>& disp,
+    std::vector<Eigen::Triplet<double>>& triplets)
+{
+    Eigen::MatrixXd Kg = GeometricStiffnessMatrix(disp);
+    int total_dof = TotalDof();  // 24 for QuadPlateElement
+
+    // Map to global DOFs - QuadPlateElement uses all 6 DOF/node
+    int indices[24];
+    for (size_t i = 0; i < node_num; i++)
+        for (size_t j = 0; j < node_dof; j++)
+            indices[node_dof * i + j] = Nodes[i]->id * 6 + j;
+
+    // Add upper triangle to triplets
+    for (int i = 0; i < total_dof; i++) {
+        for (int j = 0; j <= i; j++) {
+            double value = Kg(i, j);
+            if (std::abs(value) > 1e-20) {
+                int row = indices[i];
+                int col = indices[j];
+                if (row > col) std::swap(row, col);
+                triplets.emplace_back(row, col, value);
+            }
+        }
+    }
 }
 
 void QuadPlateElement::AssembleMassMatrix(Eigen::SparseMatrix<double> &mat)

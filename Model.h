@@ -19,6 +19,7 @@
 
 #include "LoadComponent.h"
 #include "RigidLink.h"
+#include "SparseMatrixUtils.h"
 
 #define PI 3.141592653589793238462643
 
@@ -53,81 +54,9 @@ private:
     Eigen::SparseMatrix<double> AssembleGeometricStiffnessMatrix(
         const std::vector<Displacement> &displacements);
 
-    /// <summary>
-    /// ┌                  ┐
-    /// │ free  free_fixed │  *
-    /// │  *      fixed    │ { fixed_indices }
-    /// └                  ┘
-    /// </summary>
-    /// <param name="A"></param>
-    /// <param name="fixed_indices"></param>
-    /// <param name="free_matrix"></param>
-    static void splitMatrixWithResize(
-        const Eigen::SparseMatrix<double>& A,
-        const std::vector<int>& fixed_indices,
-        Eigen::SparseMatrix<double>& free_matrix);
-
-    /// <summary>
-    /// 対称疎行列を3つのグループに基づいて3x3ブロックに分割
-    /// 第1グループ: indices_group1で指定
-    /// 第2グループ: indices_group2で指定
-    /// 第3グループ: 上記以外の全インデックス
-    /// 対称性を考慮し、上三角の6ブロック（11, 12, 13, 22, 23, 33）のみ出力
-    /// </summary>
-    /// <param name="A">入力対称疎行列</param>
-    /// <param name="indices_group1">第1グループのインデックス配列</param>
-    /// <param name="indices_group2">第2グループのインデックス配列</param>
-    /// <param name="mat_11">出力: グループ1×グループ1ブロック</param>
-    /// <param name="mat_12">出力: グループ1×グループ2ブロック</param>
-    /// <param name="mat_13">出力: グループ1×グループ3ブロック</param>
-    /// <param name="mat_22">出力: グループ2×グループ2ブロック</param>
-    /// <param name="mat_23">出力: グループ2×グループ3ブロック</param>
-    /// <param name="mat_33">出力: グループ3×グループ3ブロック</param>
-    static void splitMatrix3x3(
-        const Eigen::SparseMatrix<double>& A,
-        const std::vector<int>& indices_group1,
-        const std::vector<int>& indices_group2,
-        Eigen::SparseMatrix<double>& mat_11,
-        Eigen::SparseMatrix<double>& mat_12,
-        Eigen::SparseMatrix<double>& mat_13,
-        Eigen::SparseMatrix<double>& mat_22,
-        Eigen::SparseMatrix<double>& mat_23,
-        Eigen::SparseMatrix<double>& mat_33);
-
-    /// <summary>
-    /// 2x2ブロック行列を単一の対称疎行列に結合
-    /// 入力は上三角の3ブロック（free_free, free_fixed, fixed_fixed）
-    /// 対称性を考慮し、下三角ブロック（fixed_free）も自動生成
-    /// インデックス順: freeグループ→fixedグループの順序で配置
-    /// </summary>
-    /// <param name="free_free">入力: free×freeブロック</param>
-    /// <param name="free_fixed">入力: free×fixedブロック</param>
-    /// <param name="fixed_fixed">入力: fixed×fixedブロック</param>
-    /// <param name="A">出力: 結合された対称疎行列</param>
-    static void mergeMatrixWithResize(
-        const Eigen::SparseMatrix<double>& free_free,
-        const Eigen::SparseMatrix<double>& free_fixed,
-        const Eigen::SparseMatrix<double>& fixed_fixed,
-        Eigen::SparseMatrix<double>& A);
-
 	friend class DynamicAnalysis;
     friend class FEBucklingAnalysis;
 	friend class FEVibrateResult;
-
-    /// <summary>
-    /// Indexに基づいて行列を分割する関数
-    /// </summary>
-    /// <param name="A"></param>
-    /// <param name="fixed_indices"></param>
-    /// <param name="free_matrix"></param>
-    /// <param name="free_fixed_matrix"></param>
-    /// <param name="fixed_matrix"></param>
-    static void splitMatrixWithResize(
-        const Eigen::SparseMatrix<double>& A,
-        const std::vector<int>& fixed_indices,
-        Eigen::SparseMatrix<double>& free_matrix,
-        Eigen::SparseMatrix<double>& free_fixed_matrix,
-        Eigen::SparseMatrix<double>& fixed_matrix);
 
 public:
     double GraityAccel = 9806.65;

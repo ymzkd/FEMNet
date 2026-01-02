@@ -260,7 +260,6 @@ public:
 };
 
 // True if Fixed
-//struct Support {
 class Support {
 public:
     static const bool Fix = true;

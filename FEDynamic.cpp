@@ -114,8 +114,8 @@ bool DynamicAnalysis::Initialize()
     // StiffnessMatrixの組み立て
     free_indices = model->FreeIndices();
     fixed_indices = model->FixIndices();
-    FEModel::splitMatrixWithResize(model->AssembleStiffnessMatrix(), fixed_indices, matK_aa, matK_ab, matK_bb);
-    FEModel::splitMatrixWithResize(model->AssembleMassMatrix(), fixed_indices, matM_aa, matM_ab, matM_bb);
+    SparseMatrixUtils::splitMatrixWithResize(model->AssembleStiffnessMatrix(), fixed_indices, matK_aa, matK_ab, matK_bb);
+    SparseMatrixUtils::splitMatrixWithResize(model->AssembleMassMatrix(), fixed_indices, matM_aa, matM_ab, matM_bb);
 
     // 減衰マトリクスの組み立て
     bool damp_init = damp_initializer->Initialize(this);

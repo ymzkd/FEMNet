@@ -39,10 +39,10 @@ int FEBucklingAnalysis::SolveBuckling()
         k_full += model->AssembleGeometricStiffnessMatrix(InitailDeformOp->GetDisplacements());
 
     Eigen::SparseMatrix<double> ka; //, kb, kc;
-    FEModel::splitMatrixWithResize(k_full, fixed_indices, ka);
+    SparseMatrixUtils::splitMatrixWithResize(k_full, fixed_indices, ka);
 
     Eigen::SparseMatrix<double> kg; //, kb, kc;
-    FEModel::splitMatrixWithResize(
+    SparseMatrixUtils::splitMatrixWithResize(
         model->AssembleGeometricStiffnessMatrix(deform_case->GetDisplacements()),
         fixed_indices, kg);
 

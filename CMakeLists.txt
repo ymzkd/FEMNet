@@ -93,6 +93,8 @@ endif()
 set(FEMNET_SOURCES
     Components.cpp
     Model.cpp
+    SparseMatrixUtils.cpp
+    RigidLink.cpp
     Elements/ElementBase.cpp
     Elements/BarElement.cpp
     Elements/TrussElement.cpp

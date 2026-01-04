@@ -19,7 +19,7 @@ cd build-csharp
 cmake .. -DBUILD_CSHARP=ON -DBUILD_PYTHON=OFF
 
 # ビルド（変更後は毎回実行）
-cmake --build . --config Release
+cmake --build .
 ```
 
 生成物: `fem.dll`（ネイティブライブラリ）と`*.cs`ファイルが`../../FEMNet/`に出力されます。
@@ -33,7 +33,7 @@ cd build-python
 cmake .. -DBUILD_CSHARP=OFF -DBUILD_PYTHON=ON
 
 # ビルド
-cmake --build . --config Release
+cmake --build .
 
 # Pythonパッケージのインストール（開発モード）
 cd ../python
@@ -48,7 +48,7 @@ pip install -e .
 mkdir build
 cd build
 cmake ..
-cmake --build . --config Release
+cmake --build .
 ```
 
 生成物: `sampleapp.exe` - C++ライブラリの動作確認用

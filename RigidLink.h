@@ -5,35 +5,37 @@
 
 #ifndef SWIG
 #include <vector>
+#include <algorithm>
 
 #include <Eigen/Dense>
 #endif
 
-struct RigidLink {
+struct RigidLink : public DOFFlags {
 public:
+    // 仮想的な節点なのでNodeじゃなくて座標情報だけでも良いかも
     Node *Master;
     std::vector<Node> Slaves;
-    bool fixflags[6];
 
-    RigidLink() : Master(nullptr) {
-        for (int i = 0; i < 6; i++)
-            fixflags[i] = false;
-    }
+    RigidLink() : DOFFlags(), Master(nullptr) {}
 
-    size_t SlaveNum() {
+    RigidLink(bool ux, bool uy, bool uz, bool rx, bool ry, bool rz)
+        : DOFFlags(ux, uy, uz, rx, ry, rz), Master(nullptr) {}
+
+    size_t
+    SlaveNum()
+    {
         return Slaves.size();
     }
 
     size_t LinkNum(){
         size_t count = 0;
-        for (bool flag : fixflags) {
-            if (flag) count++;
+        for (int i = 0; i < 6; i++) {
+            if (flags[i]) count++;
         }
         return count;
     }
 
     Eigen::MatrixXd TransformationMatrix();
-
 
 };
 
@@ -49,7 +51,7 @@ public:
         for (RigidLink& link : links) {
             for (Node& slave : link.Slaves) {
                 for (size_t i = 0; i < 6; i++)
-                    if (link.fixflags[i])
+                    if (link.flags[i])
                         count++;
             }
         }
@@ -61,7 +63,7 @@ public:
         for (RigidLink& link : links) {
             for (Node& slave : link.Slaves) {
                 for (size_t i = 0; i < 6; i++)
-                    if (link.fixflags[i])
+                    if (link.flags[i])
                         indices.push_back(slave.id * 6 + i);
             }
         }
@@ -72,7 +74,7 @@ public:
         int count = 0;
         for (RigidLink& link : links) {
             for (size_t i = 0; i < 6; i++)
-                if (link.fixflags[i])
+                if (link.flags[i])
                     count++;
         }
         return count;
@@ -83,7 +85,7 @@ public:
         std::vector<int> indices;
         for (RigidLink& link : links) {
             for (size_t i = 0; i < 6; i++)
-                if (link.fixflags[i])
+                if (link.flags[i])
                     indices.push_back(link.Master->id * 6 + i);
         }
         return indices;

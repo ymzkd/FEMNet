@@ -12,6 +12,7 @@
 
 // Shared pointer declarations for base classes
 %shared_ptr(FEModel);
+%shared_ptr(RigidLinks);
 // Load Pointer
 %shared_ptr(LoadBase);
 %shared_ptr(PlateLoad);
@@ -47,6 +48,9 @@
 %ignore NodeLoadData::Mx();
 %ignore NodeLoadData::My();
 %ignore NodeLoadData::Mz();
+
+// Ignore DOFFlags internal array (use accessor methods only)
+%ignore DOFFlags::flags;
 
 // Ignore Eigen types that cannot be wrapped
 %ignore Eigen::SparseMatrix;

@@ -19,7 +19,9 @@
 
 #include "LoadComponent.h"
 #include "RigidLink.h"
+#ifndef SWIG
 #include "SparseMatrixUtils.h"
+#endif
 
 #define PI 3.141592653589793238462643
 
@@ -59,6 +61,8 @@ private:
 	friend class FEVibrateResult;
 
 public:
+    FEModel();
+
     double GraityAccel = 9806.65;
 
     /// <summary>
@@ -86,7 +90,7 @@ public:
     std::vector<Section> Sections;
     
     std::vector<std::shared_ptr<ElementBase>> Elements;
-    RigidLinks RigidLinkData;
+    std::shared_ptr<RigidLinks> RigidLinkData;
     
     void add_element(BeamElement data);
     void add_element(ComplexBeamElement data);

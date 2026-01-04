@@ -19,14 +19,15 @@ Eigen::MatrixXd RigidLink::TransformationMatrix()
         TB(1,3) = -dzi; TB(1,5) = dxi;
         TB(2,3) = dyi; TB(2,4) = -dxi;
 
-        // fixflagsがtrueの成分だけを抽出
+
+        // flagsがtrueの成分だけを抽出
         Eigen::MatrixXd extractedBlock(linkNum, linkNum);
         size_t row_idx = 0;
         for (size_t r = 0; r < 6; r++) {
-            if (fixflags[r]) {
+            if (flags[r]) {
                 size_t col_idx = 0;
                 for (size_t c = 0; c < 6; c++) {
-                    if (fixflags[c]) {
+                    if (flags[c]) {
                         extractedBlock(row_idx, col_idx) = TB(r, c);
                         col_idx++;
                     }

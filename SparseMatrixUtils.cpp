@@ -230,8 +230,6 @@ void SparseMatrixUtils::splitMatrix3x3(
         }
     }
 
-    std::cout << "Collect Triplets done" << std::endl;
-
     // 疎行列の再構築
     mat_11.resize(size_1, size_1);
     mat_12.resize(size_1, size_2);
@@ -240,16 +238,12 @@ void SparseMatrixUtils::splitMatrix3x3(
     mat_23.resize(size_2, size_3);
     mat_33.resize(size_3, size_3);
 
-    std::cout << "Matrix Resize done" << std::endl;
-
     mat_11.setFromTriplets(trip_11.begin(), trip_11.end());
     mat_12.setFromTriplets(trip_12.begin(), trip_12.end());
     mat_13.setFromTriplets(trip_13.begin(), trip_13.end());
     mat_22.setFromTriplets(trip_22.begin(), trip_22.end());
     mat_23.setFromTriplets(trip_23.begin(), trip_23.end());
     mat_33.setFromTriplets(trip_33.begin(), trip_33.end());
-
-    std::cout << "Set Triplets done" << std::endl;
 }
 
 // mergeMatrixWithResize: Model.cpp lines 144-214からコピー

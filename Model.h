@@ -68,7 +68,8 @@ public:
     /// <summary>
     /// 非拘束自由度の全自由度におけるインデックスを格納した配列を返す関数
     /// </summary>
-    std::vector<int> FreeIndices();
+    std::vector<int> FreeIndices(bool rigid_link = false);
+    
 
     /// <summary>
     /// 剛体連結されている自由度の全自由度におけるインデックスを格納した配列を返す関数

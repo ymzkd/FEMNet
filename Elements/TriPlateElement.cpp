@@ -589,7 +589,8 @@ Eigen::MatrixXd TriPlateElement::NodeConsistentMass()
     //	0.1654099273984100, 0.0374774207500880, 0.7971126518600710,
     //	0.0374774207500880, 0.1654099273984100, 0.7971126518600710;
 
-    double t3 = thickness.plane_thick * thickness.plane_thick * thickness.plane_thick;
+    double t1 = (thickness.weight_thick == 0) ? thickness.plane_thick : thickness.weight_thick;
+    double t3 = t1 * t1 * t1;
     double area = Area();
 
     Eigen::MatrixXd M(total_dof, total_dof);
@@ -607,7 +608,7 @@ Eigen::MatrixXd TriPlateElement::NodeConsistentMass()
         0, 1.0 / 12, 0, 0, 1.0 / 12, 0, 0, 1.0 / 6, 0,
         0, 0, 1.0 / 12, 0, 0, 1.0 / 12, 0, 0, 1.0 / 6;
 
-    Mp *= Mat.dense * thickness.plane_thick * area;
+    Mp *= Mat.dense * t1 * area;
     // std::cout << "Mp: \n" << Mp << std::endl;
     // std::cout << "area: " << area << ", " << Mat.dense << ", " << thickness.plane_thick << std::endl;
     // Eigen::Vector<int, 9> shape_indices;

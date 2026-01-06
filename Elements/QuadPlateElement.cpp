@@ -810,8 +810,8 @@ Eigen::MatrixXd QuadPlateElement::NodeConsistentMass()
     // Eigen::VectorXd intg_weights(5), intg_params(5);
     // intg_weights << 0.2369268851, 0.4786286705, 0.5688888889, 0.4786286705, 0.2369268851;
     // intg_params << -0.9061798459, -0.5384693101, 0, 0.5384693101, 0.9061798459;
-
-    double t3 = thickness.plane_thick * thickness.plane_thick * thickness.plane_thick;
+    double t1 = (thickness.weight_thick == 0) ? thickness.plane_thick : thickness.weight_thick;
+    double t3 = t1 * t1 * t1;
 
     Eigen::MatrixXd M(total_dof, total_dof);
     M.setZero();
@@ -843,7 +843,7 @@ Eigen::MatrixXd QuadPlateElement::NodeConsistentMass()
             MassComp = shape_mat.transpose() * shape_mat;
             for (size_t j = 0; j < 12; j++)
                 for (size_t k = 0; k < 12; k++)
-                    M(shape_indices[j], shape_indices[k]) += MassComp(j, k) * intg_weights(ix) * intg_weights(iy) * detJ * Mat.dense * thickness.plane_thick;
+                    M(shape_indices[j], shape_indices[k]) += MassComp(j, k) * intg_weights(ix) * intg_weights(iy) * detJ * Mat.dense * t1;
 
             MassComp = H_mat.transpose() * H_mat;
             for (size_t j = 0; j < 12; j++)

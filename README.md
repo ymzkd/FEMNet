@@ -44,7 +44,7 @@ cmake --build .
 ```bash
 mkdir build-csharp && cd build-csharp
 cmake .. -DBUILD_CSHARP=ON
-cmake --build .
+cmake --build . {--config Release}
 ```
 
 生成されるファイル:

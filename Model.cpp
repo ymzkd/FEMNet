@@ -139,16 +139,23 @@ int FEModel::SolveVibration(const int nev, std::vector<double>& eigen_values,
     return nconv;
 }
 
-std::vector<int> FEModel::FreeIndices()
+std::vector<int> FEModel::FreeIndices(bool rigid_link)
 {
     std::vector<int> slave_indices = RigidLinkData->SlaveDOFIndices();
     std::unordered_set<int> slaveid_set(slave_indices.begin(), slave_indices.end());
     std::vector<int> indices;
     int idx = 0;
     for (Node n : Nodes)
-        for (const bool f : n.Fix.isdof_fixed()) {
+        for (const bool fixed : n.Fix.isdof_fixed()) {
+            
             bool is_slave = (slaveid_set.find(idx) != slaveid_set.end());
-            if (!f && !is_slave) indices.push_back(idx);
+            if (rigid_link){
+                if (!fixed && !is_slave)
+                    indices.push_back(idx);
+            }
+            else if (!fixed)
+                indices.push_back(idx);
+            
             idx++;
         }
     return indices;
@@ -472,7 +479,7 @@ void FEModel::SolveLinearStatic(std::vector<std::shared_ptr<LoadBase>>& loads,
     }
 
     std::vector<int> slave_indices = RigidLinkData->SlaveDOFIndices();
-    std::vector<int> free_indices = FreeIndices();
+    std::vector<int> free_indices = FreeIndices(true);
     std::vector<int> fixed_indices = FixIndices();
 
     Eigen::SparseMatrix<double> m11, m12, m13, m22, m23, m33;

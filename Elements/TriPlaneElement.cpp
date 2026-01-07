@@ -92,8 +92,24 @@ std::vector<NodeLoadData> TriPlaneElement::InertialForceToNodeLoadData(Eigen::Ve
 
 Eigen::MatrixXd TriPlaneElement::NodeConsistentMass()
 {
-    return Eigen::MatrixXd::Identity(total_dof, total_dof);
+    double t1 = (thickness.weight_thick == 0) ? thickness.plane_thick : thickness.weight_thick;
+
+    Eigen::Matrix<double, total_dof, total_dof> MM;
+    MM << 2, 0, 0, 1, 0, 0, 1, 0, 0,
+        0, 2, 0, 0, 1, 0, 0, 1, 0,
+        0, 0, 2, 0, 0, 1, 0, 0, 1,
+        1, 0, 0, 2, 0, 0, 1, 0, 0,
+        0, 1, 0, 0, 2, 0, 0, 1, 0,
+        0, 0, 1, 0, 0, 2, 0, 0, 1,
+        1, 0, 0, 1, 0, 0, 2, 0, 0,
+        0, 1, 0, 0, 1, 0, 0, 2, 0,
+        0, 0, 1, 0, 0, 1, 0, 0, 2;
+    
+    MM *= t1 * Mat.dense * Area() / 12.0;
+    Eigen::MatrixXd TrMat = trans_matrix();
+    return TrMat.transpose() * MM * TrMat;
 }
+
 
 double TriPlaneElement::Area()
 {

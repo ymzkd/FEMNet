@@ -181,7 +181,35 @@ Eigen::MatrixXd QuadPlaneElement::trans_matrix()
 
 Eigen::MatrixXd QuadPlaneElement::NodeConsistentMass()
 {
-    return Eigen::MatrixXd::Identity(total_dof, total_dof);
+    // 3-Point Gauss Quadrature
+    const Eigen::Vector3d intg_weights(5.0 / 9.0, 8.0 / 9.0, 5.0 / 9.0);
+    const Eigen::Vector3d intg_params(-sqrt(3.0 / 5.0), 0, sqrt(3.0 / 5.0));
+
+    double t1 = (thickness.weight_thick == 0) ? thickness.plane_thick : thickness.weight_thick;
+    Eigen::MatrixXd M(total_dof, total_dof);
+    M.setZero();
+
+    for (size_t ix = 0; ix < intg_params.size(); ix++)
+    {
+        for (size_t iy = 0; iy < intg_params.size(); iy++)
+        {
+            double detJ = JMatrix(intg_params(ix), intg_params(iy)).determinant();
+
+            // ui, vi, wi...
+            Eigen::Vector4d spf = ShapeFunction4(intg_params(ix), intg_params(iy));
+            Eigen::MatrixXd shape_mat = Eigen::MatrixXd::Zero(3, 12);
+            shape_mat << spf(0), 0, 0, spf(1), 0, 0, spf(2), 0, 0, spf(3), 0, 0,
+                0, spf(0), 0, 0, spf(1), 0, 0, spf(2), 0, 0, spf(3), 0,
+                0, 0, spf(0), 0, 0, spf(1), 0, 0, spf(2), 0, 0, spf(3);
+
+            Eigen::Matrix<double, 12, 12> MassComp;
+            MassComp = shape_mat.transpose() * shape_mat;
+            M += MassComp * intg_weights(ix) * intg_weights(iy) * detJ * Mat.dense * t1;
+        }
+    }
+
+    Eigen::MatrixXd trMat = trans_matrix();
+    return trMat.transpose() * M * trMat;
 }
 
 // std::vector<NodeLoadData> QuadPlaneElement::BodyforceToNodeLoadData(Eigen::Vector3d accel_vec)

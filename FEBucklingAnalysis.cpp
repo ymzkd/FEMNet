@@ -51,13 +51,6 @@ int FEBucklingAnalysis::SolveBuckling()
 
         int ncv = 2 * computed_num + 1; // Recommended value
 
-        // using OpType = Spectra::SymShiftInvert<double, Eigen::Sparse, Eigen::Sparse, Eigen::Upper>;
-        // using BOpType = Spectra::SparseSymMatProd<double, Eigen::Upper>;
-        // OpType A_op(ka, kg);
-        // BOpType B_op(kg);
-        // Spectra::SymGEigsShiftSolver<OpType, BOpType, Spectra::GEigsMode::Buckling>
-        //    geigs(A_op, B_op, computed_num, ncv, 0.1);
-
         using OpType = Spectra::SparseSymMatProd<double, Eigen::Upper>;
         using BOpType = Spectra::SparseCholesky<double, Eigen::Upper>;
         OpType A_op(-kg); // Invert
@@ -65,33 +58,15 @@ int FEBucklingAnalysis::SolveBuckling()
         Spectra::SymGEigsSolver<OpType, BOpType, Spectra::GEigsMode::Cholesky>
             geigs(A_op, B_op, computed_num, ncv);
 
-        //  using OpType = Spectra::SparseSymMatProd<double, Eigen::Upper>;
-        //  using BOpType = Spectra::SparseRegularInverse<double, Eigen::Upper>;
-        //  OpType A_op(kg);
-        //  BOpType B_op(ka);
-        //  Spectra::SymGEigsSolver<OpType, BOpType, Spectra::GEigsMode::RegularInverse>
-        //   geigs(A_op, B_op, computed_num, ncv);
-
         geigs.init();
-        // int nconv = geigs.compute(Spectra::SortRule::LargestMagn);
-        // int nconv = geigs.compute(Spectra::SortRule::SmallestMagn);
-        //  int nconv = geigs.compute(Spectra::SortRule::SmallestAlge);
         int nconv = geigs.compute(Spectra::SortRule::LargestAlge);
 
         if (geigs.info() == Spectra::CompInfo::Successful)
         {
             Eigen::MatrixXd part_eigen_vectors = geigs.eigenvectors();
-            // Eigen::MatrixXd tmp_mat2 = -kg * u1s;
-            // Eigen::MatrixXd u2s = solver.solve(tmp_mat2);
             Eigen::MatrixXd eigs_vector = Eigen::MatrixXd::Zero(model->DOFNum(), computed_num);
             for (size_t i = 0; i < free_indices.size(); i++)
-            {
                 eigs_vector.row(free_indices[i]) = part_eigen_vectors.row(i);
-                // for (size_t i = 0; i < other_indices.size(); i++)
-                //     eigs_vector.row(free_indices[other_indices[i]]) = u1s.row(i);
-                // for (size_t i = 0; i < shrink_indices.size(); i++)
-                //     eigs_vector.row(free_indices[shrink_indices[i]]) = u2s.row(i);
-            }
 
             for (size_t i = 0; i < nconv; i++)
             {
@@ -139,13 +114,7 @@ int FEBucklingAnalysis::SolveBuckling()
             Eigen::MatrixXd part_eigen_vectors = solver.eigenvectors();
             Eigen::MatrixXd eigs_vector = Eigen::MatrixXd::Zero(model->DOFNum(), computed_num);
             for (size_t i = 0; i < free_indices.size(); i++)
-            {
                 eigs_vector.row(free_indices[i]) = part_eigen_vectors.row(i);
-                // for (size_t i = 0; i < other_indices.size(); i++)
-                //     eigs_vector.row(free_indices[other_indices[i]]) = u1s.row(i);
-                // for (size_t i = 0; i < shrink_indices.size(); i++)
-                //     eigs_vector.row(free_indices[shrink_indices[i]]) = u2s.row(i);
-            }
 
             for (size_t i = 0; i < nconv; i++)
             {
@@ -192,25 +161,11 @@ int FEBucklingAnalysis::SolveBuckling()
                 eigs.push_back(1.0 / eig);
             }
 
-            // for (size_t i = 0; i < mode_num; i++)
-            //{
-            //     double eig = eigs_arr[eigs_arr.size() - i - 1];
-            //     eigs.push_back(1.0 / eig);
-            // }
-
-            //         for (double v : solver.eigenvalues()) {
-            //             eigs.push_back(1.0 / v);
-            //}
-
             Eigen::MatrixXd part_eigen_vectors = solver.eigenvectors();
-            // Eigen::MatrixXd tmp_mat2 = -kg * u1s;
-            // Eigen::MatrixXd u2s = solver.solve(tmp_mat2);
             Eigen::MatrixXd eigs_vector = Eigen::MatrixXd::Zero(model->DOFNum(), mode_num);
             for (size_t j = 0; j < mode_num; j++)
-            {
                 for (size_t i = 0; i < free_indices.size(); i++)
                     eigs_vector(free_indices[i], j) = part_eigen_vectors(i, j);
-            }
         }
         else
         {

@@ -115,8 +115,9 @@ namespace std {
     %template(VectorNodeBodyForce) std::vector<NodeBodyForce>;
     %template(VectorNodeLoadData) std::vector<NodeLoadData>;
 
-    // BeamStressData vector
+    // StressData vectors
     %template(VectorBeamStressData) std::vector<BeamStressData>;
+    %template(VectorPlateStressData) std::vector<PlateStressData>;
 
     // BeamPolyLoad vectors and lists (default constructors added)
     %template(VectorBeamPolyLoad) std::vector<BeamPolyLoad>;

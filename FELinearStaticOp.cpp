@@ -125,6 +125,18 @@ BeamStressData LinearStaticCombinationOperator::GetBeamStress(int eid, double p)
     return data;
 }
 
+std::vector<BeamStressData> LinearStaticCombinationOperator::GetBeamStressComponents(int eid, double p)
+{
+    std::vector<BeamStressData> results;
+    for (auto &c : cases)
+    {
+        BeamStressData s = c.op->GetBeamStress(eid, p);
+        s *= c.factor; // 係数を適用
+        results.push_back(s);
+    }
+    return results;
+}
+
 PlateStressData LinearStaticCombinationOperator::GetPlateStressData(int eid, double xi, double eta)
 {
     PlateStressData data;
@@ -137,6 +149,18 @@ PlateStressData LinearStaticCombinationOperator::GetPlateStressData(int eid, dou
     }
 
     return data;
+}
+
+std::vector<PlateStressData> LinearStaticCombinationOperator::GetPlateStressDataComponents(int eid, double xi, double eta)
+{
+    std::vector<PlateStressData> results;
+    for (auto &c : cases)
+    {
+        PlateStressData s = c.op->GetPlateStressData(eid, xi, eta);
+        s *= c.factor; // 演算子オーバーロード
+        results.push_back(s);
+    }
+    return results;
 }
 
 Displacement LinearStaticCombinationOperator::GetBeamDisplace(int eid, double p)

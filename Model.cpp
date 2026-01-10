@@ -41,18 +41,54 @@ FEModel::FEModel()
 {
 }
 
-int FEModel::SolveVibration(const int nev, std::vector<double>& eigen_values, 
+int FEModel::SolveVibration(const int nev, std::vector<double>& eigen_values,
     std::vector<std::vector<Displacement>>& mode_vectors)
 {
     int computed_num = nev;
 
-    std::vector<int> free_indices = FreeIndices();
+    // インデックスの取得（RigidLinkを考慮）
+    std::vector<int> slave_indices = RigidLinkData->SlaveDOFIndices();
+    std::vector<int> free_indices = FreeIndices(true);  // rigid_link=true
     std::vector<int> fixed_indices = FixIndices();
-    Eigen::SparseMatrix<double> ka; //, kb, kc;
-    SparseMatrixUtils::splitMatrixWithResize(AssembleStiffnessMatrix(), fixed_indices, ka);
-    Eigen::SparseMatrix<double> ma;
-    SparseMatrixUtils::splitMatrixWithResize(AssembleMassMatrix(), fixed_indices, ma);
 
+    // 変換行列の取得
+    Eigen::SparseMatrix<double> linkTransMat =
+        RigidLinkData->TransformationMatrix().sparseView(1e-10);
+    int master_dof_num = linkTransMat.cols();
+
+    Eigen::SparseMatrix<double> ka, ma;
+
+    if (master_dof_num > 0) {
+        // RigidLinkがある場合: 3x3ブロックに分割して縮小
+        Eigen::SparseMatrix<double> k11, k12, k13, k22, k23, k33;
+        SparseMatrixUtils::splitMatrix3x3(AssembleStiffnessMatrix(), slave_indices, free_indices,
+            k11, k12, k13, k22, k23, k33);
+
+        Eigen::SparseMatrix<double> m11, m12, m13, m22, m23, m33;
+        SparseMatrixUtils::splitMatrix3x3(AssembleMassMatrix(), slave_indices, free_indices,
+            m11, m12, m13, m22, m23, m33);
+
+        // 剛性行列の縮小
+        Eigen::SparseMatrix<double> kaa, kab;
+        kaa = (linkTransMat.transpose() * k11.selfadjointView<Eigen::Upper>() * linkTransMat)
+              .triangularView<Eigen::Upper>();
+        kab = (linkTransMat.transpose() * k12);
+        SparseMatrixUtils::mergeMatrixWithResize(kaa, kab, k22, ka);
+
+        // 質量行列の縮小
+        Eigen::SparseMatrix<double> maa, mab;
+        maa = (linkTransMat.transpose() * m11.selfadjointView<Eigen::Upper>() * linkTransMat)
+              .triangularView<Eigen::Upper>();
+        mab = (linkTransMat.transpose() * m12);
+        SparseMatrixUtils::mergeMatrixWithResize(maa, mab, m22, ma);
+    }
+    else {
+        // RigidLinkがない場合: 従来通り2x2分割
+        SparseMatrixUtils::splitMatrixWithResize(AssembleStiffnessMatrix(), fixed_indices, ka);
+        SparseMatrixUtils::splitMatrixWithResize(AssembleMassMatrix(), fixed_indices, ma);
+    }
+
+    // 質量ゼロの自由度を縮約
     std::vector<int> shrink_indices, other_indices;
     Eigen::Diagonal mdiag = ma.diagonal();
     for (size_t i = 0; i < mdiag.size(); i++)
@@ -84,7 +120,6 @@ int FEModel::SolveVibration(const int nev, std::vector<double>& eigen_values,
     Spectra::SparseCholesky<double, Eigen::Upper> B_op(k_sha);
 
     // --- 一般固有値問題の設定 ---
-    // 求める固有値の個数 (nev) と、アルゴリズム内部で使用する次元 (ncv) を指定します
     int mat_size = other_indices.size();
     if (computed_num > mat_size - 1)
         computed_num = mat_size - 1;
@@ -105,13 +140,43 @@ int FEModel::SolveVibration(const int nev, std::vector<double>& eigen_values,
         Eigen::MatrixXd u1s = geigs.eigenvectors();
         Eigen::MatrixXd tmp_mat2 = -k_shc * u1s;
         Eigen::MatrixXd u2s = solver.solve(tmp_mat2);
-        Eigen::MatrixXd eigs_vector = Eigen::MatrixXd::Zero(DOFNum(), nev);
-        for (size_t i = 0; i < free_indices.size(); i++)
-        {
+
+        // 縮小空間（master + free）での固有ベクトルを復元
+        int reduced_size = master_dof_num + free_indices.size();
+        Eigen::MatrixXd reduced_vectors = Eigen::MatrixXd::Zero(reduced_size, nconv);
+        for (size_t j = 0; j < nconv; j++) {
             for (size_t i = 0; i < other_indices.size(); i++)
-                eigs_vector.row(free_indices[other_indices[i]]) = u1s.row(i);
+                reduced_vectors(other_indices[i], j) = u1s(i, j);
             for (size_t i = 0; i < shrink_indices.size(); i++)
-                eigs_vector.row(free_indices[shrink_indices[i]]) = u2s.row(i);
+                reduced_vectors(shrink_indices[i], j) = u2s(i, j);
+        }
+
+        // 全体DOFへの固有ベクトルを構築
+        Eigen::MatrixXd eigs_vector = Eigen::MatrixXd::Zero(DOFNum(), nev);
+
+        if (master_dof_num > 0) {
+            // RigidLinkがある場合: master DOFをslave DOFに展開
+            for (size_t i = 0; i < nconv; i++) {
+                Eigen::VectorXd part_vec = reduced_vectors.col(i);
+                Eigen::VectorXd d_master = part_vec.head(master_dof_num);
+                Eigen::VectorXd d_free = part_vec.tail(free_indices.size());
+                Eigen::VectorXd d_slave = linkTransMat * d_master;
+
+                for (size_t j = 0; j < slave_indices.size(); j++)
+                    eigs_vector(slave_indices[j], i) = d_slave(j);
+                for (size_t j = 0; j < free_indices.size(); j++)
+                    eigs_vector(free_indices[j], i) = d_free(j);
+            }
+        }
+        else {
+            // RigidLinkがない場合: free_indicesに直接配置
+            std::vector<int> all_free = FreeIndices(false);
+            for (size_t j = 0; j < nconv; j++) {
+                for (size_t i = 0; i < other_indices.size(); i++)
+                    eigs_vector(all_free[other_indices[i]], j) = u1s(i, j);
+                for (size_t i = 0; i < shrink_indices.size(); i++)
+                    eigs_vector(all_free[shrink_indices[i]], j) = u2s(i, j);
+            }
         }
 
         for (size_t i = 0; i < nconv; i++)
@@ -126,7 +191,7 @@ int FEModel::SolveVibration(const int nev, std::vector<double>& eigen_values,
             }
             mode_vectors.push_back(v);
         }
-        
+
         // 固有値を元の固有値問題に戻す
         for (double v : geigs.eigenvalues())
             eigen_values.push_back(1.0 / sqrt(v));

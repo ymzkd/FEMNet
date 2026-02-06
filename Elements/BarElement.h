@@ -125,7 +125,7 @@ std::ostream &operator<<(std::ostream &os, const BeamStress &bsd);
 class BarElementBase : public ElementBase
 {
 protected:
-    static const int node_num = 2;
+    static constexpr int node_num = 2;
 
 public:
     Node *Nodes[2];

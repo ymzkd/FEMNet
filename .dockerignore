@@ -1,0 +1,12 @@
+build*/
+.git/
+*.exe
+*.dll
+*.pyd
+*.pdb
+*.obj
+*.o
+*.so
+__pycache__/
+*.egg-info/
+.vs/

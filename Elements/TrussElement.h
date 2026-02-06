@@ -7,8 +7,8 @@ class TrussElement : public BarElementBase
 {
 private:
     // static constexpr ElementType type = ElementType::Truss;
-    static const int total_dof = 6;
-    static const int node_num = 2;
+    static constexpr int total_dof = 6;
+    static constexpr int node_num = 2;
     Eigen::Matrix<double, node_num, total_dof> trans_matrix();
     Eigen::MatrixXd stiffness_matrix_local();
 

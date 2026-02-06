@@ -23,69 +23,79 @@ include(${SWIG_USE_FILE})
 
 if(MSVC)
     add_compile_options("/utf-8")
+else()
+    set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 endif()
 
 # Python settings
-# Use system Python (Anaconda/user Python) instead of vcpkg's Python
 if(BUILD_PYTHON)
-    # List of common Anaconda/Miniconda installation paths
-    set(CONDA_SEARCH_PATHS
-        "C:/ProgramData/anaconda3"
-        "C:/ProgramData/miniconda3"
-        "$ENV{USERPROFILE}/anaconda3"
-        "$ENV{USERPROFILE}/miniconda3"
-        "C:/tools/anaconda3"
-        "C:/tools/miniconda3"
-    )
+    if(WIN32)
+        # --- Windows: Search for Anaconda/Miniconda Python ---
+        # Use system Python (Anaconda/user Python) instead of vcpkg's Python
+        set(CONDA_SEARCH_PATHS
+            "C:/ProgramData/anaconda3"
+            "C:/ProgramData/miniconda3"
+            "$ENV{USERPROFILE}/anaconda3"
+            "$ENV{USERPROFILE}/miniconda3"
+            "C:/tools/anaconda3"
+            "C:/tools/miniconda3"
+        )
 
-    # Search for Anaconda Python with development files
-    foreach(CONDA_PATH ${CONDA_SEARCH_PATHS})
-        if(EXISTS "${CONDA_PATH}/python.exe" AND
-           EXISTS "${CONDA_PATH}/include/Python.h" AND
-           EXISTS "${CONDA_PATH}/libs")
-            set(FOUND_PYTHON_ROOT "${CONDA_PATH}")
-            break()
+        # Search for Anaconda Python with development files
+        foreach(CONDA_PATH ${CONDA_SEARCH_PATHS})
+            if(EXISTS "${CONDA_PATH}/python.exe" AND
+               EXISTS "${CONDA_PATH}/include/Python.h" AND
+               EXISTS "${CONDA_PATH}/libs")
+                set(FOUND_PYTHON_ROOT "${CONDA_PATH}")
+                break()
+            endif()
+        endforeach()
+
+        if(FOUND_PYTHON_ROOT)
+            message(STATUS "Found Anaconda/Miniconda at: ${FOUND_PYTHON_ROOT}")
+
+            # Get Python version by running python --version
+            execute_process(
+                COMMAND "${FOUND_PYTHON_ROOT}/python.exe" -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"
+                OUTPUT_VARIABLE PYTHON_VERSION_SHORT
+                OUTPUT_STRIP_TRAILING_WHITESPACE
+                ERROR_QUIET
+            )
+
+            execute_process(
+                COMMAND "${FOUND_PYTHON_ROOT}/python.exe" -c "import sys; print(f'{sys.version_info.major}{sys.version_info.minor}')"
+                OUTPUT_VARIABLE PYTHON_VERSION_NODOT
+                OUTPUT_STRIP_TRAILING_WHITESPACE
+                ERROR_QUIET
+            )
+
+            message(STATUS "Python version: ${PYTHON_VERSION_SHORT}")
+
+            # Set Python variables to bypass vcpkg's wrapper
+            set(Python3_EXECUTABLE "${FOUND_PYTHON_ROOT}/python.exe" CACHE FILEPATH "" FORCE)
+            set(Python3_INCLUDE_DIRS "${FOUND_PYTHON_ROOT}/include" CACHE PATH "" FORCE)
+            set(Python3_LIBRARIES "${FOUND_PYTHON_ROOT}/libs/python${PYTHON_VERSION_NODOT}.lib" CACHE FILEPATH "" FORCE)
+
+            # Create imported target manually since vcpkg wrapper may override find_package
+            add_library(Python3::Python SHARED IMPORTED)
+            set_target_properties(Python3::Python PROPERTIES
+                IMPORTED_LOCATION "${FOUND_PYTHON_ROOT}/python${PYTHON_VERSION_NODOT}.dll"
+                IMPORTED_IMPLIB "${FOUND_PYTHON_ROOT}/libs/python${PYTHON_VERSION_NODOT}.lib"
+                INTERFACE_INCLUDE_DIRECTORIES "${FOUND_PYTHON_ROOT}/include"
+            )
+
+            message(STATUS "Python3 found: ${Python3_EXECUTABLE}")
+            message(STATUS "Python3 include dirs: ${Python3_INCLUDE_DIRS}")
+            message(STATUS "Python3 libraries: ${Python3_LIBRARIES}")
+        else()
+            message(STATUS "No Anaconda/Miniconda found, falling back to find_package")
+            find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
+            message(STATUS "Python3 found: ${Python3_EXECUTABLE}")
+            message(STATUS "Python3 include dirs: ${Python3_INCLUDE_DIRS}")
+            message(STATUS "Python3 libraries: ${Python3_LIBRARIES}")
         endif()
-    endforeach()
-
-    if(FOUND_PYTHON_ROOT)
-        message(STATUS "Found Anaconda/Miniconda at: ${FOUND_PYTHON_ROOT}")
-
-        # Get Python version by running python --version
-        execute_process(
-            COMMAND "${FOUND_PYTHON_ROOT}/python.exe" -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"
-            OUTPUT_VARIABLE PYTHON_VERSION_SHORT
-            OUTPUT_STRIP_TRAILING_WHITESPACE
-            ERROR_QUIET
-        )
-
-        execute_process(
-            COMMAND "${FOUND_PYTHON_ROOT}/python.exe" -c "import sys; print(f'{sys.version_info.major}{sys.version_info.minor}')"
-            OUTPUT_VARIABLE PYTHON_VERSION_NODOT
-            OUTPUT_STRIP_TRAILING_WHITESPACE
-            ERROR_QUIET
-        )
-
-        message(STATUS "Python version: ${PYTHON_VERSION_SHORT}")
-
-        # Set Python variables to bypass vcpkg's wrapper
-        set(Python3_EXECUTABLE "${FOUND_PYTHON_ROOT}/python.exe" CACHE FILEPATH "" FORCE)
-        set(Python3_INCLUDE_DIRS "${FOUND_PYTHON_ROOT}/include" CACHE PATH "" FORCE)
-        set(Python3_LIBRARIES "${FOUND_PYTHON_ROOT}/libs/python${PYTHON_VERSION_NODOT}.lib" CACHE FILEPATH "" FORCE)
-
-        # Create imported target manually since vcpkg wrapper may override find_package
-        add_library(Python3::Python SHARED IMPORTED)
-        set_target_properties(Python3::Python PROPERTIES
-            IMPORTED_LOCATION "${FOUND_PYTHON_ROOT}/python${PYTHON_VERSION_NODOT}.dll"
-            IMPORTED_IMPLIB "${FOUND_PYTHON_ROOT}/libs/python${PYTHON_VERSION_NODOT}.lib"
-            INTERFACE_INCLUDE_DIRECTORIES "${FOUND_PYTHON_ROOT}/include"
-        )
-
-        message(STATUS "Python3 found: ${Python3_EXECUTABLE}")
-        message(STATUS "Python3 include dirs: ${Python3_INCLUDE_DIRS}")
-        message(STATUS "Python3 libraries: ${Python3_LIBRARIES}")
     else()
-        message(STATUS "No Anaconda/Miniconda found, falling back to find_package")
+        # --- Linux/macOS: Standard find_package ---
         find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
         message(STATUS "Python3 found: ${Python3_EXECUTABLE}")
         message(STATUS "Python3 include dirs: ${Python3_INCLUDE_DIRS}")

@@ -1,6 +1,7 @@
 #include<iostream>
 #include<random>
 #include<algorithm>
+#include<memory>
 
 //#ifdef USE_MKL
 //#define EIGEN_USE_MKL_ALL

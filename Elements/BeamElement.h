@@ -6,7 +6,7 @@
 class BeamElement : public BarElementBase
 {
 protected:
-    static const int total_dof = 12;
+    static constexpr int total_dof = 12;
     double element_length();
     Eigen::MatrixXd trans_matrix();
     virtual Eigen::MatrixXd stiffness_matrix_local();

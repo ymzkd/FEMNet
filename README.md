@@ -133,6 +133,20 @@ if solver.Computed():
     print(f"Bending moment Mz: {stress.Mz:.2f} N-mm")
 ```
 
+## Linuxビルド検証（Docker）
+
+```bash
+docker build -t femnet-linux-test .
+```
+
+成功すればC++サンプルアプリのビルド・実行、Pythonバインディングのビルド、全Pythonサンプルの実行が通ったことを意味します。
+
+デバッグ用にコンテナに入る場合:
+
+```bash
+docker run -it --rm femnet-linux-test /bin/bash
+```
+
 ### C#
 
 ```csharp

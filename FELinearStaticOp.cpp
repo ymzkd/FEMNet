@@ -202,30 +202,32 @@ std::vector<NodeLoad> LinearStaticCombinationOperator::GetReactForces()
         auto react = case_factor.op->GetReactForces();
         for (size_t i = 0; i < react.size(); i++)
         {
-            bool need_fallback = false;
-            // compine_reactがi番目要素を含む場合はi番目要素をチェック
-            if (i < combined_react.size())
+            // インデックスが一致する場合の高速パス
+            if (i < combined_react.size() && combined_react[i].id == react[i].id)
             {
-                // i番目要素が対象のノードか？
-                if (combined_react[i].id == react[i].id)
-                {
-                    combined_react[i].data += (case_factor.factor * react[i].data);
-                    continue;
-                }
+                combined_react[i].data += (case_factor.factor * react[i].data);
+                continue;
             }
 
+            // 全検索で既存ノードを探す
+            bool found = false;
             for (auto &cr : combined_react)
             {
                 if (cr.id == react[i].id)
                 {
                     cr.data += (case_factor.factor * react[i].data);
+                    found = true;
                     break;
                 }
-                need_fallback = true;
             }
 
-            if (need_fallback)
-                combined_react.push_back(react[i]);
+            // 見つからなければ新規追加（係数を適用）
+            if (!found)
+            {
+                NodeLoad nl = react[i];
+                nl.data = case_factor.factor * react[i].data;
+                combined_react.push_back(nl);
+            }
         }
     }
     return combined_react;

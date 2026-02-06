@@ -417,7 +417,7 @@ struct Thickness {
 public:
     double plane_thick = 0;
     double plate_thick = 0;
-    double weight_thick = 0;
+    double weight_thick = -1.0;
 
     
     Thickness(double thick)
@@ -430,6 +430,10 @@ public:
      : plane_thick(plane), plate_thick(plate), weight_thick(weight) {};
 
     Thickness() : plane_thick(0), plate_thick(0), weight_thick(0) {};
+
+    double WeightThickness(){
+        return (weight_thick < 0) ? plane_thick : weight_thick;
+    }
 };
 
 struct NodeLoadData {

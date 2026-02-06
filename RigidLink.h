@@ -80,16 +80,16 @@ public:
         return count;
     }
 
-    // ???要る？
-    std::vector<int> MasterDOFIndices() {
-        std::vector<int> indices;
-        for (RigidLink& link : links) {
-            for (size_t i = 0; i < 6; i++)
-                if (link.flags[i])
-                    indices.push_back(link.Master->id * 6 + i);
-        }
-        return indices;
-    }
+    // // ???要る？
+    // std::vector<int> MasterDOFIndices() {
+    //     std::vector<int> indices;
+    //     for (RigidLink& link : links) {
+    //         for (size_t i = 0; i < 6; i++)
+    //             if (link.flags[i])
+    //                 indices.push_back(link.Master->id * 6 + i);
+    //     }
+    //     return indices;
+    // }
 
     Eigen::MatrixXd TransformationMatrix() {
         size_t slaveDofNum = SlaveDOFNum();

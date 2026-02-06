@@ -810,7 +810,8 @@ Eigen::MatrixXd QuadPlateElement::NodeConsistentMass()
     // Eigen::VectorXd intg_weights(5), intg_params(5);
     // intg_weights << 0.2369268851, 0.4786286705, 0.5688888889, 0.4786286705, 0.2369268851;
     // intg_params << -0.9061798459, -0.5384693101, 0, 0.5384693101, 0.9061798459;
-    double t1 = (thickness.weight_thick == 0) ? thickness.plane_thick : thickness.weight_thick;
+    double t1 = thickness.WeightThickness();
+    // double t1 = (thickness.weight_thick < 0) ? thickness.plane_thick : thickness.weight_thick;
     double t3 = t1 * t1 * t1;
 
     Eigen::MatrixXd M(total_dof, total_dof);

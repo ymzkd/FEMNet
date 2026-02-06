@@ -589,7 +589,8 @@ Eigen::MatrixXd TriPlateElement::NodeConsistentMass()
     //	0.1654099273984100, 0.0374774207500880, 0.7971126518600710,
     //	0.0374774207500880, 0.1654099273984100, 0.7971126518600710;
 
-    double t1 = (thickness.weight_thick == 0) ? thickness.plane_thick : thickness.weight_thick;
+    double t1 = thickness.WeightThickness();
+    // double t1 = (thickness.weight_thick < 0) ? thickness.plane_thick : thickness.weight_thick;
     double t3 = t1 * t1 * t1;
     double area = Area();
 

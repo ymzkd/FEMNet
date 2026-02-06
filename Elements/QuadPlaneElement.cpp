@@ -185,7 +185,8 @@ Eigen::MatrixXd QuadPlaneElement::NodeConsistentMass()
     const Eigen::Vector3d intg_weights(5.0 / 9.0, 8.0 / 9.0, 5.0 / 9.0);
     const Eigen::Vector3d intg_params(-sqrt(3.0 / 5.0), 0, sqrt(3.0 / 5.0));
 
-    double t1 = (thickness.weight_thick == 0) ? thickness.plane_thick : thickness.weight_thick;
+    double t1 = thickness.WeightThickness();
+    // double t1 = (thickness.weight_thick < 0) ? thickness.plane_thick : thickness.weight_thick;
     Eigen::MatrixXd M(total_dof, total_dof);
     M.setZero();
 

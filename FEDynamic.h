@@ -81,6 +81,9 @@ private:
     Eigen::SparseMatrix<double> matK_aa, matK_ab, matK_bb;
     Eigen::SparseMatrix<double> matC_aa, matC_ab, matC_bb;
     std::vector<int> free_indices, fixed_indices;
+    std::vector<int> slave_indices;           // RigidLink: スレーブDOFインデックス
+    Eigen::SparseMatrix<double> linkTransMat; // RigidLink: 変換行列
+    int master_dof_num = 0;                   // RigidLink: マスターDOF数
 
     Eigen::VectorXd current_disp, current_vel, current_accel;
     std::vector<NodeLoad> current_react_force;
@@ -113,6 +116,9 @@ public:
         matM_aa.resize(0, 0);
         matK_aa.resize(0, 0);
         matC_aa.resize(0, 0);
+        linkTransMat.resize(0, 0);
+        master_dof_num = 0;
+        slave_indices.clear();
     }
 
     // Newmarkのβ法による動的解析

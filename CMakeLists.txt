@@ -21,6 +21,10 @@ option(BUILD_PYTHON "Build Python bindings" OFF)
 find_package(SWIG REQUIRED)
 include(${SWIG_USE_FILE})
 
+if(MSVC)
+    add_compile_options("/utf-8")
+endif()
+
 # Python settings
 # Use system Python (Anaconda/user Python) instead of vcpkg's Python
 if(BUILD_PYTHON)
@@ -93,6 +97,8 @@ endif()
 set(FEMNET_SOURCES
     Components.cpp
     Model.cpp
+    SparseMatrixUtils.cpp
+    RigidLink.cpp
     Elements/ElementBase.cpp
     Elements/BarElement.cpp
     Elements/TrussElement.cpp

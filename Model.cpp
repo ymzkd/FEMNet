@@ -34,156 +34,61 @@
 #include "LoadComponent.h"
 
 #include "Model.h"
+#include "SparseMatrixUtils.h"
 
-
-// 入力: 対称なSparseMatrix、行インデックス配列、列インデックス配列
-void FEModel::splitMatrixWithResize(
-    const Eigen::SparseMatrix<double>& A,
-    const std::vector<int>& fixed_indices,
-    Eigen::SparseMatrix<double>& free_matrix,
-    Eigen::SparseMatrix<double>& free_fixed_matrix,
-    Eigen::SparseMatrix<double>& fixed_matrix)
+FEModel::FEModel()
+    : RigidLinkData(std::make_shared<RigidLinks>())
 {
-    typedef std::pair<bool, int> idx_attr;
-    // インデックスセット（高速検索用）
-    std::unordered_set<int> fixed_set(fixed_indices.begin(), fixed_indices.end());
-
-    // 出力行列のTripletを準備
-    std::vector<Eigen::Triplet<double>> free_triplets;
-    std::vector<Eigen::Triplet<double>> free_fixed_triplets;
-    std::vector<Eigen::Triplet<double>> fixed_triplets;
-
-    int fixed_size = fixed_indices.size();
-    int free_size = A.cols() - fixed_size;
-    std::vector<idx_attr> modified_indices(A.cols());
-    int ifixed = 0, ifree = 0;
-    for (int i = 0; i < A.cols(); ++i) {
-        bool is_fixed = fixed_set.find(i) != fixed_set.end();
-        //bool is_fixed = fixed_set.contains(i);
-        modified_indices[i] = std::make_pair(is_fixed, is_fixed ? ifixed++ : ifree++);
-    }
-
-    // 行列Aを走査
-    for (int k = 0; k < A.outerSize(); ++k) {
-        for (Eigen::SparseMatrix<double>::InnerIterator it(A, k); it; ++it) {
-            int i = it.row();    // 行
-            int j = it.col();    // 列
-            double value = it.value();
-
-            idx_attr idx_attr_i = modified_indices[i];
-            idx_attr idx_attr_j = modified_indices[j];
-            if (!idx_attr_i.first && !idx_attr_j.first)
-                // 両方自由
-                free_triplets.emplace_back(idx_attr_i.second, idx_attr_j.second, value);
-            else if (!idx_attr_i.first && idx_attr_j.first)
-                // 行自由, 列固定
-                free_fixed_triplets.emplace_back(idx_attr_i.second, idx_attr_j.second, value);
-            else if (idx_attr_i.first && !idx_attr_j.first)
-                // 行固定, 列自由
-                free_fixed_triplets.emplace_back(idx_attr_j.second, idx_attr_i.second, value);
-            else if (idx_attr_i.first && idx_attr_j.first)
-                // 両方固定
-                fixed_triplets.emplace_back(idx_attr_i.second, idx_attr_j.second, value);
-        }
-    }
-
-    // リサイズと構築
-    free_matrix.resize(free_size, free_size);
-    free_fixed_matrix.resize(free_size, fixed_size);
-    fixed_matrix.resize(fixed_size, fixed_size);
-
-    free_matrix.setFromTriplets(free_triplets.begin(), free_triplets.end());
-    free_fixed_matrix.setFromTriplets(free_fixed_triplets.begin(), free_fixed_triplets.end());
-    fixed_matrix.setFromTriplets(fixed_triplets.begin(), fixed_triplets.end());
 }
 
-// 入力: 対称なSparseMatrix、行インデックス配列、列インデックス配列
-void FEModel::splitMatrixWithResize(
-    const Eigen::SparseMatrix<double>& A,
-    const std::vector<int>& fixed_indices,
-    Eigen::SparseMatrix<double>& free_matrix)
-{
-    typedef std::pair<bool, int> idx_attr;
-    // インデックスセット（高速検索用）
-    std::unordered_set<int> fixed_set(fixed_indices.begin(), fixed_indices.end());
-
-    // 出力行列のTripletを準備
-    std::vector<Eigen::Triplet<double>> free_triplets;
-
-    int fixed_size = fixed_indices.size();
-    int free_size = A.cols() - fixed_size;
-    std::vector<idx_attr> modified_indices(A.cols());
-    int ifixed = 0, ifree = 0;
-    for (int i = 0; i < A.cols(); ++i) {
-        bool is_fixed = fixed_set.find(i) != fixed_set.end();
-        //bool is_fixed = fixed_set.contains(i);
-        modified_indices[i] = std::make_pair(is_fixed, is_fixed ? ifixed++ : ifree++);
-    }
-
-    // 行列Aを走査
-    for (int k = 0; k < A.outerSize(); ++k) {
-        for (Eigen::SparseMatrix<double>::InnerIterator it(A, k); it; ++it) {
-            int i = it.row();    // 行
-            int j = it.col();    // 列
-            double value = it.value();
-
-            idx_attr idx_attr_i = modified_indices[i];
-            idx_attr idx_attr_j = modified_indices[j];
-            if (!idx_attr_i.first && !idx_attr_j.first)
-                // 両方自由
-                free_triplets.emplace_back(idx_attr_i.second, idx_attr_j.second, value);
-        }
-    }
-
-    // リサイズと構築
-    free_matrix.resize(free_size, free_size);
-    free_matrix.setFromTriplets(free_triplets.begin(), free_triplets.end());
-}
-
-Eigen::SparseMatrix<double> FEModel::extractSubMatrix(
-    const Eigen::SparseMatrix<double>& mat,
-    const std::vector<int>& rowIndices,
-    const std::vector<int>& colIndices) {
-
-    // 新しい疎行列を作成
-    Eigen::SparseMatrix<double> subMat(rowIndices.size(), colIndices.size());
-    
-
-    // インデックス変換用のマップ
-    std::unordered_map<int, int> rowMap;
-    for (int i = 0; i < rowIndices.size(); ++i)
-        rowMap[rowIndices[i]] = i;
-
-    std::unordered_map<int, int> colMap;
-    for (int j = 0; j < colIndices.size(); ++j)
-        colMap[colIndices[j]] = j;
-
-    // 指定された行と列の要素を新しい疎行列にコピー
-    for (int k = 0; k < mat.outerSize(); ++k) {
-        for (Eigen::SparseMatrix<double>::InnerIterator it(mat, k); it; ++it) {
-            auto rowMapItem = rowMap.find(it.row());
-            auto colMapItem = colMap.find(it.col());
-
-            if (rowMapItem != rowMap.end() && colMapItem != colMap.end())
-                subMat.insert(rowMapItem->second, colMapItem->second) = it.value();
-        }
-    }
-
-    return subMat;
-}
-
-int FEModel::SolveVibration(const int nev, std::vector<double>& eigen_values, 
+int FEModel::SolveVibration(const int nev, std::vector<double>& eigen_values,
     std::vector<std::vector<Displacement>>& mode_vectors)
 {
     int computed_num = nev;
 
-    std::vector<int> free_indices = FreeIndices();
+    // インデックスの取得（RigidLinkを考慮）
+    std::vector<int> slave_indices = RigidLinkData->SlaveDOFIndices();
+    std::vector<int> free_indices = FreeIndices(true);  // rigid_link=true
     std::vector<int> fixed_indices = FixIndices();
-    Eigen::SparseMatrix<double> ka; //, kb, kc;
-    FEModel::splitMatrixWithResize(AssembleStiffnessMatrix(), fixed_indices, ka);
-    Eigen::SparseMatrix<double> ma;
-    FEModel::splitMatrixWithResize(AssembleMassMatrix(), fixed_indices, ma);
 
+    // 変換行列の取得
+    Eigen::SparseMatrix<double> linkTransMat =
+        RigidLinkData->TransformationMatrix().sparseView(1e-10);
+    int master_dof_num = linkTransMat.cols();
+
+    Eigen::SparseMatrix<double> ka, ma;
+
+    if (master_dof_num > 0) {
+        // RigidLinkがある場合: 3x3ブロックに分割して縮小
+        Eigen::SparseMatrix<double> k11, k12, k13, k22, k23, k33;
+        SparseMatrixUtils::splitMatrix3x3(AssembleStiffnessMatrix(), slave_indices, free_indices,
+            k11, k12, k13, k22, k23, k33);
+
+        Eigen::SparseMatrix<double> m11, m12, m13, m22, m23, m33;
+        SparseMatrixUtils::splitMatrix3x3(AssembleMassMatrix(), slave_indices, free_indices,
+            m11, m12, m13, m22, m23, m33);
+
+        // 剛性行列の縮小
+        Eigen::SparseMatrix<double> kaa, kab;
+        kaa = (linkTransMat.transpose() * k11.selfadjointView<Eigen::Upper>() * linkTransMat)
+              .triangularView<Eigen::Upper>();
+        kab = (linkTransMat.transpose() * k12);
+        SparseMatrixUtils::mergeMatrixWithResize(kaa, kab, k22, ka);
+
+        // 質量行列の縮小
+        Eigen::SparseMatrix<double> maa, mab;
+        maa = (linkTransMat.transpose() * m11.selfadjointView<Eigen::Upper>() * linkTransMat)
+              .triangularView<Eigen::Upper>();
+        mab = (linkTransMat.transpose() * m12);
+        SparseMatrixUtils::mergeMatrixWithResize(maa, mab, m22, ma);
+    }
+    else {
+        // RigidLinkがない場合: 従来通り2x2分割
+        SparseMatrixUtils::splitMatrixWithResize(AssembleStiffnessMatrix(), fixed_indices, ka);
+        SparseMatrixUtils::splitMatrixWithResize(AssembleMassMatrix(), fixed_indices, ma);
+    }
+
+    // 質量ゼロの自由度を縮約
     std::vector<int> shrink_indices, other_indices;
     Eigen::Diagonal mdiag = ma.diagonal();
     for (size_t i = 0; i < mdiag.size(); i++)
@@ -195,8 +100,8 @@ int FEModel::SolveVibration(const int nev, std::vector<double>& eigen_values,
     }
 
     Eigen::SparseMatrix<double> k_sha, k_shb, k_shc, k_shd, m_sh;
-    FEModel::splitMatrixWithResize(ma, shrink_indices, m_sh);
-    FEModel::splitMatrixWithResize(ka, shrink_indices, k_sha, k_shb, k_shd);
+    SparseMatrixUtils::splitMatrixWithResize(ma, shrink_indices, m_sh);
+    SparseMatrixUtils::splitMatrixWithResize(ka, shrink_indices, k_sha, k_shb, k_shd);
 
 #ifdef EIGEN_USE_MKL_ALL
     Eigen::PardisoLLT<Eigen::SparseMatrix<double>> solver;
@@ -215,7 +120,6 @@ int FEModel::SolveVibration(const int nev, std::vector<double>& eigen_values,
     Spectra::SparseCholesky<double, Eigen::Upper> B_op(k_sha);
 
     // --- 一般固有値問題の設定 ---
-    // 求める固有値の個数 (nev) と、アルゴリズム内部で使用する次元 (ncv) を指定します
     int mat_size = other_indices.size();
     if (computed_num > mat_size - 1)
         computed_num = mat_size - 1;
@@ -236,13 +140,43 @@ int FEModel::SolveVibration(const int nev, std::vector<double>& eigen_values,
         Eigen::MatrixXd u1s = geigs.eigenvectors();
         Eigen::MatrixXd tmp_mat2 = -k_shc * u1s;
         Eigen::MatrixXd u2s = solver.solve(tmp_mat2);
-        Eigen::MatrixXd eigs_vector = Eigen::MatrixXd::Zero(DOFNum(), nev);
-        for (size_t i = 0; i < free_indices.size(); i++)
-        {
+
+        // 縮小空間（master + free）での固有ベクトルを復元
+        int reduced_size = master_dof_num + free_indices.size();
+        Eigen::MatrixXd reduced_vectors = Eigen::MatrixXd::Zero(reduced_size, nconv);
+        for (size_t j = 0; j < nconv; j++) {
             for (size_t i = 0; i < other_indices.size(); i++)
-                eigs_vector.row(free_indices[other_indices[i]]) = u1s.row(i);
+                reduced_vectors(other_indices[i], j) = u1s(i, j);
             for (size_t i = 0; i < shrink_indices.size(); i++)
-                eigs_vector.row(free_indices[shrink_indices[i]]) = u2s.row(i);
+                reduced_vectors(shrink_indices[i], j) = u2s(i, j);
+        }
+
+        // 全体DOFへの固有ベクトルを構築
+        Eigen::MatrixXd eigs_vector = Eigen::MatrixXd::Zero(DOFNum(), nev);
+
+        if (master_dof_num > 0) {
+            // RigidLinkがある場合: master DOFをslave DOFに展開
+            for (size_t i = 0; i < nconv; i++) {
+                Eigen::VectorXd part_vec = reduced_vectors.col(i);
+                Eigen::VectorXd d_master = part_vec.head(master_dof_num);
+                Eigen::VectorXd d_free = part_vec.tail(free_indices.size());
+                Eigen::VectorXd d_slave = linkTransMat * d_master;
+
+                for (size_t j = 0; j < slave_indices.size(); j++)
+                    eigs_vector(slave_indices[j], i) = d_slave(j);
+                for (size_t j = 0; j < free_indices.size(); j++)
+                    eigs_vector(free_indices[j], i) = d_free(j);
+            }
+        }
+        else {
+            // RigidLinkがない場合: free_indicesに直接配置
+            std::vector<int> all_free = FreeIndices(false);
+            for (size_t j = 0; j < nconv; j++) {
+                for (size_t i = 0; i < other_indices.size(); i++)
+                    eigs_vector(all_free[other_indices[i]], j) = u1s(i, j);
+                for (size_t i = 0; i < shrink_indices.size(); i++)
+                    eigs_vector(all_free[shrink_indices[i]], j) = u2s(i, j);
+            }
         }
 
         for (size_t i = 0; i < nconv; i++)
@@ -257,7 +191,7 @@ int FEModel::SolveVibration(const int nev, std::vector<double>& eigen_values,
             }
             mode_vectors.push_back(v);
         }
-        
+
         // 固有値を元の固有値問題に戻す
         for (double v : geigs.eigenvalues())
             eigen_values.push_back(1.0 / sqrt(v));
@@ -270,16 +204,31 @@ int FEModel::SolveVibration(const int nev, std::vector<double>& eigen_values,
     return nconv;
 }
 
-std::vector<int> FEModel::FreeIndices()
+std::vector<int> FEModel::FreeIndices(bool rigid_link)
 {
+    std::vector<int> slave_indices = RigidLinkData->SlaveDOFIndices();
+    std::unordered_set<int> slaveid_set(slave_indices.begin(), slave_indices.end());
     std::vector<int> indices;
     int idx = 0;
     for (Node n : Nodes)
-        for (const bool f : n.Fix.isdof_fixed()) {
-            if (!f) indices.push_back(idx);
+        for (const bool fixed : n.Fix.isdof_fixed()) {
+            
+            bool is_slave = (slaveid_set.find(idx) != slaveid_set.end());
+            if (rigid_link){
+                if (!fixed && !is_slave)
+                    indices.push_back(idx);
+            }
+            else if (!fixed)
+                indices.push_back(idx);
+            
             idx++;
         }
     return indices;
+}
+
+std::vector<int> FEModel::SlaveIndices()
+{
+    return RigidLinkData->SlaveDOFIndices();
 }
 
 /// <summary>
@@ -302,8 +251,8 @@ std::vector<int> FEModel::FixIndices()
 
 void FEModel::add_element(BeamElement data)
 {
-	std::shared_ptr<BeamElement> ptr = std::make_shared<BeamElement>(data);
-	Elements.push_back(ptr);
+    std::shared_ptr<BeamElement> ptr = std::make_shared<BeamElement>(data);
+    Elements.push_back(ptr);
     
     Nodes[data.Nodes[0]->id].Fix.UnlockAllRot();
     Nodes[data.Nodes[1]->id].Fix.UnlockAllRot();
@@ -320,20 +269,20 @@ void FEModel::add_element(ComplexBeamElement data)
 
 void FEModel::add_element(TrussElement data)
 {
-	std::shared_ptr<TrussElement> ptr = std::make_shared<TrussElement>(data);
-	Elements.push_back(ptr);
+    std::shared_ptr<TrussElement> ptr = std::make_shared<TrussElement>(data);
+    Elements.push_back(ptr);
 }
 
 void FEModel::add_element(TriPlaneElement data)
 {
     std::shared_ptr<TriPlaneElement> ptr = std::make_shared<TriPlaneElement>(data);
-	Elements.push_back(ptr);
+    Elements.push_back(ptr);
 }
 
 void FEModel::add_element(TriPlateElement data)
 {
     std::shared_ptr<TriPlateElement> ptr = std::make_shared<TriPlateElement>(data);
-	Elements.push_back(ptr);
+    Elements.push_back(ptr);
 
     Nodes[ptr->Nodes[0]->id].Fix.UnlockAllRot();
     Nodes[ptr->Nodes[1]->id].Fix.UnlockAllRot();
@@ -343,13 +292,13 @@ void FEModel::add_element(TriPlateElement data)
 void FEModel::add_element(QuadPlaneElement data)
 {
     std::shared_ptr<QuadPlaneElement> ptr = std::make_shared<QuadPlaneElement>(data);
-	Elements.push_back(ptr);
+    Elements.push_back(ptr);
 }
 
 void FEModel::add_element(QuadPlateElement data)
 {
     std::shared_ptr<QuadPlateElement> ptr = std::make_shared<QuadPlateElement>(data);
-	Elements.push_back(ptr);
+    Elements.push_back(ptr);
 
     Nodes[ptr->Nodes[0]->id].Fix.UnlockAllRot();
     Nodes[ptr->Nodes[1]->id].Fix.UnlockAllRot();
@@ -365,7 +314,7 @@ void FEModel::add_truss_element(int id, int n1_id, int n2_id, int sec_id, int ma
     Material mat = Materials[mat_id];
 
     std::shared_ptr<TrussElement> ptr = std::make_shared<TrussElement>(id, n1, n2, sec, mat);
-	Elements.push_back(ptr);
+    Elements.push_back(ptr);
 }
 
 void FEModel::add_beam_element(int id, int n1_id, int n2_id, int sec_id, int mat_id, double beta)
@@ -376,7 +325,7 @@ void FEModel::add_beam_element(int id, int n1_id, int n2_id, int sec_id, int mat
     Material mat = Materials[mat_id];
 
     std::shared_ptr<BeamElement> ptr = std::make_shared<BeamElement>(id, n1, n2, sec, mat, beta);
-	Elements.push_back(ptr);
+    Elements.push_back(ptr);
 
     Nodes[ptr->Nodes[0]->id].Fix.UnlockAllRot();
     Nodes[ptr->Nodes[1]->id].Fix.UnlockAllRot();
@@ -390,7 +339,7 @@ void FEModel::add_tri_plate_element(int id, int n1_id, int n2_id, int n3_id, dou
     Material mat = Materials[mat_id];
 
     std::shared_ptr<TriPlateElement> ptr = std::make_shared<TriPlateElement>(id, n1, n2, n3, thickness, mat);
-	Elements.push_back(ptr);
+    Elements.push_back(ptr);
 
     Nodes[ptr->Nodes[0]->id].Fix.UnlockAllRot();
     Nodes[ptr->Nodes[1]->id].Fix.UnlockAllRot();
@@ -408,7 +357,7 @@ void FEModel::add_quad_plate_element(int id, int n1_id, int n2_id, int n3_id, in
 
     std::shared_ptr<QuadPlateElement> ptr = 
         std::make_shared<QuadPlateElement>(id, n1, n2, n3, n4, thickness, mat);
-	Elements.push_back(ptr);
+    Elements.push_back(ptr);
 
     Nodes[ptr->Nodes[0]->id].Fix.UnlockAllRot();
     Nodes[ptr->Nodes[1]->id].Fix.UnlockAllRot();
@@ -518,7 +467,7 @@ Eigen::SparseMatrix<double> FEModel::AssembleMassMatrix()
     }
 
     mass_mat *= (1.0 / GraityAccel);
-	return mass_mat;
+    return mass_mat;
 }
 
 Eigen::SparseMatrix<double> FEModel::AssembleGeometricStiffnessMatrix(
@@ -548,15 +497,15 @@ Eigen::SparseMatrix<double> FEModel::AssembleGeometricStiffnessMatrix(
 
 void FEModel::ComputeElementNodeMass()
 {
-	for (size_t i = 0; i < Nodes.size(); i++)
-		Nodes[i].MassData.ElementMass = 0.0;
+    for (size_t i = 0; i < Nodes.size(); i++)
+        Nodes[i].MassData.ElementMass = 0.0;
 
     for (std::shared_ptr<ElementBase> eh : Elements) {
-		Eigen::VectorXd masses = eh->NodeLumpedMass();
+        Eigen::VectorXd masses = eh->NodeLumpedMass();
         for (size_t i = 0; i < eh->NodeNum(); i++) {
             int node_id = eh->NodesList()[i]->id;
-			Nodes[node_id].MassData.ElementMass += masses(i);
-		}
+            Nodes[node_id].MassData.ElementMass += masses(i);
+        }
     }
 }
 
@@ -572,18 +521,18 @@ void FEModel::SolveLinearStatic(std::vector<std::shared_ptr<LoadBase>>& loads,
         if (std::shared_ptr<InertialForce> inertial = std::dynamic_pointer_cast<InertialForce>(load)) {
             for (auto& e : Elements)
             {
-				std::vector<NodeLoadData> elem_loads = 
+                std::vector<NodeLoadData> elem_loads = 
                     e->InertialForceToNodeLoadData(Eigen::Vector3d(inertial->accels.x, inertial->accels.y, inertial->accels.z));
                 node_loads.insert(node_loads.end(), elem_loads.begin(), elem_loads.end());
             }
         }
         else {
-			node_loads = load->NodeLoads();
+            node_loads = load->NodeLoads();
         }
 
-        for (auto& nl : node_loads) {
+        for (auto &nl : node_loads)
+        {
             if (nl.id < 0) continue;
-
             int pos = nl.id * 6;
             f[pos] += nl.Px();
             f[pos + 1] += nl.Py();
@@ -594,17 +543,44 @@ void FEModel::SolveLinearStatic(std::vector<std::shared_ptr<LoadBase>>& loads,
         }
     }
 
-    std::vector<int> free_indices = FreeIndices();
+    std::vector<int> slave_indices = RigidLinkData->SlaveDOFIndices();
+    std::vector<int> free_indices = FreeIndices(true);
     std::vector<int> fixed_indices = FixIndices();
-    Eigen::SparseMatrix<double> m, mb, mc;
-    FEModel::splitMatrixWithResize(AssembleStiffnessMatrix(), fixed_indices, m, mb, mc);
 
+    Eigen::SparseMatrix<double> m11, m12, m13, m22, m23, m33;
+    SparseMatrixUtils::splitMatrix3x3(AssembleStiffnessMatrix(), slave_indices, free_indices,
+        m11, m12, m13, m22, m23, m33);
+
+    Eigen::SparseMatrix<double> maa, mab, mac;
+    Eigen::SparseMatrix<double> linkTransMat = RigidLinkData->TransformationMatrix().sparseView(1e-10);
+    maa = (linkTransMat.transpose() * m11.selfadjointView<Eigen::Upper>() * linkTransMat).triangularView<Eigen::Upper>();
+    mab = (linkTransMat.transpose() * m12);
+    mac = (linkTransMat.transpose() * m13);
+
+    Eigen::SparseMatrix<double> mii, mij, mjj;
+    if (maa.rows() > 0){
+        SparseMatrixUtils::mergeMatrixWithResize(maa, mab, m22, mii);
+        mij = SparseMatrixUtils::vstack(mac, m23);
+    }
+    else{
+        mii = m22;
+        mij = m23;
+    }
+    mjj = m33;
+
+    Eigen::VectorXd f_slave(slave_indices.size());
     Eigen::VectorXd f_free(free_indices.size());
     Eigen::VectorXd f_fix(fixed_indices.size());
+    for (size_t i = 0; i < slave_indices.size(); i++)
+        f_slave(i) = f(slave_indices[i]);
     for (size_t i = 0; i < free_indices.size(); i++)
         f_free(i) = f(free_indices[i]);
     for (size_t i = 0; i < fixed_indices.size(); i++)
         f_fix(i) = f(fixed_indices[i]);
+
+    Eigen::VectorXd f_master = linkTransMat.transpose() * f_slave;
+    Eigen::VectorXd f_input(f_master.size() + f_free.size());
+    f_input << f_master, f_free;
 
 #ifdef EIGEN_USE_MKL_ALL
     Eigen::PardisoLLT<Eigen::SparseMatrix<double>> solver;
@@ -613,16 +589,14 @@ void FEModel::SolveLinearStatic(std::vector<std::shared_ptr<LoadBase>>& loads,
 #endif
 
     // Solve
-    solver.compute(m);
-    Eigen::VectorXd d_free = solver.solve(f_free);
-    Eigen::VectorXd r_fix = mb.transpose() * d_free - f_fix;
+    solver.compute(mii);
+    Eigen::VectorXd d_result = solver.solve(f_input);
+    Eigen::VectorXd r_fix = mij.transpose() * d_result - f_fix;
 
     // 反力データ整理
     Eigen::VectorXd r = Eigen::VectorXd::Zero(Nodes.size() * 6);
     for (size_t i = 0; i < fixed_indices.size(); i++)
         r(fixed_indices[i]) = r_fix(i);
-
-    // std::vector<NodeLoad> react;
     for (size_t i = 0; i < Nodes.size(); i++)
     {
         if (!Nodes[i].Fix.IsAnyFix()) continue;
@@ -632,12 +606,17 @@ void FEModel::SolveLinearStatic(std::vector<std::shared_ptr<LoadBase>>& loads,
 
     // 変形データ整理
     Eigen::VectorXd d = Eigen::VectorXd::Zero(Nodes.size() * 6);
-    //Eigen::VectorXd d(Nodes.size() * 6) = Eigen::VectorXd::;
-    //d.setZero();
-    for (size_t i = 0; i < free_indices.size(); i++)
+
+    // Eigen::VectorXd d_master = d_result.head(linkTransMat.cols());
+    Eigen::VectorXd d_slave = linkTransMat * d_result.head(linkTransMat.cols());
+    Eigen::VectorXd d_free = d_result.tail(free_indices.size());
+
+    for (size_t i = 0; i < slave_indices.size(); i++)
+        d(slave_indices[i]) = d_slave(i);
+
+        for (size_t i = 0; i < free_indices.size(); i++)
         d(free_indices[i]) = d_free(i);
 
-    // std::vector<Displacement> disp;
     for (size_t i = 0; i < Nodes.size(); i++)
     {
         int pos = i * 6;

@@ -59,23 +59,29 @@ void DAEnergyRecorder::RecordDampingEnergy(DynamicAnalysis &da)
 void DAEnergyRecorder::RecordInputEnergy(DynamicAnalysis &da)
 {
     Vector gacc = da.accel_load.Direction * da.accel_load.Accels[da.current_step - 1];
-    std::vector<int> free_indices = da.model->FreeIndices();
-    Eigen::VectorXd post_accel0 = Eigen::VectorXd::Zero(free_indices.size());
-    for (size_t i = 0; i < free_indices.size(); i++)
-    {
-        int fi = free_indices[i] % NODE_DOF;
-        if (fi == 0)
-            post_accel0[i] = gacc.x;
-        else if (fi == 1)
-            post_accel0[i] = gacc.y;
-        else if (fi == 2)
-            post_accel0[i] = gacc.z;
-        else if (fi == 3)
-            post_accel0[i] = 0.0;
-        else if (fi == 4)
-            post_accel0[i] = 0.0;
-        else if (fi == 5)
-            post_accel0[i] = 0.0;
+
+    // 縮小空間での入力加速度ベクトル
+    int reduced_size = da.master_dof_num + da.free_indices.size();
+    Eigen::VectorXd post_accel0 = Eigen::VectorXd::Zero(reduced_size);
+
+    if (da.master_dof_num > 0) {
+        // マスターDOFに対して直接地動加速度を設定
+        int counter = 0;
+        for (RigidLink& link : da.model->RigidLinkData->links) {
+            if (link.Ux()) post_accel0[counter++] = gacc.x;
+            if (link.Uy()) post_accel0[counter++] = gacc.y;
+            if (link.Uz()) post_accel0[counter++] = gacc.z;
+            if (link.Rx()) counter++;  // 回転は0のまま
+            if (link.Ry()) counter++;
+            if (link.Rz()) counter++;
+        }
+    }
+
+    for (size_t i = 0; i < da.free_indices.size(); i++) {
+        int fi = da.free_indices[i] % NODE_DOF;
+        if (fi == 0) post_accel0[da.master_dof_num + i] = gacc.x;
+        else if (fi == 1) post_accel0[da.master_dof_num + i] = gacc.y;
+        else if (fi == 2) post_accel0[da.master_dof_num + i] = gacc.z;
     }
 
     Eigen::VectorXd post_accel = da.matM_aa.selfadjointView<Eigen::Upper>() * post_accel0;
@@ -105,17 +111,58 @@ bool DynamicAnalysis::Initialize()
 {
     // 値を初期化
     current_step = 0;
-    current_disp = Eigen::VectorXd::Zero(model->FreeDOFNum());
-    current_vel = Eigen::VectorXd::Zero(model->FreeDOFNum());
-    current_accel = Eigen::VectorXd::Zero(model->FreeDOFNum());
+
+    // インデックスの取得（RigidLinkを考慮）
+    slave_indices = model->RigidLinkData->SlaveDOFIndices();
+    free_indices = model->FreeIndices(true);  // rigid_link=true
+    fixed_indices = model->FixIndices();
+
+    // 変換行列の取得
+    linkTransMat = model->RigidLinkData->TransformationMatrix().sparseView(1e-10);
+    master_dof_num = linkTransMat.cols();
+
+    // 縮小空間のサイズ
+    int reduced_size = master_dof_num + free_indices.size();
+    current_disp = Eigen::VectorXd::Zero(reduced_size);
+    current_vel = Eigen::VectorXd::Zero(reduced_size);
+    current_accel = Eigen::VectorXd::Zero(reduced_size);
 
     // マトリクスの組み立て
+    if (master_dof_num > 0) {
+        // RigidLinkがある場合: 3x3ブロックに分割して縮小
+        Eigen::SparseMatrix<double> k11, k12, k13, k22, k23, k33;
+        SparseMatrixUtils::splitMatrix3x3(model->AssembleStiffnessMatrix(),
+            slave_indices, free_indices, k11, k12, k13, k22, k23, k33);
 
-    // StiffnessMatrixの組み立て
-    free_indices = model->FreeIndices();
-    fixed_indices = model->FixIndices();
-    FEModel::splitMatrixWithResize(model->AssembleStiffnessMatrix(), fixed_indices, matK_aa, matK_ab, matK_bb);
-    FEModel::splitMatrixWithResize(model->AssembleMassMatrix(), fixed_indices, matM_aa, matM_ab, matM_bb);
+        Eigen::SparseMatrix<double> m11, m12, m13, m22, m23, m33;
+        SparseMatrixUtils::splitMatrix3x3(model->AssembleMassMatrix(),
+            slave_indices, free_indices, m11, m12, m13, m22, m23, m33);
+
+        // 剛性行列の縮小
+        Eigen::SparseMatrix<double> kaa, kab;
+        kaa = (linkTransMat.transpose() * k11.selfadjointView<Eigen::Upper>() * linkTransMat)
+              .triangularView<Eigen::Upper>();
+        kab = (linkTransMat.transpose() * k12);
+        SparseMatrixUtils::mergeMatrixWithResize(kaa, kab, k22, matK_aa);
+        matK_ab = SparseMatrixUtils::vstack(linkTransMat.transpose() * k13, k23);
+        matK_bb = k33;
+
+        // 質量行列の縮小
+        Eigen::SparseMatrix<double> maa, mab;
+        maa = (linkTransMat.transpose() * m11.selfadjointView<Eigen::Upper>() * linkTransMat)
+              .triangularView<Eigen::Upper>();
+        mab = (linkTransMat.transpose() * m12);
+        SparseMatrixUtils::mergeMatrixWithResize(maa, mab, m22, matM_aa);
+        matM_ab = SparseMatrixUtils::vstack(linkTransMat.transpose() * m13, m23);
+        matM_bb = m33;
+    }
+    else {
+        // RigidLinkがない場合: 従来通り2x2分割
+        SparseMatrixUtils::splitMatrixWithResize(model->AssembleStiffnessMatrix(),
+            fixed_indices, matK_aa, matK_ab, matK_bb);
+        SparseMatrixUtils::splitMatrixWithResize(model->AssembleMassMatrix(),
+            fixed_indices, matM_aa, matM_ab, matM_bb);
+    }
 
     // 減衰マトリクスの組み立て
     bool damp_init = damp_initializer->Initialize(this);
@@ -140,7 +187,6 @@ bool DynamicAnalysis::Initialize()
 void DynamicAnalysis::ComputeStep()
 {
     // ステップ数が最大に達した場合は終了
-    // Note: 加速度をゼロとして続けるという選択肢もある,,,
     if (current_step >= accel_load.Accels.size())
     {
         std::cout << "Dynamic analysis completed." << std::endl;
@@ -150,34 +196,45 @@ void DynamicAnalysis::ComputeStep()
     double dt = accel_load.timestep;
     Vector gacc = accel_load.Direction * accel_load.Accels[current_step];
 
-    std::vector<int> free_indices = model->FreeIndices();
-    Eigen::VectorXd post_accel0 = Eigen::VectorXd::Zero(free_indices.size());
-    for (size_t i = 0; i < free_indices.size(); i++)
-    {
-        int fi = free_indices[i] % NODE_DOF;
-        if (fi == 0)
-            post_accel0[i] = gacc.x;
-        else if (fi == 1)
-            post_accel0[i] = gacc.y;
-        else if (fi == 2)
-            post_accel0[i] = gacc.z;
+    // 縮小空間での入力加速度ベクトルを構築
+    int reduced_size = master_dof_num + free_indices.size();
+    Eigen::VectorXd post_accel0 = Eigen::VectorXd::Zero(reduced_size);
+
+    if (master_dof_num > 0) {
+        // マスターDOFに対して直接地動加速度を設定
+        int counter = 0;
+        for (RigidLink& link : model->RigidLinkData->links) {
+            if (link.Ux()) post_accel0[counter++] = gacc.x;
+            if (link.Uy()) post_accel0[counter++] = gacc.y;
+            if (link.Uz()) post_accel0[counter++] = gacc.z;
+            if (link.Rx()) counter++;  // 回転は0のまま
+            if (link.Ry()) counter++;
+            if (link.Rz()) counter++;
+        }
     }
 
-    std::vector<int> fixed_indices = model->FixIndices();
+    // free自由度への加速度
+    for (size_t i = 0; i < free_indices.size(); i++) {
+        int fi = free_indices[i] % NODE_DOF;
+        if (fi == 0) post_accel0[master_dof_num + i] = gacc.x;
+        else if (fi == 1) post_accel0[master_dof_num + i] = gacc.y;
+        else if (fi == 2) post_accel0[master_dof_num + i] = gacc.z;
+    }
+
+    // fixed自由度への加速度
     Eigen::VectorXd post_accel0_fixed = Eigen::VectorXd::Zero(fixed_indices.size());
     for (size_t i = 0; i < fixed_indices.size(); i++)
     {
         int fi = fixed_indices[i] % NODE_DOF;
-        if (fi == 0)
-            post_accel0_fixed[i] = gacc.x;
-        else if (fi == 1)
-            post_accel0_fixed[i] = gacc.y;
-        else if (fi == 2)
-            post_accel0_fixed[i] = gacc.z;
+        if (fi == 0) post_accel0_fixed[i] = gacc.x;
+        else if (fi == 1) post_accel0_fixed[i] = gacc.y;
+        else if (fi == 2) post_accel0_fixed[i] = gacc.z;
     }
 
     // 次ステップの変位、速度、加速度を取得
-    Eigen::VectorXd post_accel = matM_aa.selfadjointView<Eigen::Upper>() * (-post_accel0) - matC_aa.selfadjointView<Eigen::Upper>() * (current_vel + 0.5 * dt * current_accel) - matK_aa.selfadjointView<Eigen::Upper>() * (current_disp + dt * current_vel + (0.5 - beta) * dt * dt * current_accel);
+    Eigen::VectorXd post_accel = matM_aa.selfadjointView<Eigen::Upper>() * (-post_accel0)
+        - matC_aa.selfadjointView<Eigen::Upper>() * (current_vel + 0.5 * dt * current_accel)
+        - matK_aa.selfadjointView<Eigen::Upper>() * (current_disp + dt * current_vel + (0.5 - beta) * dt * dt * current_accel);
     post_accel = solver.solve(post_accel);
     Eigen::VectorXd post_vel = current_vel + 0.5 * (current_accel + post_accel) * dt;
     Eigen::VectorXd post_disp = current_disp + dt * current_vel + (0.5 - beta) * dt * dt * current_accel + beta * dt * dt * post_accel;
@@ -281,15 +338,23 @@ bool DynamicAnalysis::SetAccelerations(std::vector<Displacement> accs)
 std::vector<Displacement> DynamicAnalysis::GetDisplacements()
 {
     std::vector<Displacement> disp;
-
-    // 変形データ整理
     Eigen::VectorXd d = Eigen::VectorXd::Zero(model->Nodes.size() * 6);
-    // Eigen::VectorXd d(Nodes.size() * 6) = Eigen::VectorXd::;
-    // d.setZero();
-    for (size_t i = 0; i < free_indices.size(); i++)
-    {
-        d(free_indices[i]) = current_disp(i);
-        // std::cout << current_disp(i);
+
+    if (master_dof_num > 0) {
+        // RigidLinkがある場合: master → slave に展開
+        Eigen::VectorXd d_master = current_disp.head(master_dof_num);
+        Eigen::VectorXd d_free = current_disp.tail(free_indices.size());
+        Eigen::VectorXd d_slave = linkTransMat * d_master;
+
+        for (size_t i = 0; i < slave_indices.size(); i++)
+            d(slave_indices[i]) = d_slave(i);
+        for (size_t i = 0; i < free_indices.size(); i++)
+            d(free_indices[i]) = d_free(i);
+    }
+    else {
+        // RigidLinkがない場合: 従来通り
+        for (size_t i = 0; i < free_indices.size(); i++)
+            d(free_indices[i]) = current_disp(i);
     }
 
     for (size_t i = 0; i < model->Nodes.size(); i++)
@@ -304,13 +369,24 @@ std::vector<Displacement> DynamicAnalysis::GetDisplacements()
 std::vector<Displacement> DynamicAnalysis::GetVelocities()
 {
     std::vector<Displacement> vel;
-
-    // 変形データ整理
     Eigen::VectorXd d = Eigen::VectorXd::Zero(model->Nodes.size() * 6);
-    // Eigen::VectorXd d(Nodes.size() * 6) = Eigen::VectorXd::;
-    // d.setZero();
-    for (size_t i = 0; i < free_indices.size(); i++)
-        d(free_indices[i]) = current_vel(i);
+
+    if (master_dof_num > 0) {
+        // RigidLinkがある場合: master → slave に展開
+        Eigen::VectorXd d_master = current_vel.head(master_dof_num);
+        Eigen::VectorXd d_free = current_vel.tail(free_indices.size());
+        Eigen::VectorXd d_slave = linkTransMat * d_master;
+
+        for (size_t i = 0; i < slave_indices.size(); i++)
+            d(slave_indices[i]) = d_slave(i);
+        for (size_t i = 0; i < free_indices.size(); i++)
+            d(free_indices[i]) = d_free(i);
+    }
+    else {
+        // RigidLinkがない場合: 従来通り
+        for (size_t i = 0; i < free_indices.size(); i++)
+            d(free_indices[i]) = current_vel(i);
+    }
 
     for (size_t i = 0; i < model->Nodes.size(); i++)
     {
@@ -324,13 +400,24 @@ std::vector<Displacement> DynamicAnalysis::GetVelocities()
 std::vector<Displacement> DynamicAnalysis::GetAccelerations()
 {
     std::vector<Displacement> acc;
-
-    // 変形データ整理
     Eigen::VectorXd d = Eigen::VectorXd::Zero(model->Nodes.size() * 6);
-    // Eigen::VectorXd d(Nodes.size() * 6) = Eigen::VectorXd::;
-    // d.setZero();
-    for (size_t i = 0; i < free_indices.size(); i++)
-        d(free_indices[i]) = current_accel(i);
+
+    if (master_dof_num > 0) {
+        // RigidLinkがある場合: master → slave に展開
+        Eigen::VectorXd d_master = current_accel.head(master_dof_num);
+        Eigen::VectorXd d_free = current_accel.tail(free_indices.size());
+        Eigen::VectorXd d_slave = linkTransMat * d_master;
+
+        for (size_t i = 0; i < slave_indices.size(); i++)
+            d(slave_indices[i]) = d_slave(i);
+        for (size_t i = 0; i < free_indices.size(); i++)
+            d(free_indices[i]) = d_free(i);
+    }
+    else {
+        // RigidLinkがない場合: 従来通り
+        for (size_t i = 0; i < free_indices.size(); i++)
+            d(free_indices[i]) = current_accel(i);
+    }
 
     for (size_t i = 0; i < model->Nodes.size(); i++)
     {

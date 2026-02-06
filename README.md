@@ -36,7 +36,7 @@
 ```bash
 mkdir build && cd build
 cmake .. 
-cmake --build . --config Release
+cmake --build .
 ```
 
 ### C#バインディング
@@ -44,7 +44,7 @@ cmake --build . --config Release
 ```bash
 mkdir build-csharp && cd build-csharp
 cmake .. -DBUILD_CSHARP=ON
-cmake --build . --config Release
+cmake --build . {--config Release}
 ```
 
 生成されるファイル:
@@ -56,7 +56,7 @@ cmake --build . --config Release
 ```bash
 mkdir build-python && cd build-python
 cmake .. -DBUILD_PYTHON=ON -DBUILD_CSHARP=OFF
-cmake --build . --config Release
+cmake --build .
 ```
 
 ビルド後、`python/femnet/`ディレクトリに以下が生成されます:

@@ -74,7 +74,13 @@ public:
     // FEDeformCase を介して継承されました
     BeamStressData GetBeamStress(int eid, double p) override;
 
+    // 各LinearStaticDeformFactorのインデックスに対応する応力を返す
+    std::vector<BeamStressData> GetBeamStressComponents(int eid, double p);
+
     PlateStressData GetPlateStressData(int eid, double xi, double eta) override;
+
+    // 各LinearStaticDeformFactorのインデックスに対応する応力を返す
+    std::vector<PlateStressData> GetPlateStressDataComponents(int eid, double xi, double eta);
 
     Displacement GetBeamDisplace(int eid, double p) override;
 

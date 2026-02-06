@@ -16,7 +16,12 @@
 #endif
 
 #endif
+
 #include "LoadComponent.h"
+#include "RigidLink.h"
+#ifndef SWIG
+#include "SparseMatrixUtils.h"
+#endif
 
 #define PI 3.141592653589793238462643
 
@@ -50,52 +55,26 @@ private:
 
     Eigen::SparseMatrix<double> AssembleGeometricStiffnessMatrix(
         const std::vector<Displacement> &displacements);
-    
-    /// <summary>
-    /// 
-    /// </summary>
-    /// <param name="A"></param>
-    /// <param name="fixed_indices"></param>
-    /// <param name="free_matrix"></param>
-    /// <param name="free_fixed_matrix"></param>
-    /// <param name="fixed_matrix"></param>
-    static void splitMatrixWithResize(
-        const Eigen::SparseMatrix<double>& A, 
-        const std::vector<int>& fixed_indices, 
-        Eigen::SparseMatrix<double>& free_matrix, 
-        Eigen::SparseMatrix<double>& free_fixed_matrix, 
-        Eigen::SparseMatrix<double>& fixed_matrix);
-
-    /// <summary>
-    /// ┌                  ┐
-    /// │ free  free_fixed │  *
-    /// │  *      fixed    │ { fixed_indices }
-    /// └                  ┘
-    /// </summary>
-    /// <param name="A"></param>
-    /// <param name="fixed_indices"></param>
-    /// <param name="free_matrix"></param>
-    static void splitMatrixWithResize(
-        const Eigen::SparseMatrix<double>& A, 
-        const std::vector<int>& fixed_indices, 
-        Eigen::SparseMatrix<double>& free_matrix);
-    
-    static Eigen::SparseMatrix<double> extractSubMatrix(
-        const Eigen::SparseMatrix<double>& mat,
-        const std::vector<int>& rowIndices,
-        const std::vector<int>& colIndices);
 
 	friend class DynamicAnalysis;
     friend class FEBucklingAnalysis;
 	friend class FEVibrateResult;
 
 public:
+    FEModel();
+
     double GraityAccel = 9806.65;
 
     /// <summary>
     /// 非拘束自由度の全自由度におけるインデックスを格納した配列を返す関数
     /// </summary>
-    std::vector<int> FreeIndices();
+    std::vector<int> FreeIndices(bool rigid_link = false);
+    
+
+    /// <summary>
+    /// 剛体連結されている自由度の全自由度におけるインデックスを格納した配列を返す関数
+    /// </summary>
+    std::vector<int> SlaveIndices();
 
     /// <summary>
     /// 拘束自由度の全自由度におけるインデックスを格納した配列を返す関数
@@ -112,6 +91,7 @@ public:
     std::vector<Section> Sections;
     
     std::vector<std::shared_ptr<ElementBase>> Elements;
+    std::shared_ptr<RigidLinks> RigidLinkData;
     
     void add_element(BeamElement data);
     void add_element(ComplexBeamElement data);

@@ -45,7 +45,7 @@ public:
 
     Eigen::VectorXd NodeLumpedMass()
     {
-        return Eigen::VectorXd::Constant(node_num, Area() * thickness.weight_thick * Mat.dense / node_num);
+        return Eigen::VectorXd::Constant(node_num, Area() * thickness.WeightThickness() * Mat.dense / node_num);
     }
 
     Eigen::MatrixXd NodeConsistentMass();

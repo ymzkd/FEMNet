@@ -33,7 +33,6 @@
 
 %ignore Eigen::SparseMatrix;
 %ignore Eigen::MatrixXd;
-%ignore extractSubMatrix();
 %ignore trans_matrix3(const Point p0, const Point p1, const double beta);
 %ignore Eigen::Matrix3d;
 %ignore Displacement::translate(Eigen::Matrix3d transmat);

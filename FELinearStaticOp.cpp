@@ -125,6 +125,18 @@ BeamStressData LinearStaticCombinationOperator::GetBeamStress(int eid, double p)
     return data;
 }
 
+std::vector<BeamStressData> LinearStaticCombinationOperator::GetBeamStressComponents(int eid, double p)
+{
+    std::vector<BeamStressData> results;
+    for (auto &c : cases)
+    {
+        BeamStressData s = c.op->GetBeamStress(eid, p);
+        s *= c.factor; // 係数を適用
+        results.push_back(s);
+    }
+    return results;
+}
+
 PlateStressData LinearStaticCombinationOperator::GetPlateStressData(int eid, double xi, double eta)
 {
     PlateStressData data;
@@ -137,6 +149,18 @@ PlateStressData LinearStaticCombinationOperator::GetPlateStressData(int eid, dou
     }
 
     return data;
+}
+
+std::vector<PlateStressData> LinearStaticCombinationOperator::GetPlateStressDataComponents(int eid, double xi, double eta)
+{
+    std::vector<PlateStressData> results;
+    for (auto &c : cases)
+    {
+        PlateStressData s = c.op->GetPlateStressData(eid, xi, eta);
+        s *= c.factor; // 演算子オーバーロード
+        results.push_back(s);
+    }
+    return results;
 }
 
 Displacement LinearStaticCombinationOperator::GetBeamDisplace(int eid, double p)
@@ -178,30 +202,32 @@ std::vector<NodeLoad> LinearStaticCombinationOperator::GetReactForces()
         auto react = case_factor.op->GetReactForces();
         for (size_t i = 0; i < react.size(); i++)
         {
-            bool need_fallback = false;
-            // compine_reactがi番目要素を含む場合はi番目要素をチェック
-            if (i < combined_react.size())
+            // インデックスが一致する場合の高速パス
+            if (i < combined_react.size() && combined_react[i].id == react[i].id)
             {
-                // i番目要素が対象のノードか？
-                if (combined_react[i].id == react[i].id)
-                {
-                    combined_react[i].data += (case_factor.factor * react[i].data);
-                    continue;
-                }
+                combined_react[i].data += (case_factor.factor * react[i].data);
+                continue;
             }
 
+            // 全検索で既存ノードを探す
+            bool found = false;
             for (auto &cr : combined_react)
             {
                 if (cr.id == react[i].id)
                 {
                     cr.data += (case_factor.factor * react[i].data);
+                    found = true;
                     break;
                 }
-                need_fallback = true;
             }
 
-            if (need_fallback)
-                combined_react.push_back(react[i]);
+            // 見つからなければ新規追加（係数を適用）
+            if (!found)
+            {
+                NodeLoad nl = react[i];
+                nl.data = case_factor.factor * react[i].data;
+                combined_react.push_back(nl);
+            }
         }
     }
     return combined_react;

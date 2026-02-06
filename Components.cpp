@@ -95,13 +95,11 @@ Point Point::divide(const Point p0, const double t)
 }
 
 Support::Support(bool ux, bool uy, bool uz, bool rx, bool ry, bool rz)
+    : DOFFlags(ux, uy, uz, rx, ry, rz), lockflags()
 {
-    fixflags[0] = ux; fixflags[1] = uy; fixflags[2] = uz;
-    fixflags[3] = rx; fixflags[4] = ry; fixflags[5] = rz;
-
-    lockflags[0] = Unlock; lockflags[1] = Unlock;
-    lockflags[2] = Unlock; lockflags[3] = Lock;
-    lockflags[4] = Lock; lockflags[5] = Lock;
+    lockflags.flags[0] = Unlock; lockflags.flags[1] = Unlock;
+    lockflags.flags[2] = Unlock; lockflags.flags[3] = Lock;
+    lockflags.flags[4] = Lock; lockflags.flags[5] = Lock;
 }
 
 // Constrain translational movement and rotation.

@@ -14,6 +14,69 @@
 //#define PI 3.141592653589793238462643
 #define NODE_DOF 6
 
+/// <summary>
+/// 6自由度（Ux, Uy, Uz, Rx, Ry, Rz）のフラグを管理する共通データ型
+/// </summary>
+struct DOFFlags {
+    bool flags[6];
+
+    // デフォルトコンストラクタ（全false）
+    DOFFlags() {
+        for (int i = 0; i < 6; i++) flags[i] = false;
+    }
+
+    // 6個のboolを受け取るコンストラクタ
+    DOFFlags(bool ux, bool uy, bool uz, bool rx, bool ry, bool rz) {
+        flags[0] = ux; flags[1] = uy; flags[2] = uz;
+        flags[3] = rx; flags[4] = ry; flags[5] = rz;
+    }
+
+    // インデックスベースアクセサ（範囲チェック付き）
+    bool Get(int index) const {
+        if (index < 0 || index >= 6)
+            throw std::out_of_range("DOFFlags index out of range [0-5]");
+        return flags[index];
+    }
+
+    void Set(int index, bool value) {
+        if (index < 0 || index >= 6)
+            throw std::out_of_range("DOFFlags index out of range [0-5]");
+        flags[index] = value;
+    }
+
+    // DOF名ベースアクセサ（Supportクラスパターンと一貫性）
+    bool& Ux() { return flags[0]; }
+    bool& Uy() { return flags[1]; }
+    bool& Uz() { return flags[2]; }
+    bool& Rx() { return flags[3]; }
+    bool& Ry() { return flags[4]; }
+    bool& Rz() { return flags[5]; }
+
+    const bool& Ux() const { return flags[0]; }
+    const bool& Uy() const { return flags[1]; }
+    const bool& Uz() const { return flags[2]; }
+    const bool& Rx() const { return flags[3]; }
+    const bool& Ry() const { return flags[4]; }
+    const bool& Rz() const { return flags[5]; }
+
+    // ヘルパーメソッド
+    void SetAll(bool value) {
+        for (int i = 0; i < 6; i++) flags[i] = value;
+    }
+
+    bool IsAny() const {
+        for (int i = 0; i < 6; i++)
+            if (flags[i]) return true;
+        return false;
+    }
+
+    bool IsAll() const {
+        for (int i = 0; i < 6; i++)
+            if (!flags[i]) return false;
+        return true;
+    }
+};
+
 struct Vector {
 public:
     double x, y, z;
@@ -260,35 +323,23 @@ public:
 };
 
 // True if Fixed
-//struct Support {
-class Support {
+class Support : public DOFFlags {
 public:
     static const bool Fix = true;
     static const bool Free = false;
     static const bool Unlock = false;
     static const bool Lock = true;
 
-    bool lockflags[6];
-    bool fixflags[6];
-    Support() : Support(Free, Free, Free, Free, Free, Free) {};
+    DOFFlags lockflags;
+    Support() : DOFFlags(Free, Free, Free, Free, Free, Free), lockflags() {}
     Support(bool ux, bool uy, bool uz, bool rx, bool ry, bool rz);
 
-    bool& Ux() { return fixflags[0]; }
-    bool& Uy() { return fixflags[1]; }
-    bool& Uz() { return fixflags[2]; }
-    bool& Rx() { return fixflags[3]; }
-    bool& Ry() { return fixflags[4]; }
-    bool& Rz() { return fixflags[5]; }
+    // Ux(), Uy() 等は DOFFlags から継承されるため定義不要
 
     std::array<bool, 6> isdof_fixed() {
         std::array<bool, 6> fixed;
-        fixed[0] = fixflags[0] || lockflags[0];
-        fixed[1] = fixflags[1] || lockflags[1];
-        fixed[2] = fixflags[2] || lockflags[2];
-        fixed[3] = fixflags[3] || lockflags[3];
-        fixed[4] = fixflags[4] || lockflags[4];
-        fixed[5] = fixflags[5] || lockflags[5];
-
+        for (int i = 0; i < 6; i++)
+            fixed[i] = flags[i] || lockflags.flags[i];
         return fixed;
     }
 
@@ -297,9 +348,9 @@ public:
     void ReleaseAll();
 
     void UnlockAllRot() {
-        lockflags[3] = Unlock;
-        lockflags[4] = Unlock;
-        lockflags[5] = Unlock;
+        lockflags.Rx() = Unlock;
+        lockflags.Ry() = Unlock;
+        lockflags.Rz() = Unlock;
     }
 
     bool IsAnyFix() {
@@ -308,7 +359,7 @@ public:
             if (f) return true;
         }
         return false;
-    };
+    }
 };
 
 struct NodeMass {
@@ -366,7 +417,7 @@ struct Thickness {
 public:
     double plane_thick = 0;
     double plate_thick = 0;
-    double weight_thick = 0;
+    double weight_thick = -1.0;
 
     
     Thickness(double thick)
@@ -379,6 +430,10 @@ public:
      : plane_thick(plane), plate_thick(plate), weight_thick(weight) {};
 
     Thickness() : plane_thick(0), plate_thick(0), weight_thick(0) {};
+
+    double WeightThickness(){
+        return (weight_thick < 0) ? plane_thick : weight_thick;
+    }
 };
 
 struct NodeLoadData {

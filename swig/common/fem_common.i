@@ -12,6 +12,7 @@
 
 // Shared pointer declarations for base classes
 %shared_ptr(FEModel);
+%shared_ptr(RigidLinks);
 // Load Pointer
 %shared_ptr(LoadBase);
 %shared_ptr(PlateLoad);
@@ -35,6 +36,7 @@
     #include "Components.h"
     #include "Elements/Elements.h"
     #include "LoadComponent.h"
+    #include "RigidLink.h"
     #include "Model.h"
     #include "SeismicModule.h"
 %}
@@ -47,17 +49,23 @@
 %ignore NodeLoadData::My();
 %ignore NodeLoadData::Mz();
 
+// Ignore DOFFlags internal array (use accessor methods only)
+%ignore DOFFlags::flags;
+
 // Ignore Eigen types that cannot be wrapped
 %ignore Eigen::SparseMatrix;
 %ignore Eigen::MatrixXd;
 %ignore Eigen::VectorXd;
 %ignore Eigen::Vector3d;
-%ignore extractSubMatrix();
 %ignore trans_matrix3(const Point p0, const Point p1, const double beta);
 %ignore trans_matrix3(const Plane plane);
 %ignore Eigen::Matrix3d;
 %ignore Displacement::translate(Eigen::Matrix3d transmat);
 %ignore Vector::toEigen;
+
+// Ignore RigidLink methods that return Eigen types
+%ignore RigidLink::TransformationMatrix;
+%ignore RigidLinks::TransformationMatrix;
 
 // Ignore pure virtual methods that use Eigen types
 %ignore ElementBase::geometric_local_stiffness_matrix;
@@ -107,13 +115,17 @@ namespace std {
     %template(VectorNodeBodyForce) std::vector<NodeBodyForce>;
     %template(VectorNodeLoadData) std::vector<NodeLoadData>;
 
-    // BeamStressData vector
+    // StressData vectors
     %template(VectorBeamStressData) std::vector<BeamStressData>;
+    %template(VectorPlateStressData) std::vector<PlateStressData>;
 
     // BeamPolyLoad vectors and lists (default constructors added)
     %template(VectorBeamPolyLoad) std::vector<BeamPolyLoad>;
     %template(ListBeamPolyLoad) std::list<BeamPolyLoad>;
     %template(VectorBeamPolyLoadPtr) std::vector<std::shared_ptr<BeamPolyLoad>>;
+
+    // RigidLink vectors
+    %template(VectorRigidLink) std::vector<RigidLink>;
 }
 
 // ===================================================================
@@ -123,6 +135,7 @@ namespace std {
 %include "SeismicModule_common.i"
 
 // Include Model.h and SeismicModule.h
+%include "RigidLink.h"
 %include "Model.h"
 %include "SeismicModule.h"
 

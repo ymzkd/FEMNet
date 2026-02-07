@@ -16,8 +16,51 @@
     }
 }
 
+// ===================================================================
+// Python-specific typemap fixes for %shared_ptr(NodeLoad) compatibility
+// ===================================================================
+
+// Fix: NodeLoad::Px() etc. return double& which becomes
+// 'Swig Object of type double*' in Python. Convert to Python float.
+%typemap(out) double& {
+    $result = PyFloat_FromDouble(*$1);
+}
+
 // Include common definitions
 %include "fem_common.i"
+
+// ===================================================================
+// Fix: swig::from<NodeLoad> for vector-to-tuple conversion
+//
+// When %shared_ptr(NodeLoad) is active, SWIG's swig::from<NodeLoad>()
+// uses traits_from_ptr which creates a raw NodeLoad* pointer wrapped as
+// SWIGTYPE_p_NodeLoad. But the registered Python proxy expects
+// SWIGTYPE_p_std__shared_ptrT_NodeLoad_t, so elements become SwigPyObject.
+//
+// This specialization wraps each NodeLoad in a shared_ptr before conversion,
+// matching the %shared_ptr(NodeLoad) declaration. Placed after %include
+// "fem_common.i" so it appears after swig::traits_from template is defined.
+// ===================================================================
+%{
+namespace swig {
+    template <>
+    struct traits_from<NodeLoad> {
+        static PyObject* from(const NodeLoad& val) {
+            std::shared_ptr<NodeLoad>* smartresult = new std::shared_ptr<NodeLoad>(
+                std::make_shared<NodeLoad>(val));
+            // Use cached type lookup (SWIG_TypeQuery caches results internally)
+            static swig_type_info* stype = nullptr;
+            if (!stype) {
+                stype = SWIG_TypeQuery("std::shared_ptr< NodeLoad > *");
+            }
+            return SWIG_NewPointerObj(
+                SWIG_as_voidptr(smartresult),
+                stype,
+                SWIG_POINTER_OWN);
+        }
+    };
+}
+%}
 
 // Python-specific extensions
 

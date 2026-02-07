@@ -146,7 +146,7 @@ for i, disp in enumerate(displacements):
 
 # Reaction forces
 print("\n   === Reaction Forces ===")
-reactions = solver.GetReactionData()
+reactions = solver.GetReactForces()
 for react in reactions:
     print(f"   Node {react.id}:")
     print(f"     Px = {react.Px():>10.2f} N")

@@ -243,7 +243,7 @@ print(f"   Error: {abs(max_dx_edge - dx_edge_theory_full) / abs(dx_edge_theory_f
 
 # Reaction forces
 print("\n   === Reaction Forces ===")
-reactions = solver.GetReactionData()
+reactions = solver.GetReactForces()
 for react in reactions:
     if abs(react.Px()) > 1e-6 or abs(react.Py()) > 1e-6:
         print(f"   Node {react.id}: Px = {react.Px():>10.2f} N, Py = {react.Py():>10.2f} N")

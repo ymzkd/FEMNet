@@ -162,7 +162,7 @@ print(f"\n   Maximum tip deflection: {abs(tip_disp.Dy()):.4f} mm")
 
 # Reaction forces at fixed support
 print("\n   === Reaction Forces at Fixed Support (Node 0) ===")
-reactions = solver.GetReactionData()
+reactions = solver.GetReactForces()
 for react in reactions:
     if react.id == 0:
         print(f"   Px = {react.Px():>12.2f} N")

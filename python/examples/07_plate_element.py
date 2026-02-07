@@ -257,7 +257,7 @@ print(f"   (Note: Coarse mesh may result in some error)")
 
 # Equilibrium check
 print("\n   === Equilibrium Check ===")
-reactions = solver.GetReactionData()
+reactions = solver.GetReactForces()
 sum_rz = sum(r.Pz() for r in reactions)
 print(f"   Sum of Rz reactions: {sum_rz:.2f} N (upward)")
 print(f"   Applied force: {-total_force:.2f} N (downward)")

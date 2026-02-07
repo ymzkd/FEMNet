@@ -124,7 +124,7 @@ if solver.Computed():
         print(f"Node {i}: Dx={disp.Dx():.6f}, Dy={disp.Dy():.6f}")
 
     # 反力取得
-    reactions = solver.GetReactionData()
+    reactions = solver.GetReactForces()
     for react in reactions:
         print(f"Reaction at node {react.id}: Py={react.Py():.2f} N")
 

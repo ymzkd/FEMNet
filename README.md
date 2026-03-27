@@ -28,6 +28,19 @@
 - Spectra
 - SWIG 4.0+
 - Intel MKL (オプション、高速化)
+- CUDA Toolkit 12.x + cuSPARSE/cuBLAS (オプション、GPU疎行列ソルバー)
+
+## 疎行列ソルバー
+
+剛性方程式の求解に以下のソルバーを利用できます。
+
+| ソルバー | 種別 | 環境 | 適した規模 |
+|----------|------|------|-----------|
+| Eigen SimplicialLLT | 直接法 | CPU | 小〜中規模 |
+| MKL PardisoLLT | 直接法 | CPU (MKL検出時に自動選択) | 小〜中規模 |
+| CUDA PCG (IC0前処理) | 反復法 | GPU (`USE_CUDA=ON` で有効) | 大規模 (10万DOF〜) |
+
+CUDAソルバーは`USE_CUDA=ON`でビルドした場合に自動的に使用されます。CUDA環境がない場合やオプション未指定時はEigen/MKLが使用され、動作に影響はありません。
 
 ## ビルド
 
@@ -35,9 +48,22 @@
 
 ```bash
 mkdir build && cd build
-cmake .. 
+cmake ..
 cmake --build .
 ```
+
+### CUDA GPUソルバーを有効にする場合
+
+CUDA Toolkit 12.x がインストールされた環境で、Ninjaジェネレータを使用してビルドします。Visual Studio Developer Command Prompt 内で実行してください。
+
+```bash
+cmake -G Ninja -B build -DUSE_CUDA=ON -DCMAKE_CUDA_COMPILER="%CUDACXX%"
+cmake --build build
+```
+
+前提条件:
+- 環境変数 `CUDACXX` に nvcc のパスを設定（例: `C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.8\bin\nvcc.exe`）
+- VS 2026 + CUDA 12.x の `--allow-unsupported-compiler` は CMakeLists.txt で自動付与されるため手動指定は不要
 
 ### C#バインディング
 

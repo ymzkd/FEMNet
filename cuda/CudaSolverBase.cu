@@ -5,8 +5,9 @@
 CSRMatrix eigenUpperToFullCSR(const Eigen::SparseMatrix<double>& A) {
     int n = A.rows();
 
-    // Collect all entries from upper triangle, then mirror to lower
-    // Use a map to accumulate: (row, col) -> value
+    // Build full symmetric CSR from a symmetric matrix that may store
+    // upper triangle only, lower triangle only, or both.
+    // Only use upper triangle entries (row <= col) to avoid double-counting.
     std::vector<std::vector<std::pair<int, double>>> rowEntries(n);
 
     // Eigen SparseMatrix is CSC: iterate by columns
@@ -15,10 +16,11 @@ CSRMatrix eigenUpperToFullCSR(const Eigen::SparseMatrix<double>& A) {
             int row = it.row();
             double val = it.value();
 
-            // Add the entry itself
+            // Only process upper triangle (row <= col) to avoid double-counting
+            if (row > col) continue;
+
             rowEntries[row].emplace_back(col, val);
 
-            // Add the mirror entry (if off-diagonal)
             if (row != col) {
                 rowEntries[col].emplace_back(row, val);
             }

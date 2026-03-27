@@ -17,6 +17,13 @@ endif()
 # === Optional CUDA support ===
 option(USE_CUDA "Enable CUDA sparse solvers" OFF)
 if(USE_CUDA)
+    # MSVC 19.50+ (VS 2026+) is not yet supported by CUDA 12.x;
+    # set --allow-unsupported-compiler BEFORE enable_language(CUDA)
+    # so the compiler identification test can pass.
+    if(MSVC AND MSVC_VERSION GREATER_EQUAL 1950)
+        set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --allow-unsupported-compiler")
+    endif()
+
     include(CheckLanguage)
     check_language(CUDA)
     if(CMAKE_CUDA_COMPILER)

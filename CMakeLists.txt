@@ -262,6 +262,10 @@ if(BUILD_PYTHON)
         ${CMAKE_SOURCE_DIR}/swig/common
         ${Python3_INCLUDE_DIRS})
 
+    if(MSVC)
+        target_compile_options(femnet PRIVATE /bigobj)
+    endif()
+
     configure_mkl_target(femnet)
     target_link_libraries(femnet PUBLIC Python3::Python)
     configure_cuda_target(femnet)

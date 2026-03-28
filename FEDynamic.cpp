@@ -5,7 +5,7 @@ void DASampler_MaxDisplacement::Sampling(DynamicAnalysis &da)
     bool updated = false;
     std::vector<Displacement> disp = da.GetDisplacements();
 
-    // 任意�?�節点の変位が最大となるス�?�?プを記録
+    // 任意節点の変位が最大となるステップを記録
     for (int i = 0; i < da.model->Nodes.size(); i++)
     {
         double d_length = disp[i].Translation().norm();
@@ -289,6 +289,7 @@ void DynamicAnalysis::ComputeSteps(int steps)
 
 bool DynamicAnalysis::SetDisplacements(std::vector<Displacement> disps)
 {
+    // free DOF の復元（master_dof_num 分のオフセット付き）
     for (size_t i = 0; i < free_indices.size(); i++)
     {
         size_t idx = free_indices[i];
@@ -298,13 +299,34 @@ bool DynamicAnalysis::SetDisplacements(std::vector<Displacement> disps)
         if (node_id >= disps.size())
             return false;
 
-        current_disp(i) = disps[node_id].displace[pos];
+        current_disp(master_dof_num + i) = disps[node_id].displace[pos];
     }
+
+    // master DOF の復元（RigidLink がある場合: slave変位から逆変換）
+    if (master_dof_num > 0)
+    {
+        Eigen::VectorXd d_slave(slave_indices.size());
+        for (size_t i = 0; i < slave_indices.size(); i++)
+        {
+            size_t idx = slave_indices[i];
+            size_t pos = idx % NODE_DOF;
+            size_t node_id = idx / NODE_DOF;
+            if (node_id >= disps.size())
+                return false;
+            d_slave(i) = disps[node_id].displace[pos];
+        }
+        Eigen::SparseMatrix<double> TtT = linkTransMat.transpose() * linkTransMat;
+        Eigen::SimplicialLDLT<Eigen::SparseMatrix<double>> solver(TtT);
+        current_disp.head(master_dof_num) =
+            solver.solve(Eigen::VectorXd(linkTransMat.transpose() * d_slave));
+    }
+
     return true;
 }
 
 bool DynamicAnalysis::SetVelocities(std::vector<Displacement> vels)
 {
+    // free DOF の復元（master_dof_num 分のオフセット付き）
     for (size_t i = 0; i < free_indices.size(); i++)
     {
         size_t idx = free_indices[i];
@@ -314,13 +336,34 @@ bool DynamicAnalysis::SetVelocities(std::vector<Displacement> vels)
         if (node_id >= vels.size())
             return false;
 
-        current_vel(i) = vels[node_id].displace[pos];
+        current_vel(master_dof_num + i) = vels[node_id].displace[pos];
     }
+
+    // master DOF の復元（RigidLink がある場合: slave速度から逆変換）
+    if (master_dof_num > 0)
+    {
+        Eigen::VectorXd v_slave(slave_indices.size());
+        for (size_t i = 0; i < slave_indices.size(); i++)
+        {
+            size_t idx = slave_indices[i];
+            size_t pos = idx % NODE_DOF;
+            size_t node_id = idx / NODE_DOF;
+            if (node_id >= vels.size())
+                return false;
+            v_slave(i) = vels[node_id].displace[pos];
+        }
+        Eigen::SparseMatrix<double> TtT = linkTransMat.transpose() * linkTransMat;
+        Eigen::SimplicialLDLT<Eigen::SparseMatrix<double>> solver(TtT);
+        current_vel.head(master_dof_num) =
+            solver.solve(Eigen::VectorXd(linkTransMat.transpose() * v_slave));
+    }
+
     return true;
 }
 
 bool DynamicAnalysis::SetAccelerations(std::vector<Displacement> accs)
 {
+    // free DOF の復元（master_dof_num 分のオフセット付き）
     for (size_t i = 0; i < free_indices.size(); i++)
     {
         size_t idx = free_indices[i];
@@ -330,8 +373,28 @@ bool DynamicAnalysis::SetAccelerations(std::vector<Displacement> accs)
         if (node_id >= accs.size())
             return false;
 
-        current_accel(i) = accs[node_id].displace[pos];
+        current_accel(master_dof_num + i) = accs[node_id].displace[pos];
     }
+
+    // master DOF の復元（RigidLink がある場合: slave加速度から逆変換）
+    if (master_dof_num > 0)
+    {
+        Eigen::VectorXd a_slave(slave_indices.size());
+        for (size_t i = 0; i < slave_indices.size(); i++)
+        {
+            size_t idx = slave_indices[i];
+            size_t pos = idx % NODE_DOF;
+            size_t node_id = idx / NODE_DOF;
+            if (node_id >= accs.size())
+                return false;
+            a_slave(i) = accs[node_id].displace[pos];
+        }
+        Eigen::SparseMatrix<double> TtT = linkTransMat.transpose() * linkTransMat;
+        Eigen::SimplicialLDLT<Eigen::SparseMatrix<double>> solver(TtT);
+        current_accel.head(master_dof_num) =
+            solver.solve(Eigen::VectorXd(linkTransMat.transpose() * a_slave));
+    }
+
     return true;
 }
 

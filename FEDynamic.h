@@ -6,13 +6,7 @@
 #include <map>
 #include <array>
 
-
-#ifdef EIGEN_USE_MKL_ALL
-#include <Eigen/Sparse>
-#include <Eigen/PardisoSupport>
-#else
-#include <Eigen/Sparse>
-#endif
+#include "SparseSolver.h"
 
 #endif
 
@@ -72,11 +66,7 @@ public:
 class DynamicAnalysis : public FEDeformOperator
 {
 private:
-#ifdef EIGEN_USE_MKL_ALL
-    Eigen::PardisoLLT<Eigen::SparseMatrix<double>> solver;
-#else
-    Eigen::SimplicialLLT<Eigen::SparseMatrix<double>, Eigen::Upper> solver;
-#endif
+    std::unique_ptr<ISparseSolver> solver;
     Eigen::SparseMatrix<double> matM_aa, matM_ab, matM_bb;
     Eigen::SparseMatrix<double> matK_aa, matK_ab, matK_bb;
     Eigen::SparseMatrix<double> matC_aa, matC_ab, matC_bb;
@@ -113,6 +103,7 @@ public:
     void Clear()
     {
         current_step = 0;
+        solver.reset();
         matM_aa.resize(0, 0);
         matK_aa.resize(0, 0);
         matC_aa.resize(0, 0);

@@ -14,6 +14,69 @@ else()
     message(STATUS "MKL not found, proceeding without MKL")
 endif()
 
+# === Optional CUDA support ===
+option(USE_CUDA "Enable CUDA sparse solvers" OFF)
+if(USE_CUDA)
+    # MSVC 19.50+ (VS 2026+) is not yet supported by CUDA 12.x;
+    # set --allow-unsupported-compiler BEFORE enable_language(CUDA)
+    # so the compiler identification test can pass.
+    if(MSVC AND MSVC_VERSION GREATER_EQUAL 1950)
+        set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --allow-unsupported-compiler")
+    endif()
+
+    include(CheckLanguage)
+    check_language(CUDA)
+    if(CMAKE_CUDA_COMPILER)
+        enable_language(CUDA)
+        find_package(CUDAToolkit REQUIRED)
+        set(CUDA_FOUND TRUE)
+        set(CMAKE_CUDA_STANDARD 17)
+        set(CMAKE_CUDA_ARCHITECTURES 89)
+        # Suppress Eigen warnings in nvcc and enable relaxed constexpr
+        set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --expt-relaxed-constexpr -diag-suppress=20012,20015 -Xcudafe --diag_suppress=20012 -Xcudafe --diag_suppress=20015 -w")
+        message(STATUS "CUDA found: ${CMAKE_CUDA_COMPILER}")
+        message(STATUS "CUDA Toolkit version: ${CUDAToolkit_VERSION}")
+    else()
+        set(CUDA_FOUND FALSE)
+        message(STATUS "CUDA compiler not found, proceeding without GPU solvers")
+    endif()
+else()
+    set(CUDA_FOUND FALSE)
+    message(STATUS "CUDA disabled by user")
+endif()
+
+# CUDA solver sources
+if(CUDA_FOUND)
+    set(CUDA_SOLVER_SOURCES
+        cuda/CudaSolverBase.cu
+        cuda/CudaPCGSolver.cu
+    )
+endif()
+
+# Helper function: configure CUDA for a target
+function(configure_cuda_target target_name)
+    if(CUDA_FOUND)
+        target_compile_definitions(${target_name} PUBLIC USE_CUDA)
+        target_link_libraries(${target_name} PUBLIC CUDA::cusolver CUDA::cusparse CUDA::cublas CUDA::cudart)
+        set_target_properties(${target_name} PROPERTIES
+            CUDA_SEPARABLE_COMPILATION ON
+            CUDA_RESOLVE_DEVICE_SYMBOLS ON
+        )
+    endif()
+endfunction()
+
+# Helper function: configure MKL for a target
+function(configure_mkl_target target_name)
+    if(MKL_FOUND)
+        target_compile_definitions(${target_name} PUBLIC $<$<COMPILE_LANGUAGE:CXX>:EIGEN_USE_MKL_ALL>)
+        target_compile_options(${target_name} PUBLIC $<TARGET_PROPERTY:MKL::MKL,INTERFACE_COMPILE_OPTIONS>)
+        target_include_directories(${target_name} PUBLIC $<TARGET_PROPERTY:MKL::MKL,INTERFACE_INCLUDE_DIRECTORIES>)
+        target_link_libraries(${target_name} PUBLIC MKL::MKL Eigen3::Eigen Spectra::Spectra)
+    else()
+        target_link_libraries(${target_name} PUBLIC Eigen3::Eigen Spectra::Spectra)
+    endif()
+endfunction()
+
 # === Build Options ===
 option(BUILD_CSHARP "Build C# bindings" ON)
 option(BUILD_PYTHON "Build Python bindings" OFF)
@@ -22,7 +85,7 @@ find_package(SWIG REQUIRED)
 include(${SWIG_USE_FILE})
 
 if(MSVC)
-    add_compile_options("/utf-8")
+    add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:/utf-8>")
 else()
     set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 endif()
@@ -151,6 +214,7 @@ if(BUILD_CSHARP)
         SOURCES
             swig/csharp/fem_csharp.i
             ${FEMNET_SOURCES}
+            $<$<BOOL:${CUDA_FOUND}>:${CUDA_SOLVER_SOURCES}>
         OUTPUT_DIR ${SWIG_OUTPUT_DIR}
         OUTFILE_DIR ${SWIG_OUTPUT_DIR}
     )
@@ -158,14 +222,8 @@ if(BUILD_CSHARP)
     set_property(TARGET fem PROPERTY SWIG_COMPILE_OPTIONS -namespace ${PROJECT_NAME})
     target_include_directories(fem PUBLIC ${CMAKE_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/swig/common)
 
-    if (MKL_FOUND)
-        target_compile_definitions(fem PUBLIC EIGEN_USE_MKL_ALL)
-        target_compile_options(fem PUBLIC $<TARGET_PROPERTY:MKL::MKL,INTERFACE_COMPILE_OPTIONS>)
-        target_include_directories(fem PUBLIC $<TARGET_PROPERTY:MKL::MKL,INTERFACE_INCLUDE_DIRECTORIES>)
-        target_link_libraries(fem PUBLIC MKL::MKL Eigen3::Eigen Spectra::Spectra)
-    else()
-        target_link_libraries(fem PUBLIC Eigen3::Eigen Spectra::Spectra)
-    endif()
+    configure_mkl_target(fem)
+    configure_cuda_target(fem)
 
     # for copying fem.dll to .Net project dir
     set_target_properties(fem
@@ -194,6 +252,7 @@ if(BUILD_PYTHON)
         SOURCES
             swig/python/fem_python.i
             ${FEMNET_SOURCES}
+            $<$<BOOL:${CUDA_FOUND}>:${CUDA_SOLVER_SOURCES}>
         OUTPUT_DIR ${PYTHON_OUTPUT_DIR}
         OUTFILE_DIR ${PYTHON_OUTPUT_DIR}
     )
@@ -203,14 +262,9 @@ if(BUILD_PYTHON)
         ${CMAKE_SOURCE_DIR}/swig/common
         ${Python3_INCLUDE_DIRS})
 
-    if (MKL_FOUND)
-        target_compile_definitions(femnet PUBLIC EIGEN_USE_MKL_ALL)
-        target_compile_options(femnet PUBLIC $<TARGET_PROPERTY:MKL::MKL,INTERFACE_COMPILE_OPTIONS>)
-        target_include_directories(femnet PUBLIC $<TARGET_PROPERTY:MKL::MKL,INTERFACE_INCLUDE_DIRECTORIES>)
-        target_link_libraries(femnet PUBLIC MKL::MKL Eigen3::Eigen Spectra::Spectra Python3::Python)
-    else()
-        target_link_libraries(femnet PUBLIC Eigen3::Eigen Spectra::Spectra Python3::Python)
-    endif()
+    configure_mkl_target(femnet)
+    target_link_libraries(femnet PUBLIC Python3::Python)
+    configure_cuda_target(femnet)
 
     set_target_properties(femnet
         PROPERTIES
@@ -228,15 +282,10 @@ endif()
 add_executable(sampleapp
     app.cpp
     ${FEMNET_SOURCES}
+    $<$<BOOL:${CUDA_FOUND}>:${CUDA_SOLVER_SOURCES}>
 )
 
 target_include_directories(sampleapp PUBLIC ${CMAKE_SOURCE_DIR})
-if (MKL_FOUND)
-    target_compile_definitions(sampleapp PUBLIC EIGEN_USE_MKL_ALL)
-    target_compile_options(sampleapp PUBLIC $<TARGET_PROPERTY:MKL::MKL,INTERFACE_COMPILE_OPTIONS>)
-    target_include_directories(sampleapp PUBLIC $<TARGET_PROPERTY:MKL::MKL,INTERFACE_INCLUDE_DIRECTORIES>)
-    target_link_libraries(sampleapp PUBLIC MKL::MKL Eigen3::Eigen Spectra::Spectra)
-else()
-    target_link_libraries(sampleapp PUBLIC Eigen3::Eigen Spectra::Spectra)
-endif()
+configure_mkl_target(sampleapp)
+configure_cuda_target(sampleapp)
 

@@ -176,7 +176,8 @@ bool DynamicAnalysis::Initialize()
     double dt = accel_load.timestep;
     Eigen::SparseMatrix<double> compute_mat;
     compute_mat = matM_aa + 0.5 * dt * matC_aa + beta * dt * dt * matK_aa;
-    solver.compute(compute_mat);
+    solver = createSolver();
+    solver->compute(compute_mat);
 
     // Recorder初期化
     energy_recorder.Initialize();
@@ -235,7 +236,7 @@ void DynamicAnalysis::ComputeStep()
     Eigen::VectorXd post_accel = matM_aa.selfadjointView<Eigen::Upper>() * (-post_accel0)
         - matC_aa.selfadjointView<Eigen::Upper>() * (current_vel + 0.5 * dt * current_accel)
         - matK_aa.selfadjointView<Eigen::Upper>() * (current_disp + dt * current_vel + (0.5 - beta) * dt * dt * current_accel);
-    post_accel = solver.solve(post_accel);
+    post_accel = solver->solve(post_accel);
     Eigen::VectorXd post_vel = current_vel + 0.5 * (current_accel + post_accel) * dt;
     Eigen::VectorXd post_disp = current_disp + dt * current_vel + (0.5 - beta) * dt * dt * current_accel + beta * dt * dt * post_accel;
 

@@ -1,21 +1,13 @@
-#ifdef EIGEN_USE_MKL_ALL
-//#define EIGEN_USE_MKL_ALL
 #include <Eigen/Sparse>
-#include <Eigen/PardisoSupport>
 #include <Eigen/SparseCholesky>
 #include <Spectra/MatOp/SparseSymMatProd.h>
 #include <Spectra/MatOp/SparseCholesky.h>
 #include <Spectra/MatOp/SparseSymShiftSolve.h>
 #include <Spectra/SymGEigsSolver.h>
 #include <Spectra/SymGEigsShiftSolver.h>
-#else
-#include <Eigen/Sparse>
-#include <Spectra/MatOp/SparseSymMatProd.h>
-#include <Spectra/MatOp/SparseCholesky.h>
-#include <Spectra/MatOp/SparseSymShiftSolve.h>
-#include <Spectra/SymGEigsSolver.h>
-#include <Spectra/SymGEigsShiftSolver.h>
-// #include <Spectra/Util/CompInfo.h>
+
+#ifdef EIGEN_USE_MKL_ALL
+#include <Eigen/PardisoSupport>
 #endif
 
 #include <Eigen/Eigenvalues>

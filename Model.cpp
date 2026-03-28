@@ -4,25 +4,13 @@
 
 #define MODEL_PI 3.141592653589793238462643
 
-#ifdef EIGEN_USE_MKL_ALL
-    //#define EIGEN_USE_MKL_ALL
-    #include <Eigen/Sparse>
-    #include <Eigen/PardisoSupport>
-    #include <Eigen/SparseCholesky>
-    #include <Spectra/MatOp/SparseSymMatProd.h>
-    #include <Spectra/MatOp/SparseCholesky.h>
-    #include <Spectra/MatOp/SparseSymShiftSolve.h>
-    #include <Spectra/SymGEigsSolver.h>
-    #include <Spectra/SymGEigsShiftSolver.h>
-#else
-    #include <Eigen/Sparse>
-    #include <Spectra/MatOp/SparseSymMatProd.h>
-    #include <Spectra/MatOp/SparseCholesky.h>
-    #include <Spectra/MatOp/SparseSymShiftSolve.h>
-    #include <Spectra/SymGEigsSolver.h>
-    #include <Spectra/SymGEigsShiftSolver.h>
-    // #include <Spectra/Util/CompInfo.h>
-#endif
+#include <Eigen/Sparse>
+#include <Eigen/SparseCholesky>
+#include <Spectra/MatOp/SparseSymMatProd.h>
+#include <Spectra/MatOp/SparseCholesky.h>
+#include <Spectra/MatOp/SparseSymShiftSolve.h>
+#include <Spectra/SymGEigsSolver.h>
+#include <Spectra/SymGEigsShiftSolver.h>
 
 #include <Eigen/Eigenvalues>
 #include <Spectra/SymGEigsSolver.h>
@@ -103,15 +91,11 @@ int FEModel::SolveVibration(const int nev, std::vector<double>& eigen_values,
     SparseMatrixUtils::splitMatrixWithResize(ma, shrink_indices, m_sh);
     SparseMatrixUtils::splitMatrixWithResize(ka, shrink_indices, k_sha, k_shb, k_shd);
 
-#ifdef EIGEN_USE_MKL_ALL
-    Eigen::PardisoLLT<Eigen::SparseMatrix<double>> solver;
-#else
-    Eigen::SimplicialLLT<Eigen::SparseMatrix<double>, Eigen::Upper> solver;
-#endif
-
     k_shc = k_shb.transpose();
-    solver.compute(k_shd);
-    Eigen::SparseMatrix<double> tmp_mat = k_shb * solver.solve(k_shc);
+    auto solver_vib = createSolver();
+    solver_vib->compute(k_shd);
+    Eigen::MatrixXd k_shc_dense(k_shc);
+    Eigen::SparseMatrix<double> tmp_mat = (k_shb * solver_vib->solveMulti(k_shc_dense)).sparseView();
     k_sha -= tmp_mat.triangularView<Eigen::Upper>();
 
     // A_op: 行列 A に対する作用素
@@ -139,7 +123,7 @@ int FEModel::SolveVibration(const int nev, std::vector<double>& eigen_values,
     {
         Eigen::MatrixXd u1s = geigs.eigenvectors();
         Eigen::MatrixXd tmp_mat2 = -k_shc * u1s;
-        Eigen::MatrixXd u2s = solver.solve(tmp_mat2);
+        Eigen::MatrixXd u2s = solver_vib->solveMulti(tmp_mat2);
 
         // 縮小空間（master + free）での固有ベクトルを復元
         int reduced_size = master_dof_num + free_indices.size();
@@ -582,15 +566,10 @@ void FEModel::SolveLinearStatic(std::vector<std::shared_ptr<LoadBase>>& loads,
     Eigen::VectorXd f_input(f_master.size() + f_free.size());
     f_input << f_master, f_free;
 
-#ifdef EIGEN_USE_MKL_ALL
-    Eigen::PardisoLLT<Eigen::SparseMatrix<double>> solver;
-#else
-    Eigen::SimplicialLLT<Eigen::SparseMatrix<double>, Eigen::Upper> solver;
-#endif
-
     // Solve
-    solver.compute(mii);
-    Eigen::VectorXd d_result = solver.solve(f_input);
+    auto solver_static = createSolver();
+    solver_static->compute(mii);
+    Eigen::VectorXd d_result = solver_static->solve(f_input);
     Eigen::VectorXd r_fix = mij.transpose() * d_result - f_fix;
 
     // 反力データ整理

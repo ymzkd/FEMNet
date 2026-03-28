@@ -7,14 +7,7 @@
 #include <array>
 #include <memory>
 
-
-#ifdef EIGEN_USE_MKL_ALL
-    //#define EIGEN_USE_MKL_ALL
-    #include <Eigen/Sparse>
-    #include <Eigen/PardisoSupport>
-#else
-    #include <Eigen/Sparse>
-#endif
+#include "SparseSolver.h"
 
 #endif
 

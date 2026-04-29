@@ -157,14 +157,14 @@ void TrussElement::GetStiffnessTriplets(std::vector<Eigen::Triplet<double>>& tri
     for (size_t i = 0; i < 3; i++)
         indices[i + 3] = Nodes[1]->id * 6 + i;
 
-    // Add lower triangle to triplets
+    // Add upper triangle to triplets
     for (int i = 0; i < total_dof; i++) {
         for (int j = 0; j <= i; j++) {
             double value = K(i, j);
             if (std::abs(value) > 1e-20) {
                 int row = indices[i];
                 int col = indices[j];
-                if (col > row) std::swap(row, col);
+                if (row > col) std::swap(row, col);
                 triplets.emplace_back(row, col, value);
             }
         }
@@ -185,14 +185,14 @@ void TrussElement::GetGeometricStiffnessTriplets(
     for (size_t i = 0; i < 3; i++)
         indices[i + 3] = Nodes[1]->id * 6 + i;
 
-    // Add lower triangle to triplets
+    // Add upper triangle to triplets
     for (int i = 0; i < total_dof; i++) {
         for (int j = 0; j <= i; j++) {
             double value = Kg(i, j);
             if (std::abs(value) > 1e-20) {
                 int row = indices[i];
                 int col = indices[j];
-                if (col > row) std::swap(row, col);
+                if (row > col) std::swap(row, col);
                 triplets.emplace_back(row, col, value);
             }
         }

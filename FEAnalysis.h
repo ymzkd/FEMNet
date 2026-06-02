@@ -1,6 +1,8 @@
 #ifndef _FEANALYSIS_
 #define _FEANALYSIS_
 
+#include <memory>
+
 #include "Model.h"
 #include "Elements/Elements.h"
 
@@ -31,7 +33,7 @@ public:
     FEModeOperator() {};
     FEModeOperator(std::shared_ptr<FEModel> model) : model(model) {};
 
-    virtual std::vector<std::vector<Displacement>> ModeVectors() = 0;
+    virtual const std::vector<std::vector<Displacement>>& ModeVectors() = 0;
     virtual std::vector<double> EigenValues() = 0;
     virtual int ModeNum() = 0;
 };

@@ -5,6 +5,7 @@
 #include <vector>
 #include <map>
 #include <array>
+#include <memory>
 
 
 #ifdef EIGEN_USE_MKL_ALL

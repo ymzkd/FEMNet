@@ -1,6 +1,7 @@
 #include<iostream>
+#include <chrono>
+#include <algorithm>
 #include<random>
-#include<algorithm>
 #include<memory>
 
 //#ifdef USE_MKL
@@ -16,6 +17,7 @@
 #include "FEDynamic.h"
 #include "LoadComponent.h"
 #include "SparseMatrixUtils.h"
+#include "ResponseSpectrumMethod.h"
 
 void TestMethod1() {
 
@@ -897,7 +899,6 @@ void TestDynamicAnalysis() {
 
 }
 
-
 void TestSimplaFrame() {
 
     std::cout << "TestSimplaFrame Start" << std::endl;
@@ -1550,6 +1551,230 @@ void TestSparseMatrixUtils() {
 }
 
 
+// =============================================================
+// シェル構造（浅い球状ドーム）モデル + CQC法ベンチマーク
+// =============================================================
+
+// 浅い球状ドーム: 21x21 = 441節点、周辺ピン
+//  span: 平面投影スパン[mm]、rise: 中心ライズ[mm]、ndiv: 1辺の分割数
+FEModel ShallowDomeModel(double span, double rise, int ndiv) {
+    FEModel model;
+    int n = ndiv + 1; // 1辺の節点数
+    double L = span;
+    double H = rise;
+    double R = L * 0.5;
+
+    for (int j = 0; j < n; ++j) {
+        for (int i = 0; i < n; ++i) {
+            double x = -L * 0.5 + L * i / (double)(n - 1);
+            double y = -L * 0.5 + L * j / (double)(n - 1);
+            double r2 = x * x + y * y;
+            double z = H * std::max(0.0, 1.0 - r2 / (R * R));
+            int id = j * n + i;
+            Node node(id, x, y, z);
+            // 周辺ピン
+            if (i == 0 || j == 0 || i == n - 1 || j == n - 1) {
+                node.Fix.PinFix();
+            }
+            model.Nodes.push_back(node);
+        }
+    }
+
+    // 鋼材（N, mm, t）相当
+    Material mat(2.05e5, 0.3, 7.85e-9);
+    model.Materials.push_back(mat);
+
+    Thickness thickness(50.0); // 50mm厚
+
+    // 各クアッドを2つの三角形に分割
+    int eid = 0;
+    for (int j = 0; j < n - 1; ++j) {
+        for (int i = 0; i < n - 1; ++i) {
+            int a = j * n + i;
+            int b = j * n + (i + 1);
+            int c = (j + 1) * n + (i + 1);
+            int d = (j + 1) * n + i;
+            auto el1 = std::make_shared<TriPlateElement>(
+                eid++, &model.Nodes[a], &model.Nodes[b], &model.Nodes[c],
+                thickness, model.Materials[0]);
+            auto el2 = std::make_shared<TriPlateElement>(
+                eid++, &model.Nodes[a], &model.Nodes[c], &model.Nodes[d],
+                thickness, model.Materials[0]);
+            model.Elements.push_back(el1);
+            model.Elements.push_back(el2);
+        }
+    }
+
+    return model;
+}
+
+// 告示風の応答スペクトル(概略形)
+class NotifiedSpectrum : public IResponseSpectrum {
+public:
+    double Acceleration(double T) override {
+        // mm/s^2
+        double Sa_ms2;
+        if (T < 0.16) {
+            Sa_ms2 = 3.2 + 30.0 * T;
+        } else if (T < 0.864) {
+            Sa_ms2 = 8.0;
+        } else {
+            Sa_ms2 = 8.0 * 0.864 / T;
+        }
+        return Sa_ms2 * 1000.0;
+    }
+    double Velocity(double T) override {
+        return Acceleration(T) * T / (2.0 * PI);
+    }
+    double Displacement(double T) override {
+        double r = T / (2.0 * PI);
+        return Acceleration(T) * r * r;
+    }
+};
+
+void BenchResponseSpectrumCQC() {
+    using clock = std::chrono::high_resolution_clock;
+    auto sec = [](auto a, auto b) {
+        return std::chrono::duration<double>(b - a).count();
+    };
+
+    std::cout << "\n=== BenchResponseSpectrumCQC ===" << std::endl;
+
+    // (1) モデル構築
+    auto t0 = clock::now();
+    FEModel model = ShallowDomeModel(20000.0, 2000.0, 20); // 21x21=441節点
+    model.ComputeElementNodeMass();
+    auto t1 = clock::now();
+    int N = model.NodeNum();
+    int freeDof = model.FreeDOFNum();
+    std::cout << "[1] Build model       : " << sec(t0, t1) << " s   "
+              << "Nodes=" << N << " Elems=" << model.Elements.size()
+              << " FreeDOF=" << freeDof << std::endl;
+
+    // (2) モード解析
+    int target_modes = 450;
+    int nev = std::min(target_modes, freeDof - 2);
+    std::vector<double> eigs;
+    std::vector<std::vector<Displacement>> modes;
+
+    auto t2 = clock::now();
+    int computed = model.SolveVibration(nev, eigs, modes);
+    auto t3 = clock::now();
+    int M = (int)modes.size();
+    std::cout << "[2] SolveVibration    : " << sec(t2, t3) << " s   "
+              << "requested=" << nev << " computed=" << computed
+              << " modes_size=" << M << std::endl;
+
+    if (M == 0) {
+        std::cout << "    !! No modes computed, abort." << std::endl;
+        return;
+    }
+
+    // (3) CQC本体（Compute = 3 x calculate_responseCQC）
+    NotifiedSpectrum spectrum;
+    auto model_ptr = std::make_shared<FEModel>(model);
+    FEVibrateResult vibresult(model_ptr, modes, eigs);
+
+    auto t4 = clock::now();
+    ResponseSpectrumMethod rsm(
+        model_ptr, vibresult, Vector(1, 0, 0),
+        &spectrum, ResponseSpectrumMethodType::CQC);
+    auto t5 = clock::now();
+    std::cout << "[3] CQC ctor+Compute  : " << sec(t4, t5)
+              << " s   (= 3 x calculate_responseCQC)" << std::endl;
+    std::cout << "    per response type : " << sec(t4, t5) / 3.0 << " s" << std::endl;
+
+    // (4) ModeVectors() の値返しコストを単独計測
+    {
+        const int iter = 5;
+        auto a = clock::now();
+        volatile size_t sink = 0;
+        for (int k = 0; k < iter; ++k) {
+            auto mv = vibresult.ModeVectors(); // 値返しコピー
+            sink += mv.size();
+        }
+        auto b = clock::now();
+        double per_call_ms = sec(a, b) * 1000.0 / iter;
+        long long calls_per_cqc = (long long)M * M + (long long)M;
+        double est_copy_s_per_cqc = per_call_ms / 1000.0 * (double)calls_per_cqc;
+        std::cout << "[4] ModeVectors() cost: " << per_call_ms << " ms/call   "
+                  << "(値返しでvector-of-vectorを丸ごとコピー)" << std::endl;
+        std::cout << "    CQC内での呼出回数 = M*M + M = " << calls_per_cqc << std::endl;
+        std::cout << "    推定コピー時間/1CQC = " << est_copy_s_per_cqc << " s" << std::endl;
+        std::cout << "    Compute()全体での推定コピー時間 = " << est_copy_s_per_cqc * 3.0 << " s" << std::endl;
+    }
+
+    // (4b) SRSS / ABS の Compute 時間も測る（修正前は M 回の値コピーで遅かった）
+    {
+        auto a1 = clock::now();
+        ResponseSpectrumMethod rsm_srss(
+            model_ptr, vibresult, Vector(1, 0, 0),
+            &spectrum, ResponseSpectrumMethodType::SRSS);
+        auto a2 = clock::now();
+        std::cout << "[4b] SRSS ctor+Compute: " << sec(a1, a2) << " s (= 3 x SRSS)" << std::endl;
+
+        auto b1 = clock::now();
+        ResponseSpectrumMethod rsm_abs(
+            model_ptr, vibresult, Vector(1, 0, 0),
+            &spectrum, ResponseSpectrumMethodType::ABS);
+        auto b2 = clock::now();
+        std::cout << "[4c] ABS  ctor+Compute: " << sec(b1, b2) << " s (= 3 x ABS)" << std::endl;
+    }
+
+    // (5) 最適化版（コピーなし＋対称性活用＋スペクトル1回計算）
+    auto t6 = clock::now();
+    std::vector<double> periods(M);
+    for (int i = 0; i < M; ++i) periods[i] = 2.0 * PI / eigs[i];
+    std::vector<double> part_facs = vibresult.ParticipationFactors(Vector(1, 0, 0));
+    std::vector<double> sa(M);
+    for (int i = 0; i < M; ++i) sa[i] = spectrum.Acceleration(periods[i]);
+
+    double damping = 0.05;
+    std::vector<Displacement> resp(N);
+    for (int j = 0; j < M; ++j) {
+        const auto& uj = modes[j]; // ★参照 (コピー無し)
+        double diag_fac = sa[j] * sa[j] * part_facs[j] * part_facs[j];
+        for (int i = 0; i < N; ++i) {
+            const auto& dj = uj[i];
+            resp[i] += Displacement(
+                diag_fac * dj.Dx() * dj.Dx(), diag_fac * dj.Dy() * dj.Dy(), diag_fac * dj.Dz() * dj.Dz(),
+                diag_fac * dj.Rx() * dj.Rx(), diag_fac * dj.Ry() * dj.Ry(), diag_fac * dj.Rz() * dj.Rz());
+        }
+        for (int k = j + 1; k < M; ++k) {
+            const auto& uk = modes[k];
+            double rjk = periods[k] / periods[j];
+            double corr = 8.0 * damping * damping * (1.0 + rjk) * pow(rjk, 1.5) /
+                          (pow(1.0 - rjk * rjk, 2.0) + 4.0 * damping * damping * rjk * pow(1.0 + rjk, 2.0));
+            double fac = 2.0 * sa[j] * sa[k] * part_facs[j] * part_facs[k] * corr;
+            for (int i = 0; i < N; ++i) {
+                const auto& dj = uj[i];
+                const auto& dk = uk[i];
+                resp[i] += Displacement(
+                    fac * dj.Dx() * dk.Dx(), fac * dj.Dy() * dk.Dy(), fac * dj.Dz() * dk.Dz(),
+                    fac * dj.Rx() * dk.Rx(), fac * dj.Ry() * dk.Ry(), fac * dj.Rz() * dk.Rz());
+            }
+        }
+    }
+    for (int i = 0; i < N; ++i) {
+        resp[i] = Displacement(
+            sqrt(std::max(0.0, resp[i].Dx())), sqrt(std::max(0.0, resp[i].Dy())), sqrt(std::max(0.0, resp[i].Dz())),
+            sqrt(std::max(0.0, resp[i].Rx())), sqrt(std::max(0.0, resp[i].Ry())), sqrt(std::max(0.0, resp[i].Rz())));
+    }
+    auto t7 = clock::now();
+    std::cout << "[5] Optimized 1xCQC   : " << sec(t6, t7) << " s   "
+              << "(参照化 + 上三角のみ + spectrum事前計算)" << std::endl;
+
+    // 結果の整合性チェック (Z方向最大値の比較)
+    double max_rsm = 0, max_opt = 0;
+    auto rsm_disp = rsm.GetAccelerations();
+    for (int i = 0; i < N; ++i) {
+        if (rsm_disp[i].Dx() > max_rsm) max_rsm = rsm_disp[i].Dx();
+        if (resp[i].Dx() > max_opt) max_opt = resp[i].Dx();
+    }
+    std::cout << "    sanity: rsm.maxAx=" << max_rsm
+              << " opt.maxAx=" << max_opt << std::endl;
+}
+
 int main(void) {
     //std::cout << "TestMethod1 Start" << std::endl;
     //TestMethod1();
@@ -1576,6 +1801,8 @@ int main(void) {
     // 座屈検討用のピラミッド型トラスサンプル
     //CheckCantiPyramidTrussBuckling(1000, 4, 100);
     //CheckQuadPlateBuckling();
+
+    //BenchResponseSpectrumCQC();
 
     // Test mergeMatrixWithResize
     // TestMergeMatrixWithResize();

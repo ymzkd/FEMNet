@@ -11,7 +11,7 @@ private:
 
 public:
     int ModeNum() override { return eigs.size(); };
-    std::vector<std::vector<Displacement>> ModeVectors() override { return mode_vectors; };
+    const std::vector<std::vector<Displacement>>& ModeVectors() override { return mode_vectors; };
     std::vector<double> EigenValues() override { return eigs; };
 
     FEVibrateResult() {};

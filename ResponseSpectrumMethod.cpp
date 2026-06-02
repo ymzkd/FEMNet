@@ -2,10 +2,14 @@
 
 std::vector<Displacement> ResponseSpectrumMethod::calculate_responseCQC(ResponseValueType vt)
 {
+    const auto& mode_vectors = VibrateResult.ModeVectors();
     std::vector<double> part_facs = VibrateResult.ParticipationFactors(Direction);
     std::vector<double> periods = VibrateResult.NaturalPeriods();
-    std::vector<double> spectrums(periods.size());
-    for (size_t i = 0; i < periods.size(); i++)
+    const size_t M = part_facs.size();
+    const size_t N = model->NodeNum();
+
+    std::vector<double> spectrums(M);
+    for (size_t i = 0; i < M; i++)
     {
         if (vt == ResponseValueType::Displacement)
             spectrums[i] = SpectrumFunction->Displacement(periods[i]);
@@ -15,44 +19,57 @@ std::vector<Displacement> ResponseSpectrumMethod::calculate_responseCQC(Response
             spectrums[i] = SpectrumFunction->Acceleration(periods[i]);
     }
 
-    std::vector<Displacement> responses(model->NodeNum());
-    for (size_t j = 0; j < part_facs.size(); j++)
+    // correlation(j,k) と (Sa·β)_j (Sa·β)_k は対称なので上三角のみ走査。
+    // 対角は1回、非対角は2回ぶん加算する。
+    std::vector<Displacement> responses(N);
+    const double damp2 = damping_rate * damping_rate;
+    for (size_t j = 0; j < M; j++)
     {
-        std::vector<Displacement> uj = VibrateResult.ModeVectors()[j];
-        for (size_t k = 0; k < part_facs.size(); k++)
-        {
-            std::vector<Displacement> uk = VibrateResult.ModeVectors()[k];
+        const auto& uj = mode_vectors[j];
+        const double sb_j = spectrums[j] * part_facs[j];
 
-            double rjk = periods[k] / periods[j];
-            double h2 = damping_rate * damping_rate;
+        // 対角 k == j : correlation = 1 ((6)式・(7)式とも χ=1 で 1)
+        {
+            const double fac = sb_j * sb_j;
+            for (size_t i = 0; i < N; i++)
+            {
+                const Displacement& idj = uj[i];
+                responses[i] += Displacement(
+                    fac * idj.Dx() * idj.Dx(), fac * idj.Dy() * idj.Dy(), fac * idj.Dz() * idj.Dz(),
+                    fac * idj.Rx() * idj.Rx(), fac * idj.Ry() * idj.Ry(), fac * idj.Rz() * idj.Rz());
+            }
+        }
+
+        // 非対角 k > j : 対称性を利用して × 2
+        for (size_t k = j + 1; k < M; k++)
+        {
+            const auto& uk = mode_vectors[k];
+            const double rjk = periods[k] / periods[j];
             // (6)式・(7)式で共通の分母項
-            double denom = pow(1.0 - rjk * rjk, 2.0) + 4.0 * h2 * rjk * pow(1.0 + rjk, 2.0);
+            const double denom = pow(1.0 - rjk * rjk, 2.0) + 4.0 * damp2 * rjk * pow(1.0 + rjk, 2.0);
 
             double correlation;
             if (vt == ResponseValueType::Acceleration)
             {
                 // 絶対加速度用：論文(7)式
-                double num = 8.0 * h2 * (1.0 + rjk) *
-                             (1.0 - (1.0 - 4.0 * h2) * rjk + rjk * rjk) * sqrt(rjk);
-                correlation = num / ((1.0 + 4.0 * h2) * denom);
+                const double num = 8.0 * damp2 * (1.0 + rjk) *
+                                   (1.0 - (1.0 - 4.0 * damp2) * rjk + rjk * rjk) * sqrt(rjk);
+                correlation = num / ((1.0 + 4.0 * damp2) * denom);
             }
             else
             {
                 // 相対変位・相対速度用：論文(6)式
-                correlation = 8.0 * h2 * (1.0 + rjk) * pow(rjk, 1.5) / denom;
+                correlation = 8.0 * damp2 * (1.0 + rjk) * pow(rjk, 1.5) / denom;
             }
-            double fac = spectrums[j] * spectrums[k] * part_facs[j] * part_facs[k] * correlation;
+            const double fac = 2.0 * sb_j * spectrums[k] * part_facs[k] * correlation;
 
-            for (size_t i = 0; i < model->NodeNum(); i++)
+            for (size_t i = 0; i < N; i++)
             {
-                Displacement idj = uj[i];
-                Displacement idk = uk[i];
-
-                Displacement d = Displacement(
-                    idj.Dx() * idk.Dx(), idj.Dy() * idk.Dy(), idj.Dz() * idk.Dz(),
-                    idj.Rx() * idk.Rx(), idj.Ry() * idk.Ry(), idj.Rz() * idk.Rz());
-
-                responses[i] += fac * d;
+                const Displacement& idj = uj[i];
+                const Displacement& idk = uk[i];
+                responses[i] += Displacement(
+                    fac * idj.Dx() * idk.Dx(), fac * idj.Dy() * idk.Dy(), fac * idj.Dz() * idk.Dz(),
+                    fac * idj.Rx() * idk.Rx(), fac * idj.Ry() * idk.Ry(), fac * idj.Rz() * idk.Rz());
             }
         }
     }
@@ -83,10 +100,11 @@ std::vector<Displacement> ResponseSpectrumMethod::calculate_responseSRSS(Respons
             spectrums[i] = SpectrumFunction->Acceleration(periods[i]);
     }
 
+    const auto& mode_vectors_srss = VibrateResult.ModeVectors();
     std::vector<Displacement> responses(model->NodeNum());
     for (size_t i = 0; i < part_facs.size(); i++)
     {
-        std::vector<Displacement> mode_vector = VibrateResult.ModeVectors()[i];
+        const auto& mode_vector = mode_vectors_srss[i];
 
         // SRSS Method
         for (size_t j = 0; j < mode_vector.size(); j++)
@@ -125,10 +143,11 @@ std::vector<Displacement> ResponseSpectrumMethod::calculate_responseABS(Response
             spectrums[i] = SpectrumFunction->Acceleration(periods[i]);
     }
 
+    const auto& mode_vectors_abs = VibrateResult.ModeVectors();
     std::vector<Displacement> responses(model->NodeNum());
     for (size_t i = 0; i < part_facs.size(); i++)
     {
-        std::vector<Displacement> mode_vector = VibrateResult.ModeVectors()[i];
+        const auto& mode_vector = mode_vectors_abs[i];
         // | sd x vector x beta_i |
 
         // ABS Method

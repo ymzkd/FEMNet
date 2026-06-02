@@ -11,7 +11,7 @@ public:
     FEBucklingAnalysis(std::shared_ptr<FEDeformOperator> deform_op) : deform_case(deform_op), FEModeOperator(deform_op->model) {};
 
     int ModeNum() override { return mode_num; }
-    std::vector<std::vector<Displacement>> ModeVectors() override { return mode_vectors; }
+    const std::vector<std::vector<Displacement>>& ModeVectors() override { return mode_vectors; }
     std::vector<double> EigenValues() override { return eigs; }
 
     int SolveBuckling();

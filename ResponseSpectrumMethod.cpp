@@ -24,8 +24,23 @@ std::vector<Displacement> ResponseSpectrumMethod::calculate_responseCQC(Response
             std::vector<Displacement> uk = VibrateResult.ModeVectors()[k];
 
             double rjk = periods[k] / periods[j];
-            double correlation = 8.0 * damping_rate * damping_rate * (1.0 + rjk) * pow(rjk, 1.5) /
-                                 (pow((1.0 - rjk * rjk), 2.0) + 4.0 * damping_rate * damping_rate * rjk * pow(1.0 + rjk, 2.0));
+            double h2 = damping_rate * damping_rate;
+            // (6)式・(7)式で共通の分母項
+            double denom = pow(1.0 - rjk * rjk, 2.0) + 4.0 * h2 * rjk * pow(1.0 + rjk, 2.0);
+
+            double correlation;
+            if (vt == ResponseValueType::Acceleration)
+            {
+                // 絶対加速度用：論文(7)式
+                double num = 8.0 * h2 * (1.0 + rjk) *
+                             (1.0 - (1.0 - 4.0 * h2) * rjk + rjk * rjk) * sqrt(rjk);
+                correlation = num / ((1.0 + 4.0 * h2) * denom);
+            }
+            else
+            {
+                // 相対変位・相対速度用：論文(6)式
+                correlation = 8.0 * h2 * (1.0 + rjk) * pow(rjk, 1.5) / denom;
+            }
             double fac = spectrums[j] * spectrums[k] * part_facs[j] * part_facs[k] * correlation;
 
             for (size_t i = 0; i < model->NodeNum(); i++)

@@ -1,5 +1,7 @@
 #include "FEDynamic.h"
 
+#include <algorithm>
+
 void DASampler_MaxDisplacement::Sampling(DynamicAnalysis &da)
 {
     bool updated = false;
@@ -127,6 +129,29 @@ bool DynamicAnalysis::Initialize()
     current_vel = Eigen::VectorXd::Zero(reduced_size);
     current_accel = Eigen::VectorXd::Zero(reduced_size);
 
+    // 初期相対加速度: 静止状態(d=0, v=0)での運動方程式 M·a0 = -M·ι·a_g(0) より
+    //   a0 = -ι·a_g(0)。先頭サンプル Accels[0] を初期加速度として反映する。
+    if (!accel_load.Accels.empty()) {
+        Vector gacc0 = accel_load.Direction * accel_load.Accels[0];
+        if (master_dof_num > 0) {
+            int counter = 0;
+            for (RigidLink& link : model->RigidLinkData->links) {
+                if (link.Ux()) current_accel[counter++] = -gacc0.x;
+                if (link.Uy()) current_accel[counter++] = -gacc0.y;
+                if (link.Uz()) current_accel[counter++] = -gacc0.z;
+                if (link.Rx()) counter++;
+                if (link.Ry()) counter++;
+                if (link.Rz()) counter++;
+            }
+        }
+        for (size_t i = 0; i < free_indices.size(); i++) {
+            int fi = free_indices[i] % NODE_DOF;
+            if (fi == 0) current_accel[master_dof_num + i] = -gacc0.x;
+            else if (fi == 1) current_accel[master_dof_num + i] = -gacc0.y;
+            else if (fi == 2) current_accel[master_dof_num + i] = -gacc0.z;
+        }
+    }
+
     // マトリクスの組み立て
     if (master_dof_num > 0) {
         // RigidLinkがある場合: 3x3ブロックに分割して縮小
@@ -195,7 +220,10 @@ void DynamicAnalysis::ComputeStep()
     }
 
     double dt = accel_load.timestep;
-    Vector gacc = accel_load.Direction * accel_load.Accels[current_step];
+    // Newmarkは t_{n+1} の釣り合いを解くため、地動加速度も t_{n+1} の値を参照する
+    // (末尾ステップでは範囲内にクランプ)
+    size_t accel_index = std::min((size_t)current_step + 1, accel_load.Accels.size() - 1);
+    Vector gacc = accel_load.Direction * accel_load.Accels[accel_index];
 
     // 縮小空間での入力加速度ベクトルを構築
     int reduced_size = master_dof_num + free_indices.size();

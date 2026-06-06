@@ -122,6 +122,7 @@ namespace std {
     %template(VectorElem) std::vector<ElementBase*>;
     %template(VectorBars) std::vector<BarElementBase*>;
     %template(VectorBeams) std::vector<BeamElement*>;
+    %template(VectorPlanes) std::vector<PlaneElementBase*>;
 }
 
 // Element extensions for accessing nodes (after includes)
@@ -140,5 +141,11 @@ namespace std {
 %extend TrussElement {
     Node* getNodes(int index) {
         return $self->Nodes[index];
+    }
+}
+
+%extend PlaneElementBase {
+    Node* getNodes(int index) {
+        return $self->NodesList()[index];
     }
 }

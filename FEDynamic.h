@@ -140,6 +140,23 @@ public:
         return bar_elements;
     }
 
+    std::vector<PlaneElementBase *> GetPlaneElements()
+    {
+        std::vector<PlaneElementBase *> plane_elements;
+        for (const auto &elem : model->Elements)
+        {
+            if (elem->Type() == ElementType::Membrane || elem->Type() == ElementType::Plate ||
+                elem->Type() == ElementType::DKT || elem->Type() == ElementType::DKQ)
+            {
+                if (auto *plane_elem = dynamic_cast<PlaneElementBase *>(elem.get()))
+                {
+                    plane_elements.push_back(plane_elem);
+                }
+            }
+        }
+        return plane_elements;
+    }
+
     // FEDeformCase を介して継承されました
     BeamStressData GetBeamStress(int eid, double p) override;
     PlateStressData GetPlateStressData(int eid, double xi, double eta) override;

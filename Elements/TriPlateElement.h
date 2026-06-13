@@ -80,6 +80,12 @@ public:
     PlateStressData stress(
         Displacement d0, Displacement d1, Displacement d2, double xi, double eta);
 
+    // 整合節点力 f = K_e * u_e を計算する。
+    // d0..d2 はグローバル座標の節点変位。
+    // local=true のとき各節点の力・モーメントを要素plane軸へ回転して返す。
+    std::vector<NodeLoadData> NodalForces(
+        Displacement d0, Displacement d1, Displacement d2, bool local);
+
     //  PlateStressData stress_save(
     // Displacement d0, Displacement d1, Displacement d2, double xi, double eta);
     // void shearstress(Displacement d0, Displacement d1, Displacement d2);

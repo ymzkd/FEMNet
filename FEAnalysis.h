@@ -21,6 +21,13 @@ public:
     virtual PlateStressData GetPlateStressData(int eid, double xi, double eta) = 0;
     virtual Displacement GetBeamDisplace(int eid, double p) = 0;
 
+    // 板要素の整合節点力 f = K_e * u_e を返す（GetPlateStressData と対の API）。
+    // local=true で各節点6成分を要素plane軸へ回転。未対応のオペレータは空を返す。
+    virtual std::vector<NodeLoadData> GetPlateNodalForces(int eid, bool local)
+    {
+        return std::vector<NodeLoadData>();
+    };
+
     virtual std::vector<Displacement> GetDisplacements() = 0;
     virtual std::vector<Displacement> GetVelocities(){return std::vector<Displacement>();};
     virtual std::vector<Displacement> GetAccelerations(){return std::vector<Displacement>();};

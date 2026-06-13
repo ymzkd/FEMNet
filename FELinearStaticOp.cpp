@@ -62,6 +62,26 @@ PlateStressData FELinearStaticOp::GetPlateStressData(int eid, double xi, double 
     return data;
 }
 
+std::vector<NodeLoadData> FELinearStaticOp::GetPlateNodalForces(int eid, bool local)
+{
+    if (!m_computed)
+        throw std::runtime_error("FELinearStaticOP: need to call compute()");
+
+    if (model->Elements[eid]->Type() == ElementType::DKT)
+    {
+        TriPlateElement *el = dynamic_cast<TriPlateElement *>(model->Elements[eid].get());
+        return el->NodalForces(displace[el->Nodes[0]->id], displace[el->Nodes[1]->id],
+                               displace[el->Nodes[2]->id], local);
+    }
+    else if (model->Elements[eid]->Type() == ElementType::DKQ)
+    {
+        QuadPlateElement *el = dynamic_cast<QuadPlateElement *>(model->Elements[eid].get());
+        return el->NodalForces(displace[el->Nodes[0]->id], displace[el->Nodes[1]->id],
+                               displace[el->Nodes[2]->id], displace[el->Nodes[3]->id], local);
+    }
+    return std::vector<NodeLoadData>();
+}
+
 Displacement FELinearStaticOp::GetBeamDisplace(int eid, double p)
 {
     if (!m_computed)
@@ -161,6 +181,26 @@ std::vector<PlateStressData> LinearStaticCombinationOperator::GetPlateStressData
         results.push_back(s);
     }
     return results;
+}
+
+std::vector<NodeLoadData> LinearStaticCombinationOperator::GetPlateNodalForces(int eid, bool local)
+{
+    // 合成節点変位 u_combined から f = K_e * u_combined を計算（f は u に線形なので厳密）
+    std::vector<Displacement> disp = GetDisplacements();
+
+    if (model->Elements[eid]->Type() == ElementType::DKT)
+    {
+        TriPlateElement *el = dynamic_cast<TriPlateElement *>(model->Elements[eid].get());
+        return el->NodalForces(disp[el->Nodes[0]->id], disp[el->Nodes[1]->id],
+                               disp[el->Nodes[2]->id], local);
+    }
+    else if (model->Elements[eid]->Type() == ElementType::DKQ)
+    {
+        QuadPlateElement *el = dynamic_cast<QuadPlateElement *>(model->Elements[eid].get());
+        return el->NodalForces(disp[el->Nodes[0]->id], disp[el->Nodes[1]->id],
+                               disp[el->Nodes[2]->id], disp[el->Nodes[3]->id], local);
+    }
+    return std::vector<NodeLoadData>();
 }
 
 Displacement LinearStaticCombinationOperator::GetBeamDisplace(int eid, double p)

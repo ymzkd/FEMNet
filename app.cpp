@@ -1775,7 +1775,126 @@ void BenchResponseSpectrumCQC() {
               << " opt.maxAx=" << max_opt << std::endl;
 }
 
+void TestWallNodalForces() {
+    std::cout << "\n========== TestWallNodalForces ==========" << std::endl;
+
+    // 鉛直壁: XZ平面(法線=+Y), 幅W(X方向), 高さH(Z方向)
+    // 節点並び: n0=脚部左, n1=脚部右, n2=頂部右, n3=頂部左
+    const double W = 2.0, H = 3.0, t = 0.2;
+    Point p0(0, 0, 0), p1(W, 0, 0), p2(W, 0, H), p3(0, 0, H);
+
+    Material m0(2.05e5, 0.3);
+    Node n0(p0); n0.id = 0;
+    Node n1(p1); n1.id = 1;
+    Node n2(p2); n2.id = 2;
+    Node n3(p3); n3.id = 3;
+    QuadPlateElement pel(&n0, &n1, &n2, &n3, t, m0);
+
+    FEModel model;
+    model.Nodes.push_back(n0);
+    model.Nodes.push_back(n1);
+    model.Nodes.push_back(n2);
+    model.Nodes.push_back(n3);
+    model.Nodes[0].Fix.FixAll(); // 脚部固定（片持ち壁）
+    model.Nodes[1].Fix.FixAll();
+    model.add_element(pel);
+
+    const double Fx = 10.0;  // 面内水平(X) → 壁の面内せん断
+    const double Fz = -20.0; // 鉛直(Z)     → 壁の軸力
+    std::vector<std::shared_ptr<LoadBase>> loads;
+    loads.push_back(std::make_shared<NodeLoad>(NodeLoad(2, Fx / 2, 0, Fz / 2)));
+    loads.push_back(std::make_shared<NodeLoad>(NodeLoad(3, Fx / 2, 0, Fz / 2)));
+
+    FELinearStaticOp op(std::make_shared<FEModel>(model), loads);
+    op.Compute();
+
+    std::cout << "Wall W=" << W << " H=" << H << " t=" << t << std::endl;
+    std::cout << "Top load total: Fx(in-plane shear)=" << Fx << ", Fz(axial)=" << Fz << std::endl;
+    std::cout << "Expected at base center: sumFx=" << Fx << ", sumFz=" << Fz
+              << ", overturning(My about +Y)= +Fx*H=" << (Fx * H)
+              << "  (reaction side = negatives)" << std::endl;
+
+    auto printNL = [](const char *tag, NodeLoadData &d) {
+        std::cout << "  " << tag << " id=" << d.id
+                  << "  F=(" << d.Px() << ", " << d.Py() << ", " << d.Pz() << ")"
+                  << "  M=(" << d.Mx() << ", " << d.My() << ", " << d.Mz() << ")" << std::endl;
+    };
+
+    std::cout << "\n-- Reactions (GetReactForces) --" << std::endl;
+    std::vector<NodeLoad> react = op.GetReactForces();
+    for (auto &r : react)
+        std::cout << "  node " << r.id
+                  << "  F=(" << r.Px() << ", " << r.Py() << ", " << r.Pz() << ")"
+                  << "  M=(" << r.Mx() << ", " << r.My() << ", " << r.Mz() << ")" << std::endl;
+
+    std::cout << "\n-- GetPlateNodalForces local=false (global) --" << std::endl;
+    std::vector<NodeLoadData> nfg = op.GetPlateNodalForces(0, false);
+    for (auto &d : nfg) printNL("global", d);
+
+    std::cout << "\n-- GetPlateNodalForces local=true (element plane axes) --" << std::endl;
+    std::vector<NodeLoadData> nfl = op.GetPlateNodalForces(0, true);
+    for (auto &d : nfl) printNL("local ", d);
+
+    // 脚部(node0,1)の節点力を基底中心 c=(W/2,0,0) へ剛体換算（global）
+    const double cx = W / 2.0, cy = 0.0, cz = 0.0;
+    const double px[4] = {0, W, W, 0};
+    const double py[4] = {0, 0, 0, 0};
+    const double pz[4] = {0, 0, H, H};
+    double Fsum[3] = {0, 0, 0}, Msum[3] = {0, 0, 0};
+    for (auto &d : nfg) {
+        if (d.id != 0 && d.id != 1) continue;
+        double fx = d.Px(), fy = d.Py(), fz = d.Pz();
+        double rx = px[d.id] - cx, ry = py[d.id] - cy, rz = pz[d.id] - cz;
+        Fsum[0] += fx; Fsum[1] += fy; Fsum[2] += fz;
+        Msum[0] += d.Mx() + (ry * fz - rz * fy);
+        Msum[1] += d.My() + (rz * fx - rx * fz);
+        Msum[2] += d.Mz() + (rx * fy - ry * fx);
+    }
+    std::cout << "\n-- Base reduction (sum node0,1 nodal forces about base center) --" << std::endl;
+    std::cout << "  F_a(global)=(" << Fsum[0] << ", " << Fsum[1] << ", " << Fsum[2] << ")" << std::endl;
+    std::cout << "  M_a(global)=(" << Msum[0] << ", " << Msum[1] << ", " << Msum[2] << ")" << std::endl;
+    std::cout << "  => in-plane shear ~ F_a.x=" << Fsum[0]
+              << ", axial ~ F_a.z=" << Fsum[2]
+              << ", overturning ~ M_a.y=" << Msum[1] << std::endl;
+
+    // ---- 部材フレームへ射影（z=部材軸(鉛直), x=面外法線, y=面内水平）----
+    auto dot = [](const double a[3], const double b[3]) { return a[0]*b[0] + a[1]*b[1] + a[2]*b[2]; };
+    const double ez[3] = {0, 0, 1};  // 部材軸(鉛直)
+    const double ex[3] = {0, 1, 0};  // 面外法線
+    const double ey[3] = {-1, 0, 0}; // 面内水平 (ez×ex)
+
+    // 脚部a: 反力側のため符号反転 → 連続断面力
+    {
+        double F[3] = {-Fsum[0], -Fsum[1], -Fsum[2]};
+        double M[3] = {-Msum[0], -Msum[1], -Msum[2]};
+        std::cout << "\n-- Section force @ base a (z=axis, x=out-of-plane, y=in-plane) --" << std::endl;
+        std::cout << "  N=" << dot(F, ez) << "  Qx(out)=" << dot(F, ex) << "  Qy(in)=" << dot(F, ey)
+                  << "  Mx(in-plane/overturn)=" << dot(M, ex) << "  My(out)=" << dot(M, ey)
+                  << "  Mz(torsion)=" << dot(M, ez) << std::endl;
+    }
+    // 頂部b: 載荷側のためそのまま
+    {
+        const double bx = W / 2.0, by = 0.0, bz = H;
+        double F[3] = {0, 0, 0}, M[3] = {0, 0, 0};
+        for (auto &d : nfg) {
+            if (d.id != 2 && d.id != 3) continue;
+            double fx = d.Px(), fy = d.Py(), fz = d.Pz();
+            double rx = px[d.id] - bx, ry = py[d.id] - by, rz = pz[d.id] - bz;
+            F[0] += fx; F[1] += fy; F[2] += fz;
+            M[0] += d.Mx() + (ry * fz - rz * fy);
+            M[1] += d.My() + (rz * fx - rx * fz);
+            M[2] += d.Mz() + (rx * fy - ry * fx);
+        }
+        std::cout << "-- Section force @ top b --" << std::endl;
+        std::cout << "  N=" << dot(F, ez) << "  Qx(out)=" << dot(F, ex) << "  Qy(in)=" << dot(F, ey)
+                  << "  Mx(in-plane/overturn)=" << dot(M, ex) << "  My(out)=" << dot(M, ey)
+                  << "  Mz(torsion)=" << dot(M, ez) << std::endl;
+    }
+    std::cout << "==========================================" << std::endl;
+}
+
 int main(void) {
+    // 壁→部材 節点力(手法1)の検証: TestWallNodalForces();
     //std::cout << "TestMethod1 Start" << std::endl;
     //TestMethod1();
     //TestMethod2();

@@ -40,6 +40,8 @@ public:
     /// <returns>Plate element stress data</returns>
     PlateStressData GetPlateStressData(int eid, double xi, double eta) override;
 
+    std::vector<NodeLoadData> GetPlateNodalForces(int eid, bool local) override;
+
     Displacement GetBeamDisplace(int eid, double p) override;
 
     // FEDeformCase を介して継承されました
@@ -81,6 +83,8 @@ public:
 
     // 各LinearStaticDeformFactorのインデックスに対応する応力を返す
     std::vector<PlateStressData> GetPlateStressDataComponents(int eid, double xi, double eta);
+
+    std::vector<NodeLoadData> GetPlateNodalForces(int eid, bool local) override;
 
     Displacement GetBeamDisplace(int eid, double p) override;
 

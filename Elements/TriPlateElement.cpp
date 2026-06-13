@@ -1044,6 +1044,45 @@ PlateStressData TriPlateElement::stress(
                            mstr.sigx * thickness.plane_thick, mstr.sigy * thickness.plane_thick, mstr.sigxy * thickness.plane_thick);
 }
 
+std::vector<NodeLoadData> TriPlateElement::NodalForces(
+    Displacement d0, Displacement d1, Displacement d2, bool local)
+{
+    // グローバル座標の節点変位ベクトル u (18)
+    const Displacement *ds[node_num] = {&d0, &d1, &d2};
+    Eigen::VectorXd u(total_dof);
+    for (int i = 0; i < node_num; i++)
+    {
+        u(node_dof * i + 0) = ds[i]->Dx();
+        u(node_dof * i + 1) = ds[i]->Dy();
+        u(node_dof * i + 2) = ds[i]->Dz();
+        u(node_dof * i + 3) = ds[i]->Rx();
+        u(node_dof * i + 4) = ds[i]->Ry();
+        u(node_dof * i + 5) = ds[i]->Rz();
+    }
+
+    // 整合節点力 f = K_e * u （グローバル座標。StiffnessMatrix() は T^t K_local T 済み）
+    Eigen::VectorXd f = StiffnessMatrix() * u;
+
+    // local=true なら要素plane軸へ回転（行 = ローカル軸なので R * v_global = v_local）
+    Eigen::Matrix3d R = trans_matrix3(plane);
+
+    std::vector<NodeLoadData> result;
+    result.reserve(node_num);
+    for (int i = 0; i < node_num; i++)
+    {
+        Eigen::Vector3d force(f(node_dof * i + 0), f(node_dof * i + 1), f(node_dof * i + 2));
+        Eigen::Vector3d moment(f(node_dof * i + 3), f(node_dof * i + 4), f(node_dof * i + 5));
+        if (local)
+        {
+            force = R * force;
+            moment = R * moment;
+        }
+        result.emplace_back(Nodes[i]->id,
+                            force(0), force(1), force(2), moment(0), moment(1), moment(2));
+    }
+    return result;
+}
+
 // PlateStressData TriPlateElement::stress_save(
 //	Displacement d0, Displacement d1, Displacement d2, double xi, double eta)
 //{

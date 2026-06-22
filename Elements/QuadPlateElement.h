@@ -35,7 +35,7 @@ private:
 
     LocalMatrixd trans_matrix();
 
-    // Nastran方式のエッジ補正行列
+    // NASTRAN/MacNeal方式の反り補正（力の釣り合い=偶力から構成）
     Eigen::MatrixXd WarpCorrectMatrix1a();
     // エネルギー原理によるエッジ補正行列
     Eigen::MatrixXd WarpCorrectMatrix1b();

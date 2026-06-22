@@ -591,51 +591,60 @@ QuadPlateElement::trans_matrix()
     for (int i = 0; i < numBlocks; ++i)
         matrix.block(i * tr0.rows(), i * tr0.cols(), tr0.rows(), tr0.cols()) = tr0;
 
-    // Debug
-    // 250412 1bと2はテストで有効性が確認できたが、実際に導入すると微妙なので
-    // もう少し確認が必要。特にメソッド2がかなり変な挙動をする。
-    // matrix = WarpCorrectMatrix1a().transpose() * matrix;  // 不採用
+    // 反り補正（Q4-1）: WC1b(力補正) + WC2(法線モーメント補正)
     matrix = WarpCorrectMatrix1b().transpose() * matrix;
     matrix = WarpCorrectMatrix2().transpose() * matrix;
 
     return matrix;
 }
 
+// NASTRAN/MacNeal 形式の反り補正（辺の偶力による S^T）。本番未使用・検証用。
 Eigen::MatrixXd QuadPlateElement::WarpCorrectMatrix1a()
 {
-    double h1 = plane.DistanceTo(Nodes[0]->Location);
-    Eigen::Vector4d sins, coss, lens;
-    Eigen::Vector4d fx_fixs, fy_fixs;
+    Point p[4];
+    for (int i = 0; i < 4; i++)
+        p[i] = plane.PointToCoord(Nodes[i]->Location);
+
+    double cosE[4], sinE[4], lenE[4]; // 辺 i->i+1 の方向余弦と長さ（面内）
     for (int i = 0; i < 4; i++)
     {
-        double li = Nodes[i]->Location.distance_to(Nodes[(i + 1) % 4]->Location);
-        lens(i) = li;
-        sins(i) = (Nodes[(i + 1) % 4]->Location.y - Nodes[i]->Location.y) / li;
-        coss(i) = (Nodes[(i + 1) % 4]->Location.x - Nodes[i]->Location.x) / li;
+        double dx = p[(i + 1) % 4].x - p[i].x;
+        double dy = p[(i + 1) % 4].y - p[i].y;
+        double l = std::sqrt(dx * dx + dy * dy);
+        lenE[i] = l; cosE[i] = dx / l; sinE[i] = dy / l;
     }
 
+    Eigen::MatrixXd ST = Eigen::MatrixXd::Identity(24, 24); // S^T (f = S^T f_p)
     for (int i = 0; i < 4; i++)
     {
-        double hi = h1 * pow(-1, i);
-        double dsin = sins(i) * coss((i + 3) % 4) - coss(i) * sins((i + 3) % 4);
+        int im = (i + 3) % 4;   // i-1
+        int ip = (i + 1) % 4;   // i+1
+        int imm = (i + 2) % 4;  // i-2
 
-        double s = sins(i) / lens((i + 3) % 4) + sins((i + 3) % 4) / lens(i);
-        double c = coss(i) / lens((i + 3) % 4) + coss((i + 3) % 4) / lens(i);
-        fx_fixs(i) = s * hi / dsin;
-        fy_fixs(i) = c * hi / dsin;
+        double g_i  = p[i].z  / lenE[i];    // h_i / l_i
+        double g_im = p[im].z / lenE[im];   // h_{i-1} / l_{i-1}
+
+        // D_j = sin(theta_j - theta_{j-1})
+        double D_i  = sinE[i]  * cosE[im]  - cosE[i]  * sinE[im];
+        double D_ip = sinE[ip] * cosE[i]   - cosE[ip] * sinE[i];
+        double D_im = sinE[im] * cosE[imm] - cosE[im] * sinE[imm];
+
+        double alpha = (-g_i * sinE[im] + g_im * sinE[i]) / D_i;
+        double beta  = (-g_i * cosE[im] + g_im * cosE[i]) / D_i;
+        double p_c   = (g_i * sinE[ip]) / D_ip;
+        double q_c   = (g_i * cosE[ip]) / D_ip;
+        double r_c   = (g_im * (-sinE[imm])) / D_im;
+        double s_c   = (g_im * (-cosE[imm])) / D_im;
+
+        int row = 6 * i + 2; // f_zi
+        ST(row, 6 * i  + 0) = -alpha;
+        ST(row, 6 * i  + 1) =  beta;
+        ST(row, 6 * ip + 0) =  p_c;
+        ST(row, 6 * ip + 1) = -q_c;
+        ST(row, 6 * im + 0) =  r_c;
+        ST(row, 6 * im + 1) = -s_c;
     }
-
-    Eigen::MatrixXd mat = Eigen::MatrixXd::Identity(24, 24);
-    for (int i = 0; i < 4; i++)
-    {
-        // 実際動かすと正負逆のような気がする。
-        // mat(6 * i + 2, 6 * i) = fx_fixs(i);
-        mat(6 * i + 2, 6 * i) = -fx_fixs(i);
-        // mat(6 * i + 2, 6 * i + 1) = fy_fixs(i);
-        mat(6 * i + 2, 6 * i + 1) = -fy_fixs(i);
-    }
-
-    return mat;
+    return ST;
 }
 
 Eigen::MatrixXd QuadPlateElement::WarpCorrectMatrix1b()

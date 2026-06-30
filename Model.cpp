@@ -163,22 +163,25 @@ int FEModel::SolveVibration(const int nev, std::vector<double>& eigen_values,
             }
         }
 
+        // 固有値を元の固有値問題に戻す（ω = 角振動数）
+        for (double v : geigs.eigenvalues())
+            eigen_values.push_back(1.0 / sqrt(v));
+
+        // 固有ベクトルを質量正規化(φ^T M φ = 1)して格納。
+        // Spectraは剛性正規化(φ^T M φ = 1/ω^2)で返すため φ_M = ω・φ_K と倍率 ω を掛ける。
         for (size_t i = 0; i < nconv; i++)
         {
+            const double w = eigen_values[i];
             std::vector<Displacement> v(NodeNum());
             for (size_t j = 0; j < NodeNum(); j++)
             {
                 int p = j * 6;
                 v[j] = Displacement(
-                    eigs_vector(p, i), eigs_vector(p + 1, i), eigs_vector(p + 2, i),
-                    eigs_vector(p + 3, i), eigs_vector(p + 4, i), eigs_vector(p + 5, i));
+                    w * eigs_vector(p, i), w * eigs_vector(p + 1, i), w * eigs_vector(p + 2, i),
+                    w * eigs_vector(p + 3, i), w * eigs_vector(p + 4, i), w * eigs_vector(p + 5, i));
             }
             mode_vectors.push_back(v);
         }
-
-        // 固有値を元の固有値問題に戻す
-        for (double v : geigs.eigenvalues())
-            eigen_values.push_back(1.0 / sqrt(v));
 
     }
     else {

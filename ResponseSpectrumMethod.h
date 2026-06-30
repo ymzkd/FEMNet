@@ -10,7 +10,8 @@ enum ResponseSpectrumMethodType
 {
     ABS,
     SRSS,
-    CQC
+    CQC,
+    AWA
 };
 
 enum class ResponseValueType
@@ -23,6 +24,7 @@ enum class ResponseValueType
 class ResponseSpectrumMethod : public FEDeformOperator
 {
 private:
+    std::vector<Displacement> calculate_responseAWA(ResponseValueType vt);
     std::vector<Displacement> calculate_responseCQC(ResponseValueType vt);
     std::vector<Displacement> calculate_responseSRSS(ResponseValueType vt);
     std::vector<Displacement> calculate_responseABS(ResponseValueType vt);

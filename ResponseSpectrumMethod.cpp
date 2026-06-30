@@ -1,5 +1,73 @@
 #include "ResponseSpectrumMethod.h"
 
+std::vector<Displacement> ResponseSpectrumMethod::calculate_responseAWA(ResponseValueType vt)
+{
+    const auto &mode_vectors = VibrateResult.ModeVectors();
+    std::vector<double> part_facs = VibrateResult.ParticipationFactors(Direction);
+    std::vector<double> eigen_values = VibrateResult.EigenValues(); // omega
+    std::vector<double> periods = VibrateResult.NaturalPeriods();
+    const size_t M = part_facs.size();
+    const size_t N = model->NodeNum();
+
+    // Worst Mode（エネルギー寄与が最大のモードを探す）
+    size_t worst_mode_idx = 0;
+    double max_energy = -1.0;
+    for (size_t j = 0; j < M; j++){
+        double omega_j = eigen_values[j];
+        double part_j = part_facs[j];
+
+        // 参加係数は符号を持つため絶対値で寄与の大きさを比較する
+        double energy = fabs(part_j) / omega_j;
+        if (energy > max_energy){
+            max_energy = energy;
+            worst_mode_idx = j;
+        }
+    }
+
+    std::vector<double> spectrums(M);
+    for (size_t i = 0; i < M; i++)
+    {
+        if (vt == ResponseValueType::Displacement)
+            spectrums[i] = SpectrumFunction->Displacement(periods[i]);
+        else if (vt == ResponseValueType::Velocity)
+            spectrums[i] = SpectrumFunction->Velocity(periods[i]);
+        else // (vt == ResponseValueType::Acceleration)
+            spectrums[i] = SpectrumFunction->Acceleration(periods[i]);
+    }
+
+    // 最悪項
+    std::vector<Displacement> responses(N);
+    double fac = 0;
+    const size_t idx = worst_mode_idx;
+    for (size_t i = 0; i < M; i++)
+        fac += pow(part_facs[i] * spectrums[i] / eigen_values[i] * eigen_values[idx], 2.0);
+    fac = sqrt(fac) * 0.5;
+    const auto &uj = mode_vectors[idx];
+    for (size_t i = 0; i < N; i++)
+    {
+        const Displacement &idj = uj[i];
+        responses[i] += Displacement(
+            fac * idj.Dx(), fac * idj.Dy(), fac * idj.Dz(),
+            fac * idj.Rx(), fac * idj.Ry(), fac * idj.Rz());
+    }
+
+    // ABS項
+    for (size_t j = 0; j < M; j++)
+    {
+        double fac = part_facs[j] * spectrums[j] * 0.5;
+        const auto &uj = mode_vectors[j];
+        for (size_t i = 0; i < N; i++)
+        {
+            const Displacement &idj = uj[i];
+            responses[i] += Displacement(
+                fac * idj.Dx(), fac * idj.Dy(), fac * idj.Dz(),
+                fac * idj.Rx(), fac * idj.Ry(), fac * idj.Rz());
+        }
+    }
+
+    return responses;
+}
+
 std::vector<Displacement> ResponseSpectrumMethod::calculate_responseCQC(ResponseValueType vt)
 {
     const auto& mode_vectors = VibrateResult.ModeVectors();
@@ -170,6 +238,8 @@ std::vector<Displacement> ResponseSpectrumMethod::calculate_response(ResponseVal
         responses = calculate_responseCQC(vt);
     else if (MethodType == ResponseSpectrumMethodType::SRSS)
         responses = calculate_responseSRSS(vt);
+    else if (MethodType == ResponseSpectrumMethodType::AWA)
+        responses = calculate_responseAWA(vt);
     else // MethodType == ResponseSpectrumMethodType::ABS
         responses = calculate_responseABS(vt);
 

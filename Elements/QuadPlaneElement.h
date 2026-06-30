@@ -14,7 +14,7 @@ private:
     static constexpr int total_dof = node_num * node_dof;
     static constexpr int total_dof_local = node_num * node_dof_local;
 
-    static constexpr ElementType type = ElementType::Membrane;
+    static constexpr ElementType type = ElementType::QuadMembrane;
     Eigen::Matrix2d JMatrix(double xi, double eta);
     Eigen::MatrixXd BMatrix(double xi, double eta);
     Eigen::Matrix3d DMatrix();

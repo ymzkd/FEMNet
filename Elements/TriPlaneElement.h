@@ -12,7 +12,7 @@ private:
     static constexpr int node_dof = 3;
     static constexpr int total_dof = 9;
 
-    static constexpr ElementType type = ElementType::Membrane;
+    static constexpr ElementType type = ElementType::TriMembrane;
     Eigen::MatrixXd BMatrix();
     Eigen::Matrix3d DMatrix();
     Eigen::MatrixXd localStiffnessMatrix();

@@ -129,7 +129,7 @@ public:
         std::vector<BarElementBase *> bar_elements;
         for (const auto &elem : model->Elements)
         {
-            if (elem->Type() == ElementType::Beam || elem->Type() == ElementType::Truss)
+            if (IsBarType(elem->Type()))
             {
                 if (auto *bar_elem = dynamic_cast<BarElementBase *>(elem.get()))
                 {
@@ -145,8 +145,7 @@ public:
         std::vector<PlaneElementBase *> plane_elements;
         for (const auto &elem : model->Elements)
         {
-            if (elem->Type() == ElementType::Membrane || elem->Type() == ElementType::Plate ||
-                elem->Type() == ElementType::DKT || elem->Type() == ElementType::DKQ)
+            if (IsPlaneType(elem->Type()))
             {
                 if (auto *plane_elem = dynamic_cast<PlaneElementBase *>(elem.get()))
                 {

@@ -6,6 +6,7 @@
 #include <map>
 #include <array>
 #include <memory>
+#include <string>
 
 #include "SparseSolver.h"
 
@@ -123,6 +124,12 @@ public:
 
     int SolveVibration(const int nev, std::vector<double>& eigen_values,
         std::vector<std::vector<Displacement>>& mode_vectors);
+
+    // 構造モデルのテキスト形式ファイル入出力
+    // Save: 現在のモデルを path に書き出す
+    // Load: path からモデルを読み込み、現在のモデルを置き換える
+    void Save(const std::string& path);
+    void Load(const std::string& path);
 
 };
 

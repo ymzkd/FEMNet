@@ -170,6 +170,8 @@ endif()
 set(FEMNET_SOURCES
     Components.cpp
     Model.cpp
+    ModelIO.cpp
+    LoadIO.cpp
     SparseMatrixUtils.cpp
     RigidLink.cpp
     Elements/ElementBase.cpp
@@ -195,8 +197,10 @@ set(FEMNET_SOURCES
 # === C# Library ===
 if(BUILD_CSHARP)
     # Set .Net project directory
+    # 親プロジェクト(StructureMM)へ組み込む場合は親側が NET_PROJECT_DIR を指定する。
+    # 未指定(スタンドアロン)の場合は csharp/generated/ へ出力し、単体でC#テストできるようにする。
     if(NOT DEFINED NET_PROJECT_DIR)
-        set(NET_PROJECT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../FEMNet/")
+        set(NET_PROJECT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/csharp/generated/")
     endif()
 
     if(NOT DEFINED SWIG_OUTPUT_DIR)
@@ -292,4 +296,24 @@ add_executable(sampleapp
 target_include_directories(sampleapp PUBLIC ${CMAKE_SOURCE_DIR})
 configure_mkl_target(sampleapp)
 configure_cuda_target(sampleapp)
+
+# === ModelIO round-trip test ===
+add_executable(modelio_test
+    tests/modelio_test.cpp
+    ${FEMNET_SOURCES}
+    $<$<BOOL:${CUDA_FOUND}>:${CUDA_SOLVER_SOURCES}>
+)
+target_include_directories(modelio_test PUBLIC ${CMAKE_SOURCE_DIR})
+configure_mkl_target(modelio_test)
+configure_cuda_target(modelio_test)
+
+# === LoadIO round-trip test ===
+add_executable(loadio_test
+    tests/loadio_test.cpp
+    ${FEMNET_SOURCES}
+    $<$<BOOL:${CUDA_FOUND}>:${CUDA_SOLVER_SOURCES}>
+)
+target_include_directories(loadio_test PUBLIC ${CMAKE_SOURCE_DIR})
+configure_mkl_target(loadio_test)
+configure_cuda_target(loadio_test)
 

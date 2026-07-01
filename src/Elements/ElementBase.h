@@ -6,7 +6,7 @@
 #include <Eigen/Sparse>
 #endif
 
-#include "../Components.h"
+#include "Components.h"
 
 Eigen::Matrix3d trans_matrix3(const Point p0, const Point p1, const double beta);
 Eigen::Matrix3d trans_matrix3(const Plane plane);

@@ -1,58 +1,57 @@
-#ifndef _TRI_PLANE_ELEMENT_
-#define _TRI_PLANE_ELEMENT_
+#ifndef _QUAD_PLANE_ELEMENT_
+#define _QUAD_PLANE_ELEMENT_
 
 #include "PlaneElement.h"
 
-class TriPlaneElement : public PlaneElementBase
+class QuadPlaneElement : public PlaneElementBase
 {
-    friend class TriPlateElement;
+    friend class QuadPlateElement;
 
 private:
-    static constexpr int node_num = 3;
+    static constexpr int node_num = 4;
+    static constexpr int node_dof_local = 2;
     static constexpr int node_dof = 3;
-    static constexpr int total_dof = 9;
+    static constexpr int total_dof = node_num * node_dof;
+    static constexpr int total_dof_local = node_num * node_dof_local;
 
-    static constexpr ElementType type = ElementType::Membrane;
-    Eigen::MatrixXd BMatrix();
+    static constexpr ElementType type = ElementType::QuadMembrane;
+    Eigen::Matrix2d JMatrix(double xi, double eta);
+    Eigen::MatrixXd BMatrix(double xi, double eta);
     Eigen::Matrix3d DMatrix();
     Eigen::MatrixXd localStiffnessMatrix();
-
     Eigen::MatrixXd geometric_local_stiffness_matrix(const std::vector<Displacement> &disp) override;
 
     Eigen::MatrixXd trans_matrix();
 
 public:
-    Node *Nodes[3];
-    std::vector<Node *> NodesList() override { return std::vector<Node *>{Nodes[0], Nodes[1], Nodes[2]}; }
+    Node *Nodes[4];
+    std::vector<Node *> NodesList() override { return std::vector<Node *>{Nodes[0], Nodes[1], Nodes[2], Nodes[3]}; }
+    // Plane plane;
+    // Thickness thickness;
 
-    TriPlaneElement() {};
-    TriPlaneElement(Node *n0, Node *n1, Node *n2, double t, Material mat, double beta = 0);
-    TriPlaneElement(Node *n0, Node *n1, Node *n2, Thickness t, Material mat, double beta = 0);
-    TriPlaneElement(int _id, Node *n0, Node *n1, Node *n2, double t, Material mat, double beta = 0)
-        : TriPlaneElement(n0, n1, n2, t, mat, beta)
+    QuadPlaneElement() {};
+    QuadPlaneElement(Node *n0, Node *n1, Node *n2, Node *n3, double t, Material mat, double beta = 0.0);
+    QuadPlaneElement(Node *n0, Node *n1, Node *n2, Node *n3, Thickness t, Material mat, double beta = 0.0);
+    QuadPlaneElement(int _id, Node *n0, Node *n1, Node *n2, Node *n3, double t, Material mat, double beta = 0.0) 
+        : QuadPlaneElement(n0, n1, n2, n3, t, mat, beta)
     {
         id = _id;
     };
-    TriPlaneElement(int _id, Node *n0, Node *n1, Node *n2, Thickness t, Material mat, double beta = 0)
-        : TriPlaneElement(n0, n1, n2, t, mat, beta)
+    QuadPlaneElement(int _id, Node *n0, Node *n1, Node *n2, Node *n3, Thickness t, Material mat, double beta = 0.0) 
+        : QuadPlaneElement(n0, n1, n2, n3, t, mat, beta)
     {
         id = _id;
     };
 
-    /**
-     * Calculates the node lumped mass for an element.
-     *
-     * @return A vector containing the lumped mass values for each node.
-     */
     Eigen::VectorXd NodeLumpedMass()
     {
         return Eigen::VectorXd::Constant(node_num, Area() * thickness.WeightThickness() * Mat.dense / node_num);
     }
 
-    std::vector<NodeLoadData> AreaForceToNodeLoadData(std::vector<Vector> load_vecs) override;
+    Eigen::MatrixXd NodeConsistentMass();
 
-    std::vector<NodeLoadData> InertialForceToNodeLoadData(Eigen::Vector3d accel_vec) override;
-    Eigen::MatrixXd NodeConsistentMass() override;
+    std::vector<NodeLoadData> InertialForceToNodeLoadData(Eigen::Vector3d accel_vec);
+    std::vector<NodeLoadData> AreaForceToNodeLoadData(std::vector<Vector> load_vecs) override;
 
     double Area();
     ElementType Type() { return type; }
@@ -72,7 +71,8 @@ public:
     void GetGeometricStiffnessTriplets(const std::vector<Displacement>& disp,
                                         std::vector<Eigen::Triplet<double>>& triplets) override;
 
-    MembraneStressData stress(Displacement d0, Displacement d1, Displacement d2);
+    MembraneStressData stress(Displacement d0, Displacement d1,
+                              Displacement d2, Displacement d3, double xi, double eta);
 };
 
 #endif

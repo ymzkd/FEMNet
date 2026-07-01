@@ -485,3 +485,10 @@ build-python/
 
 # Windows NUL device file artifact
 NUL
+
+### FEMNet C# standalone test ###
+# SWIG-generated C# bindings (fem.dll + *.cs)
+csharp/generated/
+# dotnet build artifacts
+csharp/bin/
+csharp/obj/

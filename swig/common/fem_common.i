@@ -39,6 +39,7 @@
     #include "RigidLink.h"
     #include "Model.h"
     #include "SeismicModule.h"
+    #include "LoadIO.h"
 %}
 
 // Ignore non-const accessors that return references (use const versions instead)
@@ -138,6 +139,7 @@ namespace std {
 %include "RigidLink.h"
 %include "Model.h"
 %include "SeismicModule.h"
+%include "LoadIO.h"
 
 // ===================================================================
 // Class extensions (AFTER all classes are fully defined)

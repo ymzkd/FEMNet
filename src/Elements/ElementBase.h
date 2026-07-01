@@ -6,15 +6,36 @@
 #include <Eigen/Sparse>
 #endif
 
-#include "../Components.h"
+#include "Components.h"
 
 Eigen::Matrix3d trans_matrix3(const Point p0, const Point p1, const double beta);
 Eigen::Matrix3d trans_matrix3(const Plane plane);
 
 enum class ElementType
 {
-    None, Beam, Truss, Membrane, Plate, DKT, DKQ
+    None = 0,
+    Beam = 1,
+    Truss = 2,
+    Membrane = 3, // 総称（新規要素では未使用＝レガシー扱い）
+    Plate = 4,    // 未使用(予約)
+    DKT = 5,      // TriPlateElement
+    DKQ = 6,      // QuadPlateElement
+    // --- 追加（末尾に追記し既存値は変更しない） ---
+    ComplexBeam = 7,  // ComplexBeamElement
+    TriMembrane = 8,  // TriPlaneElement
+    QuadMembrane = 9, // QuadPlaneElement
 };
+
+// 要素種別の分類判定（分類の定義をここ1箇所に集約する）
+inline bool IsBarType(ElementType t)
+{
+    return t == ElementType::Beam || t == ElementType::Truss || t == ElementType::ComplexBeam;
+}
+
+inline bool IsPlaneType(ElementType t)
+{
+    return t == ElementType::Membrane || t == ElementType::TriMembrane || t == ElementType::QuadMembrane || t == ElementType::Plate || t == ElementType::DKT || t == ElementType::DKQ;
+}
 
 class ElementBase
 {

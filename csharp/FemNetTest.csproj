@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    FEMNet C# バインディングのスタンドアロン往復テスト。
+    実行手順:
+      1) CMake を BUILD_CSHARP=ON で構成(NET_PROJECT_DIR 未指定なら generated/ に出力)
+      2) fem ターゲットを Release ビルド   -> generated/ に fem.dll と *.cs が生成される
+      3) この csharp ディレクトリで dotnet 実行
+    ネイティブ fem.dll は MKL ランタイムに依存するため、MKL(oneAPI)が PATH 上に
+    あるシェルで実行すること。
+  -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <PlatformTarget>x64</PlatformTarget>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AssemblyName>FemNetTest</AssemblyName>
+    <RootNamespace>FemNetTest</RootNamespace>
+  </PropertyGroup>
+
+  <!-- 既定の *.cs グロブで generated/*.cs と RoundTripTest.cs を取り込む。
+       ネイティブ fem.dll を実行ディレクトリへコピーする。 -->
+  <ItemGroup>
+    <None Include="generated/fem.dll" Condition="Exists('generated/fem.dll')">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>fem.dll</Link>
+    </None>
+  </ItemGroup>
+
+</Project>

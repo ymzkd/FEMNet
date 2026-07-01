@@ -48,8 +48,8 @@ endif()
 # CUDA solver sources
 if(CUDA_FOUND)
     set(CUDA_SOLVER_SOURCES
-        cuda/CudaSolverBase.cu
-        cuda/CudaPCGSolver.cu
+        src/cuda/CudaSolverBase.cu
+        src/cuda/CudaPCGSolver.cu
     )
 endif()
 
@@ -166,37 +166,54 @@ if(BUILD_PYTHON)
     endif()
 endif()
 
+# === Common include directories ===
+# src/ をパスに含めることで "Elements/Elements.h" 等のパス修飾インクルードを維持しつつ、
+# 各サブディレクトリを含めることでフラットインクルード("Model.h"等)も解決する。
+set(FEMNET_INCLUDE_DIRS
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/core
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Elements
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/analysis
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/io
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/math
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cuda
+)
+
 # === Common source files ===
 set(FEMNET_SOURCES
-    Components.cpp
-    Model.cpp
-    SparseMatrixUtils.cpp
-    RigidLink.cpp
-    Elements/ElementBase.cpp
-    Elements/BarElement.cpp
-    Elements/TrussElement.cpp
-    Elements/BeamElement.cpp
-    Elements/ComplexBeamElement.cpp
-    Elements/PlaneElement.cpp
-    Elements/TriPlaneElement.cpp
-    Elements/QuadPlaneElement.cpp
-    Elements/TriPlateElement.cpp
-    Elements/QuadPlateElement.cpp
-    LoadComponent.cpp
-    SeismicModule.cpp
-    FEAnalysis.cpp
-    FELinearStaticOp.cpp
-    FEDynamic.cpp
-    FEBucklingAnalysis.cpp
-    FEVibrateResult.cpp
-    ResponseSpectrumMethod.cpp
+    src/core/Components.cpp
+    src/core/Model.cpp
+    src/core/RigidLink.cpp
+    src/core/LoadComponent.cpp
+    src/io/ModelIO.cpp
+    src/io/LoadIO.cpp
+    src/math/SparseMatrixUtils.cpp
+    src/Elements/ElementBase.cpp
+    src/Elements/BarElement.cpp
+    src/Elements/TrussElement.cpp
+    src/Elements/BeamElement.cpp
+    src/Elements/ComplexBeamElement.cpp
+    src/Elements/PlaneElement.cpp
+    src/Elements/TriPlaneElement.cpp
+    src/Elements/QuadPlaneElement.cpp
+    src/Elements/TriPlateElement.cpp
+    src/Elements/QuadPlateElement.cpp
+    src/analysis/SeismicModule.cpp
+    src/analysis/FEAnalysis.cpp
+    src/analysis/FELinearStaticOp.cpp
+    src/analysis/FEDynamic.cpp
+    src/analysis/FEBucklingAnalysis.cpp
+    src/analysis/FEVibrateResult.cpp
+    src/analysis/ResponseSpectrumMethod.cpp
 )
 
 # === C# Library ===
 if(BUILD_CSHARP)
     # Set .Net project directory
+    # 親プロジェクト(StructureMM)へ組み込む場合は親側が NET_PROJECT_DIR を指定する。
+    # 未指定(スタンドアロン)の場合は csharp/generated/ へ出力し、単体でC#テストできるようにする。
     if(NOT DEFINED NET_PROJECT_DIR)
-        set(NET_PROJECT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../FEMNet/")
+        set(NET_PROJECT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/csharp/generated/")
     endif()
 
     if(NOT DEFINED SWIG_OUTPUT_DIR)
@@ -206,7 +223,7 @@ if(BUILD_CSHARP)
     set_property(SOURCE swig/csharp/fem_csharp.i PROPERTY CPLUSPLUS ON)
     set_source_files_properties(swig/csharp/fem_csharp.i PROPERTIES
         SWIG_FLAGS "-includeall"
-        INCLUDE_DIRECTORIES "${CMAKE_CURRENT_SOURCE_DIR};${CMAKE_CURRENT_SOURCE_DIR}/swig/common")
+        INCLUDE_DIRECTORIES "${CMAKE_CURRENT_SOURCE_DIR}/swig/common;${FEMNET_INCLUDE_DIRS}")
 
     swig_add_library(fem
         TYPE SHARED
@@ -220,7 +237,7 @@ if(BUILD_CSHARP)
     )
 
     set_property(TARGET fem PROPERTY SWIG_COMPILE_OPTIONS -namespace ${PROJECT_NAME})
-    target_include_directories(fem PUBLIC ${CMAKE_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/swig/common)
+    target_include_directories(fem PUBLIC ${FEMNET_INCLUDE_DIRS} ${CMAKE_CURRENT_SOURCE_DIR}/swig/common)
 
     configure_mkl_target(fem)
     configure_cuda_target(fem)
@@ -231,7 +248,7 @@ if(BUILD_CSHARP)
         RUNTIME_OUTPUT_DIRECTORY_RELEASE ${NET_PROJECT_DIR}
         RUNTIME_OUTPUT_DIRECTORY_DEBUG ${NET_PROJECT_DIR}
         LIBRARY_OUTPUT_DIRECTORY ${NET_PROJECT_DIR}
-        INCLUDE_DIRECTORIES ${CMAKE_CURRENT_SOURCE_DIR}
+        INCLUDE_DIRECTORIES "${FEMNET_INCLUDE_DIRS}"
     )
 endif()
 
@@ -244,7 +261,7 @@ if(BUILD_PYTHON)
     set_property(SOURCE swig/python/fem_python.i PROPERTY CPLUSPLUS ON)
     set_source_files_properties(swig/python/fem_python.i PROPERTIES
         SWIG_FLAGS "-py3"
-        INCLUDE_DIRECTORIES "${CMAKE_CURRENT_SOURCE_DIR};${CMAKE_CURRENT_SOURCE_DIR}/swig/common")
+        INCLUDE_DIRECTORIES "${CMAKE_CURRENT_SOURCE_DIR}/swig/common;${FEMNET_INCLUDE_DIRS}")
 
     swig_add_library(femnet
         TYPE SHARED
@@ -258,8 +275,8 @@ if(BUILD_PYTHON)
     )
 
     target_include_directories(femnet PUBLIC
-        ${CMAKE_SOURCE_DIR}
-        ${CMAKE_SOURCE_DIR}/swig/common
+        ${FEMNET_INCLUDE_DIRS}
+        ${CMAKE_CURRENT_SOURCE_DIR}/swig/common
         ${Python3_INCLUDE_DIRS})
 
     if(MSVC)
@@ -278,18 +295,38 @@ if(BUILD_PYTHON)
         RUNTIME_OUTPUT_DIRECTORY ${PYTHON_OUTPUT_DIR}
         RUNTIME_OUTPUT_DIRECTORY_RELEASE ${PYTHON_OUTPUT_DIR}
         RUNTIME_OUTPUT_DIRECTORY_DEBUG ${PYTHON_OUTPUT_DIR}
-        INCLUDE_DIRECTORIES ${CMAKE_CURRENT_SOURCE_DIR}
+        INCLUDE_DIRECTORIES "${FEMNET_INCLUDE_DIRS}"
     )
 endif()
 
 # === App ===
 add_executable(sampleapp
-    app.cpp
+    apps/app.cpp
     ${FEMNET_SOURCES}
     $<$<BOOL:${CUDA_FOUND}>:${CUDA_SOLVER_SOURCES}>
 )
 
-target_include_directories(sampleapp PUBLIC ${CMAKE_SOURCE_DIR})
+target_include_directories(sampleapp PUBLIC ${FEMNET_INCLUDE_DIRS})
 configure_mkl_target(sampleapp)
 configure_cuda_target(sampleapp)
+
+# === ModelIO round-trip test ===
+add_executable(modelio_test
+    tests/modelio_test.cpp
+    ${FEMNET_SOURCES}
+    $<$<BOOL:${CUDA_FOUND}>:${CUDA_SOLVER_SOURCES}>
+)
+target_include_directories(modelio_test PUBLIC ${FEMNET_INCLUDE_DIRS})
+configure_mkl_target(modelio_test)
+configure_cuda_target(modelio_test)
+
+# === LoadIO round-trip test ===
+add_executable(loadio_test
+    tests/loadio_test.cpp
+    ${FEMNET_SOURCES}
+    $<$<BOOL:${CUDA_FOUND}>:${CUDA_SOLVER_SOURCES}>
+)
+target_include_directories(loadio_test PUBLIC ${FEMNET_INCLUDE_DIRS})
+configure_mkl_target(loadio_test)
+configure_cuda_target(loadio_test)
 

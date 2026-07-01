@@ -71,6 +71,8 @@ public:
 
     Eigen::MatrixXd StiffnessMatrix() override;
 
+    ElementType Type() override { return ElementType::ComplexBeam; }
+
     // Eigen::MatrixXd NodeConsistentMass();
     Displacement DisplaceAt(Displacement d0, Displacement d1, double p) override;
 };

@@ -1,7 +1,7 @@
 #ifndef _CUDA_PCG_SOLVER_H_
 #define _CUDA_PCG_SOLVER_H_
 
-#include "../SparseSolverInterface.h"
+#include "SparseSolverInterface.h"
 
 struct CudaPCGSolverImpl;
 

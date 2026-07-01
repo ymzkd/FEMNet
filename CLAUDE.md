@@ -59,21 +59,30 @@ cmake --build .
 
 ### コア構造
 
+**ソースツリー構成** (`src/` 配下にドメイン別で配置):
+- `src/core/` - `FEModel`([Model.h](src/core/Model.h)), `Components`, `RigidLink`, `LoadComponent`
+- `src/Elements/` - 全要素クラス
+- `src/analysis/` - 解析オペレーター群と`SeismicModule`
+- `src/io/` - モデル・荷重のファイル入出力（`ModelIO`, `LoadIO`）
+- `src/math/` - 疎行列ユーティリティ・ソルバー（`SparseMatrixUtils`, `SparseSolver`）
+- `src/cuda/` - GPUソルバー（オプショナル）
+- `apps/` - サンプルアプリ（[apps/app.cpp](apps/app.cpp)）
+
 **モデルクラス階層**:
-- `FEModel` ([Model.h](Model.h)) - メインモデルコンテナ（Nodes, Materials, Sections, Elements保持）
-- `ElementBase` ([Elements/ElementBase.h](Elements/ElementBase.h)) - 全要素の基底クラス
+- `FEModel` ([src/core/Model.h](src/core/Model.h)) - メインモデルコンテナ（Nodes, Materials, Sections, Elements保持）
+- `ElementBase` ([src/Elements/ElementBase.h](src/Elements/ElementBase.h)) - 全要素の基底クラス
   - `TrussElement`, `BeamElement`, `ComplexBeamElement` - 1次元要素
   - `TriPlaneElement`, `QuadPlaneElement` - 平面応力要素
   - `TriPlateElement`, `QuadPlateElement` - 板要素
 
 **解析オペレーター**:
-- `FELinearStaticOp` ([FELinearStaticOp.h](FELinearStaticOp.h)) - 線形静的解析
-- `FEVibrateResult` ([FEVibrateResult.h](FEVibrateResult.h)) - 固有値解析
-- `FEBucklingAnalysis` ([FEBucklingAnalysis.h](FEBucklingAnalysis.h)) - 座屈解析
-- `FEDynamic` ([FEDynamic.h](FEDynamic.h)) - 動的解析
-- `ResponseSpectrumMethod` ([ResponseSpectrumMethod.h](ResponseSpectrumMethod.h)) - 応答スペクトル法
+- `FELinearStaticOp` ([src/analysis/FELinearStaticOp.h](src/analysis/FELinearStaticOp.h)) - 線形静的解析
+- `FEVibrateResult` ([src/analysis/FEVibrateResult.h](src/analysis/FEVibrateResult.h)) - 固有値解析
+- `FEBucklingAnalysis` ([src/analysis/FEBucklingAnalysis.h](src/analysis/FEBucklingAnalysis.h)) - 座屈解析
+- `FEDynamic` ([src/analysis/FEDynamic.h](src/analysis/FEDynamic.h)) - 動的解析
+- `ResponseSpectrumMethod` ([src/analysis/ResponseSpectrumMethod.h](src/analysis/ResponseSpectrumMethod.h)) - 応答スペクトル法
 
-**基本コンポーネント** ([Components.h](Components.h)):
+**基本コンポーネント** ([src/core/Components.h](src/core/Components.h)):
 - `Node`, `Material`, `Section`, `Displacement`, `Point`, `Vector`など
 
 ### SWIGインターフェース構造
@@ -125,7 +134,7 @@ SWIGバインディングは3層構造:
 
 ### テスト
 
-**C++**: [app.cpp](app.cpp)を編集してサンプルアプリで動作確認
+**C++**: [apps/app.cpp](apps/app.cpp)を編集してサンプルアプリで動作確認
 
 **Python**: [python/test_femnet.py](python/test_femnet.py)でユニットテストまたは手動テスト
 

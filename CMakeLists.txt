@@ -170,13 +170,13 @@ endif()
 # src/ をパスに含めることで "Elements/Elements.h" 等のパス修飾インクルードを維持しつつ、
 # 各サブディレクトリを含めることでフラットインクルード("Model.h"等)も解決する。
 set(FEMNET_INCLUDE_DIRS
-    ${CMAKE_SOURCE_DIR}/src
-    ${CMAKE_SOURCE_DIR}/src/core
-    ${CMAKE_SOURCE_DIR}/src/Elements
-    ${CMAKE_SOURCE_DIR}/src/analysis
-    ${CMAKE_SOURCE_DIR}/src/io
-    ${CMAKE_SOURCE_DIR}/src/math
-    ${CMAKE_SOURCE_DIR}/src/cuda
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/core
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Elements
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/analysis
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/io
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/math
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cuda
 )
 
 # === Common source files ===
@@ -237,7 +237,7 @@ if(BUILD_CSHARP)
     )
 
     set_property(TARGET fem PROPERTY SWIG_COMPILE_OPTIONS -namespace ${PROJECT_NAME})
-    target_include_directories(fem PUBLIC ${FEMNET_INCLUDE_DIRS} ${CMAKE_SOURCE_DIR}/swig/common)
+    target_include_directories(fem PUBLIC ${FEMNET_INCLUDE_DIRS} ${CMAKE_CURRENT_SOURCE_DIR}/swig/common)
 
     configure_mkl_target(fem)
     configure_cuda_target(fem)
@@ -276,7 +276,7 @@ if(BUILD_PYTHON)
 
     target_include_directories(femnet PUBLIC
         ${FEMNET_INCLUDE_DIRS}
-        ${CMAKE_SOURCE_DIR}/swig/common
+        ${CMAKE_CURRENT_SOURCE_DIR}/swig/common
         ${Python3_INCLUDE_DIRS})
 
     if(MSVC)

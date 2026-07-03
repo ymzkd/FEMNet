@@ -11,7 +11,7 @@
 //     材料定数(Young/Poisson/dense)をインライン保存する。
 //
 // フォーマット(v1, 空白・改行非依存のトークン列):
-//   FEMNET_MODEL_TEXT_V1
+//   FEMNET_MODEL_TEXT_V2
 //   GRAVITY <g>
 //   NODES <count>      ... <idx> <x> <y> <z> <fix0..5> <lock0..5>
 //   MATERIALS <count>  ... <idx> <Young> <Poisson> <dense>
@@ -39,7 +39,7 @@
 
 namespace {
 
-const char *kMagic = "FEMNET_MODEL_TEXT_V1";
+const char *kMagic = "FEMNET_MODEL_TEXT_V2";
 
 // ElementType -> シリアライズ用タグ名
 std::string KindName(ElementType t)
@@ -193,8 +193,33 @@ void FEModel::Save(const std::string &path)
     {
         for (int i = 0; i < 6; i++)
             ofs << (link.flags[i] ? 1 : 0) << " ";
-        long master = link.Master ? (link.Master - node_base) : -1;
-        ofs << master << " " << link.Slaves.size();
+
+        // マスタ節点:
+        //   Nodes ベクタ内の実体      -> 種別0 + インデックス
+        //   モデルに属さない仮想節点  -> 種別1 + 座標 + 拘束(fix/lock)をインライン
+        //   (剛床の重心など、Nodes に登録されないマスタを表現するため)
+        //   無し                      -> 種別-1
+        const Node *m = link.Master;
+        bool in_nodes = m && !Nodes.empty() &&
+                        m >= node_base && m < node_base + Nodes.size();
+        if (in_nodes)
+        {
+            ofs << "0 " << (m - node_base);
+        }
+        else if (m)
+        {
+            ofs << "1 " << m->Location.x << " " << m->Location.y << " " << m->Location.z;
+            for (int j = 0; j < 6; j++)
+                ofs << " " << (m->Fix.flags[j] ? 1 : 0);
+            for (int j = 0; j < 6; j++)
+                ofs << " " << (m->Fix.lockflags.flags[j] ? 1 : 0);
+        }
+        else
+        {
+            ofs << "-1";
+        }
+
+        ofs << " " << link.Slaves.size();
         for (const Node &slave : link.Slaves)
             ofs << " " << slave.id;
         ofs << "\n";
@@ -389,8 +414,34 @@ void FEModel::Load(const std::string &path)
         RigidLink link;
         for (int i = 0; i < 6; i++)
             link.flags[i] = (ReadToken<int>(ifs, "RigidLink flag") != 0);
-        int master_idx = ReadToken<int>(ifs, "RigidLink master");
-        link.Master = (master_idx >= 0) ? &Nodes[master_idx] : nullptr;
+
+        // マスタ節点種別 (Save と対応)
+        int master_kind = ReadToken<int>(ifs, "RigidLink master kind");
+        if (master_kind == 0)
+        {
+            int master_idx = ReadToken<int>(ifs, "RigidLink master idx");
+            link.Master = &Nodes[master_idx];
+        }
+        else if (master_kind == 1)
+        {
+            double mx = ReadToken<double>(ifs, "RigidLink master x");
+            double my = ReadToken<double>(ifs, "RigidLink master y");
+            double mz = ReadToken<double>(ifs, "RigidLink master z");
+            // 仮想マスタ節点: モデルの Nodes に属さないため実体を生成して保持する。
+            // 注: 現状は生ポインタで所有し解放しない(単純対応)。
+            //     将来はスマートポインタ等、扱いやすい所有形態へ移行する想定。
+            Node *m = new Node(-1, mx, my, mz);
+            for (int i = 0; i < 6; i++)
+                m->Fix.flags[i] = (ReadToken<int>(ifs, "RigidLink master fix") != 0);
+            for (int i = 0; i < 6; i++)
+                m->Fix.lockflags.flags[i] = (ReadToken<int>(ifs, "RigidLink master lock") != 0);
+            link.Master = m;
+        }
+        else
+        {
+            link.Master = nullptr;
+        }
+
         int slave_count = ReadToken<int>(ifs, "RigidLink slave 数");
         for (int s = 0; s < slave_count; s++)
         {

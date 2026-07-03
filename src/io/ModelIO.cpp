@@ -21,7 +21,9 @@
 //             [<beta>] [<バネ12値>]
 //     面・板: <eid> <Kind> <nodeIdx...> <Young> <Poisson> <dense>
 //             <tplane> <tplate> <tweight> <beta>
-//   RIGIDLINKS <count> ... <flag0..5> <masterIdx> <slaveCount> <slaveIdx...>
+//   RIGIDLINKS <count>
+//     <flag0..5> <mx> <my> <mz> <mfix0..5> <mlock0..5> <slaveCount> <slaveIdx...>
+//     マスタは仮想節点(剛床の重心など)を含むため、座標＋拘束(fix/lock)を実体で常にインライン保持。
 //   END
 //
 // 要素種別タグは ElementType に対応する名前(Truss/Beam/ComplexBeam/
@@ -194,30 +196,13 @@ void FEModel::Save(const std::string &path)
         for (int i = 0; i < 6; i++)
             ofs << (link.flags[i] ? 1 : 0) << " ";
 
-        // マスタ節点:
-        //   Nodes ベクタ内の実体      -> 種別0 + インデックス
-        //   モデルに属さない仮想節点  -> 種別1 + 座標 + 拘束(fix/lock)をインライン
-        //   (剛床の重心など、Nodes に登録されないマスタを表現するため)
-        //   無し                      -> 種別-1
-        const Node *m = link.Master;
-        bool in_nodes = m && !Nodes.empty() &&
-                        m >= node_base && m < node_base + Nodes.size();
-        if (in_nodes)
-        {
-            ofs << "0 " << (m - node_base);
-        }
-        else if (m)
-        {
-            ofs << "1 " << m->Location.x << " " << m->Location.y << " " << m->Location.z;
-            for (int j = 0; j < 6; j++)
-                ofs << " " << (m->Fix.flags[j] ? 1 : 0);
-            for (int j = 0; j < 6; j++)
-                ofs << " " << (m->Fix.lockflags.flags[j] ? 1 : 0);
-        }
-        else
-        {
-            ofs << "-1";
-        }
+        // マスタ節点: 実体(値)で保持しているため、座標＋拘束(fix/lock)を常にインライン出力。
+        const Node &m = link.Master;
+        ofs << m.Location.x << " " << m.Location.y << " " << m.Location.z;
+        for (int j = 0; j < 6; j++)
+            ofs << " " << (m.Fix.flags[j] ? 1 : 0);
+        for (int j = 0; j < 6; j++)
+            ofs << " " << (m.Fix.lockflags.flags[j] ? 1 : 0);
 
         ofs << " " << link.Slaves.size();
         for (const Node &slave : link.Slaves)
@@ -415,32 +400,16 @@ void FEModel::Load(const std::string &path)
         for (int i = 0; i < 6; i++)
             link.flags[i] = (ReadToken<int>(ifs, "RigidLink flag") != 0);
 
-        // マスタ節点種別 (Save と対応)
-        int master_kind = ReadToken<int>(ifs, "RigidLink master kind");
-        if (master_kind == 0)
-        {
-            int master_idx = ReadToken<int>(ifs, "RigidLink master idx");
-            link.Master = &Nodes[master_idx];
-        }
-        else if (master_kind == 1)
-        {
-            double mx = ReadToken<double>(ifs, "RigidLink master x");
-            double my = ReadToken<double>(ifs, "RigidLink master y");
-            double mz = ReadToken<double>(ifs, "RigidLink master z");
-            // 仮想マスタ節点: モデルの Nodes に属さないため実体を生成して保持する。
-            // 注: 現状は生ポインタで所有し解放しない(単純対応)。
-            //     将来はスマートポインタ等、扱いやすい所有形態へ移行する想定。
-            Node *m = new Node(-1, mx, my, mz);
-            for (int i = 0; i < 6; i++)
-                m->Fix.flags[i] = (ReadToken<int>(ifs, "RigidLink master fix") != 0);
-            for (int i = 0; i < 6; i++)
-                m->Fix.lockflags.flags[i] = (ReadToken<int>(ifs, "RigidLink master lock") != 0);
-            link.Master = m;
-        }
-        else
-        {
-            link.Master = nullptr;
-        }
+        // マスタ節点: 座標＋拘束(fix/lock)を読み、実体(値)として保持する。
+        double mx = ReadToken<double>(ifs, "RigidLink master x");
+        double my = ReadToken<double>(ifs, "RigidLink master y");
+        double mz = ReadToken<double>(ifs, "RigidLink master z");
+        Node m(-1, mx, my, mz);
+        for (int i = 0; i < 6; i++)
+            m.Fix.flags[i] = (ReadToken<int>(ifs, "RigidLink master fix") != 0);
+        for (int i = 0; i < 6; i++)
+            m.Fix.lockflags.flags[i] = (ReadToken<int>(ifs, "RigidLink master lock") != 0);
+        link.Master = m;
 
         int slave_count = ReadToken<int>(ifs, "RigidLink slave 数");
         for (int s = 0; s < slave_count; s++)

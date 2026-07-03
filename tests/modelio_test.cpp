@@ -101,7 +101,7 @@ FEModel BuildSampleModel()
 
     // --- RigidLink ---
     RigidLink link(true, false, true, false, true, false);
-    link.Master = &m.Nodes[4];
+    link.Master = m.Nodes[4];
     link.Slaves.push_back(m.Nodes[5]);
     link.Slaves.push_back(m.Nodes[6]);
     m.RigidLinkData = std::make_shared<RigidLinks>(std::vector<RigidLink>{link});
@@ -212,7 +212,11 @@ int main()
         RigidLink &l = m2.RigidLinkData->links[0];
         Check(l.flags[0] && !l.flags[1] && l.flags[2] && !l.flags[3] && l.flags[4] && !l.flags[5],
               "RigidLink flags の往復");
-        Check(l.Master && l.Master->id == 4, "RigidLink master の往復");
+        // マスタは座標＋拘束を実体で往復する(id ではなく座標で検証)
+        Check(std::abs(l.Master.Location.x - m2.Nodes[4].Location.x) < 1e-9 &&
+                  std::abs(l.Master.Location.y - m2.Nodes[4].Location.y) < 1e-9 &&
+                  std::abs(l.Master.Location.z - m2.Nodes[4].Location.z) < 1e-9,
+              "RigidLink master 座標の往復");
         Check(l.Slaves.size() == 2 && l.Slaves[0].id == 5 && l.Slaves[1].id == 6,
               "RigidLink slaves の往復");
     }

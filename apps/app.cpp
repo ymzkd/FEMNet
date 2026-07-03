@@ -1027,10 +1027,10 @@ void PrintFloorDisplacements(
             const RigidLink& link = rigidLinks.links[floor - 1];
 
             // マスター節点情報（位置のみ）
-            int masterNodeId = link.Master->id;
+            int masterNodeId = link.Master.id;
             std::cout << "Master Node " << masterNodeId << " @ ("
-                      << link.Master->Location.x << ", "
-                      << link.Master->Location.y << ")" << std::endl;
+                      << link.Master.Location.x << ", "
+                      << link.Master.Location.y << ")" << std::endl;
 
             // 各スレーブ節点の変位から逆算したマスター変位
             std::cout << "\nSlave nodes (calculated master from each):" << std::endl;
@@ -1044,8 +1044,8 @@ void PrintFloorDisplacements(
                 double uy_s = displacement(slaveNodeId * 6 + 1);
                 double rz_s = displacement(slaveNodeId * 6 + 5);
 
-                double dx = slave.Location.x - link.Master->Location.x;
-                double dy = slave.Location.y - link.Master->Location.y;
+                double dx = slave.Location.x - link.Master.Location.x;
+                double dy = slave.Location.y - link.Master.Location.y;
 
                 double ux_m_calc = ux_s + rz_s * dy;
                 double uy_m_calc = uy_s - rz_s * dx;
@@ -1299,7 +1299,7 @@ void TestRigidFloorWithCenterMaster_Shuffled() {
         link.flags[5] = true;   // RZ
 
         // マスター節点: 床中心の仮想節点
-        link.Master = &virtualMasterNodes[floor - 1];
+        link.Master = virtualMasterNodes[floor - 1];
 
         // スレーブ節点: その階の幾何学的位置にある節点を収集
         double floorZ = height * floor;

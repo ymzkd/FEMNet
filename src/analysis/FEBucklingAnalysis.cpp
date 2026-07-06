@@ -1,21 +1,47 @@
 #include <Eigen/Sparse>
-#include <Eigen/SparseCholesky>
 #include <Spectra/MatOp/SparseSymMatProd.h>
-#include <Spectra/MatOp/SparseCholesky.h>
-#include <Spectra/MatOp/SparseSymShiftSolve.h>
 #include <Spectra/SymGEigsSolver.h>
-#include <Spectra/SymGEigsShiftSolver.h>
-
-#ifdef EIGEN_USE_MKL_ALL
-#include <Eigen/PardisoSupport>
-#endif
-
-#include <Eigen/Eigenvalues>
-#include <Spectra/SymGEigsSolver.h>
-#include <Spectra/MatOp/DenseSymMatProd.h>
-#include <Spectra/MatOp/DenseCholesky.h>
 
 #include "FEBucklingAnalysis.h"
+
+namespace {
+
+// RegularInverse モード用の B=K 作用素。
+// Lanczos の B 内積計算用に perform_op（K·v）、スペクトル変換用に
+// solve（K^{-1}·v）を提供する。solve は createSolver() の分解
+//（MKL があれば Pardiso）をそのまま使うため、Spectra 内蔵の
+// SimplicialLLT（シングルスレッド）に依存しない。
+class StiffnessRegularInverseOp {
+public:
+    using Scalar = double;
+
+    StiffnessRegularInverseOp(ISparseSolver& solver, const Eigen::SparseMatrix<double>& ka)
+        : solver_(solver), ka_(ka) {}
+
+    Eigen::Index rows() const { return ka_.rows(); }
+    Eigen::Index cols() const { return ka_.cols(); }
+
+    // y = K x
+    void perform_op(const double* x_in, double* y_out) const
+    {
+        Eigen::Map<const Eigen::VectorXd> x(x_in, ka_.rows());
+        Eigen::Map<Eigen::VectorXd> y(y_out, ka_.rows());
+        y.noalias() = ka_.selfadjointView<Eigen::Upper>() * x;
+    }
+
+    // y = K^{-1} x
+    void solve(const double* x_in, double* y_out) const
+    {
+        Eigen::VectorXd x = Eigen::Map<const Eigen::VectorXd>(x_in, ka_.rows());
+        Eigen::Map<Eigen::VectorXd>(y_out, ka_.rows()) = solver_.solve(x);
+    }
+
+private:
+    ISparseSolver& solver_;
+    const Eigen::SparseMatrix<double>& ka_;
+};
+
+} // namespace
 
 int FEBucklingAnalysis::SolveBuckling()
 {
@@ -73,13 +99,54 @@ int FEBucklingAnalysis::SolveBuckling()
         SparseMatrixUtils::splitMatrixWithResize(kg_full, fixed_indices, kg);
     }
 
-    int ncv = 2 * computed_num + 1; // Recommended value
+    // 剛性が全く付かない自由度（トラス節点の回転等）で K が特異になるのを防ぐ。
+    // PSD の組立行列では対角ゼロ⇔行・列全体ゼロ（完全非連成）なので、幾何剛性も
+    // 持たない死自由度なら対角に正値を置いても他自由度の解・固有値は変わらない。
+    {
+        Eigen::VectorXd kdiag = ka.diagonal();
+        std::vector<bool> kg_active(kg.rows(), false);
+        for (int c = 0; c < kg.outerSize(); c++)
+            for (Eigen::SparseMatrix<double>::InnerIterator it(kg, c); it; ++it)
+                if (it.value() != 0.0) {
+                    kg_active[it.row()] = true;
+                    kg_active[it.col()] = true;
+                }
+        std::vector<Eigen::Triplet<double>> reg;
+        for (int i = 0; i < kdiag.size(); i++)
+        {
+            if (kdiag(i) > 0.0)
+                continue;
+            if (kg_active[i])
+                return -1; // 幾何剛性があるのに弾性剛性ゼロの自由度は解けない
+            reg.emplace_back(i, i, 1.0);
+        }
+        if (!reg.empty()) {
+            Eigen::SparseMatrix<double> kreg(ka.rows(), ka.cols());
+            kreg.setFromTriplets(reg.begin(), reg.end());
+            ka += kreg;
+        }
+    }
 
+    int mat_size = (int)ka.rows();
+    if (computed_num > mat_size - 1)
+        computed_num = mat_size - 1;
+    if (computed_num < 1 || mat_size - 2 < computed_num)
+        return -1;
+
+    int ncv = 2 * computed_num + 1; // Recommended value
+    if (ncv > mat_size) ncv = mat_size;
+
+    // K の分解は全体でこの1回のみ（MKLがあればPardiso並列）
+    auto solver_buck = createSolver();
+    if (!solver_buck->compute(ka))
+        return -1;
+
+    Eigen::SparseMatrix<double> neg_kg = -kg;
     using OpType = Spectra::SparseSymMatProd<double, Eigen::Upper>;
-    using BOpType = Spectra::SparseCholesky<double, Eigen::Upper>;
-    OpType A_op(-kg); // Invert
-    BOpType B_op(ka); // Invert
-    Spectra::SymGEigsSolver<OpType, BOpType, Spectra::GEigsMode::Cholesky>
+    OpType A_op(neg_kg);
+    StiffnessRegularInverseOp B_op(*solver_buck, ka);
+    Spectra::SymGEigsSolver<OpType, StiffnessRegularInverseOp,
+        Spectra::GEigsMode::RegularInverse>
         geigs(A_op, B_op, computed_num, ncv);
 
     geigs.init();

@@ -1,4 +1,5 @@
 #include<iostream>
+#include <iomanip>
 #include <chrono>
 #include <algorithm>
 #include<random>
@@ -1864,6 +1865,140 @@ FEModel FrameBuildingModel(int nx, int ny, int nz, double bay, double hstory) {
     return model;
 }
 
+// SolveBuckling の規模×モード数スケーリング計測
+void BenchBucklingScaling() {
+    using clock = std::chrono::high_resolution_clock;
+    auto sec = [](auto a, auto b) {
+        return std::chrono::duration<double>(b - a).count();
+    };
+
+    std::cout << "\n=== BenchBucklingScaling ===" << std::endl;
+
+    auto run = [&](const char* name, FEModel& model, std::initializer_list<int> nevs) {
+        // 全自由節点に鉛直荷重（柱に軸圧縮を入れる）
+        std::vector<std::shared_ptr<LoadBase>> loads;
+        for (size_t i = 0; i < model.Nodes.size(); i++)
+            if (!model.Nodes[i].Fix.IsAnyFix())
+                loads.push_back(std::make_shared<NodeLoad>(NodeLoad((int)i, 0, 0, -1.0)));
+
+        auto model_ptr = std::make_shared<FEModel>(model);
+        FELinearStaticOp st(model_ptr, loads);
+        auto t0 = clock::now();
+        st.Compute();
+        auto t1 = clock::now();
+        std::cout << "\n[" << name << "]  Nodes=" << model.NodeNum()
+                  << "  FreeDOF=" << model.FreeDOFNum()
+                  << "  static=" << sec(t0, t1) << " s" << std::endl;
+
+        auto st_ptr = std::make_shared<FELinearStaticOp>(st);
+        for (int nev : nevs) {
+            FEBucklingAnalysis ba(st_ptr);
+            ba.mode_num = nev;
+            try {
+                auto a = clock::now();
+                int r = ba.SolveBuckling();
+                auto b = clock::now();
+                std::cout << "  nev=" << nev << "  ret=" << r
+                          << "  time=" << sec(a, b) << " s"
+                          << "  lambda1=" << (ba.eigs.empty() ? 0.0 : ba.eigs[0]) << std::endl;
+            }
+            catch (const std::exception& e) {
+                std::cout << "  nev=" << nev << "  EXCEPTION: " << e.what() << std::endl;
+            }
+        }
+    };
+
+    { FEModel m = FrameBuildingModel(8, 8, 15, 6000, 4000); run("Frame 8x8x15", m, { 5, 20, 50 }); }
+    { FEModel m = FrameBuildingModel(10, 10, 20, 6000, 4000); run("Frame 10x10x20", m, { 5, 20, 50 }); }
+    { FEModel m = FrameBuildingModel(12, 12, 25, 6000, 4000); run("Frame 12x12x25", m, { 5, 20 }); }
+    { FEModel m = ShallowDomeModel(20000.0, 2000.0, 32); run("Dome ndiv=32", m, { 5, 20 }); }
+}
+
+// 座屈解析の検証用: 固有値と モード形状の代表値(符号非依存の max|φ|)を出力
+void PrintBucklingCheck(FEModel& model, std::vector<std::shared_ptr<LoadBase>>& loads,
+    int nev, const char* title) {
+    try {
+        auto model_ptr = std::make_shared<FEModel>(model);
+        FELinearStaticOp st(model_ptr, loads);
+        st.Compute();
+
+        FEBucklingAnalysis ba(std::make_shared<FELinearStaticOp>(st));
+        ba.mode_num = nev;
+        int r = ba.SolveBuckling();
+        std::cout << "\n--- BucklingCheck: " << title
+                  << " (requested=" << nev << ", ret=" << r << ") ---"
+                  << std::setprecision(10) << std::endl;
+        for (size_t i = 0; i < ba.eigs.size(); i++) {
+            double vmax = 0.0;
+            for (const Displacement& d : ba.mode_vectors[i]) {
+                vmax = std::max(vmax, std::abs(d.Dx()));
+                vmax = std::max(vmax, std::abs(d.Dy()));
+                vmax = std::max(vmax, std::abs(d.Dz()));
+            }
+            std::cout << "  mode " << i + 1 << ": lambda=" << ba.eigs[i]
+                      << "  max|phi|=" << vmax << std::endl;
+        }
+        // 縮退ペア（λ重複）は固有空間内の基底が任意なので、基底回転に
+        // 不変な合成振幅 max sqrt(φi^2 + φj^2) で固有空間の一致を確認する
+        for (size_t i = 0; i + 1 < ba.eigs.size(); i++) {
+            if (std::abs(ba.eigs[i + 1] - ba.eigs[i]) > 1e-8 * std::abs(ba.eigs[i]))
+                continue;
+            double pmax = 0.0;
+            for (size_t n = 0; n < ba.mode_vectors[i].size(); n++) {
+                const Displacement& a = ba.mode_vectors[i][n];
+                const Displacement& b = ba.mode_vectors[i + 1][n];
+                pmax = std::max(pmax, std::sqrt(a.Dx() * a.Dx() + b.Dx() * b.Dx()));
+                pmax = std::max(pmax, std::sqrt(a.Dy() * a.Dy() + b.Dy() * b.Dy()));
+                pmax = std::max(pmax, std::sqrt(a.Dz() * a.Dz() + b.Dz() * b.Dz()));
+            }
+            std::cout << "  pair(" << i + 1 << "," << i + 2
+                      << "): max|phi_pair|=" << pmax << std::endl;
+        }
+    }
+    catch (const std::exception& e) {
+        std::cout << "\n--- BucklingCheck: " << title
+                  << "  EXCEPTION: " << e.what() << " ---" << std::endl;
+    }
+}
+
+void TestBucklingCheck() {
+    // 頂部集中荷重の片持ち柱（オイラー座屈）
+    {
+        FEModel model = CantiColumnModel(2000, 10);
+        std::vector<std::shared_ptr<LoadBase>> loads;
+        loads.push_back(std::make_shared<NodeLoad>(
+            NodeLoad((int)model.Nodes.size() - 1, 0, 0, -1.0)));
+        PrintBucklingCheck(model, loads, 6, "CantiColumn(2000,10)");
+    }
+    // ピラミッドトラス（頂点の回転は固定: 未固定だと静的解析段階で
+    // 剛性ゼロ自由度により全体Kが特異になり解けないため）
+    {
+        FEModel model = PyramidTrussModel(1000, 4, 100);
+        model.Nodes[0].Fix = Support(false, false, false, true, true, true);
+        std::vector<std::shared_ptr<LoadBase>> loads;
+        loads.push_back(std::make_shared<NodeLoad>(NodeLoad(0, 0, 0, -1.0)));
+        PrintBucklingCheck(model, loads, 1, "PyramidTruss(1000,4,100)");
+    }
+    // 小型立体ラーメン（全節点鉛直荷重）
+    {
+        FEModel model = FrameBuildingModel(4, 4, 5, 6000, 4000);
+        std::vector<std::shared_ptr<LoadBase>> loads;
+        for (size_t i = 0; i < model.Nodes.size(); i++)
+            if (!model.Nodes[i].Fix.IsAnyFix())
+                loads.push_back(std::make_shared<NodeLoad>(NodeLoad((int)i, 0, 0, -1.0)));
+        PrintBucklingCheck(model, loads, 12, "Frame 4x4x5");
+    }
+    // ドーム板（全節点鉛直荷重）
+    {
+        FEModel model = ShallowDomeModel(20000.0, 2000.0, 20);
+        std::vector<std::shared_ptr<LoadBase>> loads;
+        for (size_t i = 0; i < model.Nodes.size(); i++)
+            if (!model.Nodes[i].Fix.IsAnyFix())
+                loads.push_back(std::make_shared<NodeLoad>(NodeLoad((int)i, 0, 0, -1.0)));
+        PrintBucklingCheck(model, loads, 5, "Dome ndiv=20");
+    }
+}
+
 // SolveVibration の規模×モード数スケーリング計測
 void BenchVibrationScaling() {
     using clock = std::chrono::high_resolution_clock;
@@ -2069,7 +2204,11 @@ int main(void) {
     // 多数モード（450本）のベンチマーク
     BenchResponseSpectrumCQC();
 
+    // 座屈解析の前後比較検証
+    TestBucklingCheck();
+
     // 実行速度計測（規模×モード数）
     //BenchVibrationScaling();
+    //BenchBucklingScaling();
 
 }

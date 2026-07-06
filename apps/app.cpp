@@ -223,6 +223,40 @@ FEModel CantiColumnModel(double l, int n) {
 }
 
 
+// 固有値解析の検証用: 固有値・周期・質量正規化(φ^T M φ)を出力
+void PrintVibrationCheck(FEModel& model, int nev, const char* title) {
+    std::vector<double> eigs;
+    std::vector<std::vector<Displacement>> modes;
+    int computed = model.SolveVibration(nev, eigs, modes);
+    std::cout << "\n--- VibrationCheck: " << title
+              << " (requested=" << nev << ", computed=" << computed << ") ---" << std::endl;
+    for (size_t i = 0; i < eigs.size(); i++) {
+        double mnorm = 0.0;
+        for (size_t j = 0; j < model.Nodes.size(); j++) {
+            double mj = model.Nodes[j].MassData.SumMass() / model.GraityAccel;
+            const Displacement& d = modes[i][j];
+            mnorm += mj * (d.Dx() * d.Dx() + d.Dy() * d.Dy() + d.Dz() * d.Dz());
+        }
+        std::cout << "  mode " << i + 1
+                  << ": omega=" << eigs[i]
+                  << "  T=" << 2 * PI / eigs[i]
+                  << "  phi^T*M*phi=" << mnorm << std::endl;
+    }
+}
+
+void TestVibrationCheck() {
+    {
+        FEModel model = CantiBeamModel(200, 10);
+        model.ComputeElementNodeMass();
+        PrintVibrationCheck(model, 6, "CantiBeam(200,10)");
+    }
+    {
+        FEModel model = CantiColumnModel(300, 8);
+        model.ComputeElementNodeMass();
+        PrintVibrationCheck(model, 6, "CantiColumn(300,8)");
+    }
+}
+
 void CheckCantiBeamVibration() {
 
     std::cout << "CheckCantiBeamVibration Start" << std::endl;
@@ -418,6 +452,12 @@ FEModel PyramidTrussModel(double D, int n, double h)
     }
 
     return model;
+}
+
+void TestVibrationCheckTruss() {
+    FEModel model = PyramidTrussModel(1000, 4, 100);
+    model.ComputeElementNodeMass();
+    PrintVibrationCheck(model, 1, "PyramidTruss(1000,4,100)");
 }
 
 // 座屈検討用のピラミッド型トラスサンプル
@@ -1375,6 +1415,10 @@ void TestRigidFloorWithCenterMaster_Shuffled() {
     // 階ごとの変位サマリー表示
     PrintFloorDisplacements(dispVec, *model.RigidLinkData, numStories, "Center Master (Shuffled)");
 
+    // 剛体リンク付きモデルの固有値解析チェック
+    model.ComputeElementNodeMass();
+    PrintVibrationCheck(model, 8, "RigidFloor(CenterMaster,Shuffled)");
+
     std::cout << "\n========================================" << std::endl;
     std::cout << "Center Master Test (Shuffled) Complete" << std::endl;
     std::cout << "========================================\n" << std::endl;
@@ -1775,6 +1819,83 @@ void BenchResponseSpectrumCQC() {
               << " opt.maxAx=" << max_opt << std::endl;
 }
 
+// パフォーマンス計測用の立体ラーメンモデル（nx×ny柱 × nz層）
+FEModel FrameBuildingModel(int nx, int ny, int nz, double bay, double hstory) {
+    FEModel model;
+    int id = 0;
+    for (int k = 0; k <= nz; k++)
+        for (int j = 0; j < ny; j++)
+            for (int i = 0; i < nx; i++) {
+                Node n(id, i * bay, j * bay, k * hstory);
+                if (k == 0) n.Fix.FixAll();
+                model.Nodes.push_back(n);
+                id++;
+            }
+
+    Material m0(5000.0, 0.2);
+    m0.dense = 5.0 / 1000.0 / 1000.0;
+    Section s0(100, 833.33, 833.33, 1406.25);
+    model.Materials.push_back(m0);
+    model.Sections.push_back(s0);
+
+    auto idx = [&](int i, int j, int k) { return (k * ny + j) * nx + i; };
+    int eid = 0;
+    // 柱
+    for (int k = 0; k < nz; k++)
+        for (int j = 0; j < ny; j++)
+            for (int i = 0; i < nx; i++)
+                model.Elements.push_back(std::make_shared<BeamElement>(eid++,
+                    &model.Nodes[idx(i, j, k)], &model.Nodes[idx(i, j, k + 1)],
+                    &model.Sections[0], model.Materials[0]));
+    // X方向梁
+    for (int k = 1; k <= nz; k++)
+        for (int j = 0; j < ny; j++)
+            for (int i = 0; i + 1 < nx; i++)
+                model.Elements.push_back(std::make_shared<BeamElement>(eid++,
+                    &model.Nodes[idx(i, j, k)], &model.Nodes[idx(i + 1, j, k)],
+                    &model.Sections[0], model.Materials[0]));
+    // Y方向梁
+    for (int k = 1; k <= nz; k++)
+        for (int j = 0; j + 1 < ny; j++)
+            for (int i = 0; i < nx; i++)
+                model.Elements.push_back(std::make_shared<BeamElement>(eid++,
+                    &model.Nodes[idx(i, j, k)], &model.Nodes[idx(i, j + 1, k)],
+                    &model.Sections[0], model.Materials[0]));
+    return model;
+}
+
+// SolveVibration の規模×モード数スケーリング計測
+void BenchVibrationScaling() {
+    using clock = std::chrono::high_resolution_clock;
+    auto sec = [](auto a, auto b) {
+        return std::chrono::duration<double>(b - a).count();
+    };
+
+    std::cout << "\n=== BenchVibrationScaling ===" << std::endl;
+
+    auto run = [&](const char* name, FEModel& model, std::initializer_list<int> nevs) {
+        model.ComputeElementNodeMass();
+        std::cout << "\n[" << name << "]  Nodes=" << model.NodeNum()
+                  << "  FreeDOF=" << model.FreeDOFNum() << std::endl;
+        for (int nev : nevs) {
+            std::vector<double> eigs;
+            std::vector<std::vector<Displacement>> modes;
+            auto t0 = clock::now();
+            int computed = model.SolveVibration(nev, eigs, modes);
+            auto t1 = clock::now();
+            std::cout << "  nev=" << nev << "  computed=" << computed
+                      << "  time=" << sec(t0, t1) << " s"
+                      << "  T1=" << (eigs.empty() ? 0.0 : 2 * PI / eigs[0]) << std::endl;
+        }
+    };
+
+    { FEModel m = ShallowDomeModel(20000.0, 2000.0, 20); run("Dome ndiv=20", m, { 10, 50, 150, 450 }); }
+    { FEModel m = ShallowDomeModel(20000.0, 2000.0, 32); run("Dome ndiv=32", m, { 10, 50, 150, 300 }); }
+    { FEModel m = ShallowDomeModel(20000.0, 2000.0, 40); run("Dome ndiv=40", m, { 10, 150 }); }
+    { FEModel m = FrameBuildingModel(8, 8, 15, 6000, 4000); run("Frame 8x8x15", m, { 10, 50, 150 }); }
+    { FEModel m = FrameBuildingModel(10, 10, 20, 6000, 4000); run("Frame 10x10x20", m, { 10, 150 }); }
+}
+
 void TestWallNodalForces() {
     std::cout << "\n========== TestWallNodalForces ==========" << std::endl;
 
@@ -1938,7 +2059,17 @@ int main(void) {
     // 260103 Debug - SparseMatrixUtils のテスト
     // TestSparseMatrixUtils();
 
-    // 剛体連結を用いた剛床サンプル
+    // 固有値解析の前後比較検証
+    TestVibrationCheck();
+    TestVibrationCheckTruss();
+
+    // 剛体連結を用いた剛床サンプル（末尾で固有値解析チェックも実行）
     TestRigidFloorWithCenterMaster_Shuffled();
+
+    // 多数モード（450本）のベンチマーク
+    BenchResponseSpectrumCQC();
+
+    // 実行速度計測（規模×モード数）
+    //BenchVibrationScaling();
 
 }

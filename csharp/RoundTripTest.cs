@@ -124,7 +124,12 @@ namespace FemNetTest
             if (m2.RigidLinkData.links.Count == 1)
             {
                 RigidLink l = m2.RigidLinkData.links[0];
-                Check(l.Master != null && l.Master.id == 3, "RigidLink master の往復");
+                // マスタは座標＋拘束を実体で往復する(id ではなく座標で検証)
+                var mloc = l.Master.Location;
+                var n3 = m2.GetNode(3).Location;
+                Check(Math.Abs(mloc.x - n3.x) < 1e-9 && Math.Abs(mloc.y - n3.y) < 1e-9 &&
+                          Math.Abs(mloc.z - n3.z) < 1e-9,
+                      "RigidLink master 座標の往復");
                 Check(l.Slaves.Count == 2 && l.Slaves[0].id == 4 && l.Slaves[1].id == 5,
                       "RigidLink slaves の往復");
             }

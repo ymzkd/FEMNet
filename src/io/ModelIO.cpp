@@ -11,7 +11,7 @@
 //     材料定数(Young/Poisson/dense)をインライン保存する。
 //
 // フォーマット(v1, 空白・改行非依存のトークン列):
-//   FEMNET_MODEL_TEXT_V1
+//   FEMNET_MODEL_TEXT_V2
 //   GRAVITY <g>
 //   NODES <count>      ... <idx> <x> <y> <z> <fix0..5> <lock0..5>
 //   MATERIALS <count>  ... <idx> <Young> <Poisson> <dense>
@@ -21,7 +21,9 @@
 //             [<beta>] [<バネ12値>]
 //     面・板: <eid> <Kind> <nodeIdx...> <Young> <Poisson> <dense>
 //             <tplane> <tplate> <tweight> <beta>
-//   RIGIDLINKS <count> ... <flag0..5> <masterIdx> <slaveCount> <slaveIdx...>
+//   RIGIDLINKS <count>
+//     <flag0..5> <mx> <my> <mz> <mfix0..5> <mlock0..5> <slaveCount> <slaveIdx...>
+//     マスタは仮想節点(剛床の重心など)を含むため、座標＋拘束(fix/lock)を実体で常にインライン保持。
 //   END
 //
 // 要素種別タグは ElementType に対応する名前(Truss/Beam/ComplexBeam/
@@ -39,7 +41,7 @@
 
 namespace {
 
-const char *kMagic = "FEMNET_MODEL_TEXT_V1";
+const char *kMagic = "FEMNET_MODEL_TEXT_V2";
 
 // ElementType -> シリアライズ用タグ名
 std::string KindName(ElementType t)
@@ -193,8 +195,16 @@ void FEModel::Save(const std::string &path)
     {
         for (int i = 0; i < 6; i++)
             ofs << (link.flags[i] ? 1 : 0) << " ";
-        long master = link.Master ? (link.Master - node_base) : -1;
-        ofs << master << " " << link.Slaves.size();
+
+        // マスタ節点: 実体(値)で保持しているため、座標＋拘束(fix/lock)を常にインライン出力。
+        const Node &m = link.Master;
+        ofs << m.Location.x << " " << m.Location.y << " " << m.Location.z;
+        for (int j = 0; j < 6; j++)
+            ofs << " " << (m.Fix.flags[j] ? 1 : 0);
+        for (int j = 0; j < 6; j++)
+            ofs << " " << (m.Fix.lockflags.flags[j] ? 1 : 0);
+
+        ofs << " " << link.Slaves.size();
         for (const Node &slave : link.Slaves)
             ofs << " " << slave.id;
         ofs << "\n";
@@ -389,8 +399,18 @@ void FEModel::Load(const std::string &path)
         RigidLink link;
         for (int i = 0; i < 6; i++)
             link.flags[i] = (ReadToken<int>(ifs, "RigidLink flag") != 0);
-        int master_idx = ReadToken<int>(ifs, "RigidLink master");
-        link.Master = (master_idx >= 0) ? &Nodes[master_idx] : nullptr;
+
+        // マスタ節点: 座標＋拘束(fix/lock)を読み、実体(値)として保持する。
+        double mx = ReadToken<double>(ifs, "RigidLink master x");
+        double my = ReadToken<double>(ifs, "RigidLink master y");
+        double mz = ReadToken<double>(ifs, "RigidLink master z");
+        Node m(-1, mx, my, mz);
+        for (int i = 0; i < 6; i++)
+            m.Fix.flags[i] = (ReadToken<int>(ifs, "RigidLink master fix") != 0);
+        for (int i = 0; i < 6; i++)
+            m.Fix.lockflags.flags[i] = (ReadToken<int>(ifs, "RigidLink master lock") != 0);
+        link.Master = m;
+
         int slave_count = ReadToken<int>(ifs, "RigidLink slave 数");
         for (int s = 0; s < slave_count; s++)
         {

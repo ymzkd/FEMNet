@@ -12,14 +12,16 @@
 
 struct RigidLink : public DOFFlags {
 public:
-    // 仮想的な節点なのでNodeじゃなくて座標情報だけでも良いかも
-    Node *Master;
+    // マスタ節点。剛床の重心など「モデルの Nodes に属さない仮想節点」も扱うため、
+    // ポインタ参照ではなく実体(値)で保持する(C# 側の GC でダングリングさせない)。
+    // Link を定義する以上マスタは常に存在する前提で、null は表現しない。
+    Node Master;
     std::vector<Node> Slaves;
 
-    RigidLink() : DOFFlags(), Master(nullptr) {}
+    RigidLink() : DOFFlags() {}
 
     RigidLink(bool ux, bool uy, bool uz, bool rx, bool ry, bool rz)
-        : DOFFlags(ux, uy, uz, rx, ry, rz), Master(nullptr) {}
+        : DOFFlags(ux, uy, uz, rx, ry, rz) {}
 
     size_t
     SlaveNum()

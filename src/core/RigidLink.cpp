@@ -12,9 +12,9 @@ Eigen::MatrixXd RigidLink::TransformationMatrix()
 
     for (size_t i = 0; i < slaveNum; i++) {
         Eigen::MatrixXd TB = Eigen::MatrixXd::Identity(6, 6);
-        double dxi = Slaves[i].Location.x - Master->Location.x;
-        double dyi = Slaves[i].Location.y - Master->Location.y;
-        double dzi = Slaves[i].Location.z - Master->Location.z;
+        double dxi = Slaves[i].Location.x - Master.Location.x;
+        double dyi = Slaves[i].Location.y - Master.Location.y;
+        double dzi = Slaves[i].Location.z - Master.Location.z;
         TB(0,4) = dzi; TB(0,5) = -dyi;
         TB(1,3) = -dzi; TB(1,5) = dxi;
         TB(2,3) = dyi; TB(2,4) = -dxi;

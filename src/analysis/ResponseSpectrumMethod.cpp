@@ -246,6 +246,40 @@ std::vector<Displacement> ResponseSpectrumMethod::calculate_response(ResponseVal
     return responses;
 }
 
+std::vector<NodeLoad> ResponseSpectrumMethod::calculate_react_forces(const std::vector<Displacement> &disp)
+{
+    const size_t N = model->NodeNum();
+    Eigen::VectorXd u(N * 6);
+    for (size_t i = 0; i < N; i++)
+    {
+        const Displacement &d = disp[i];
+        u[i * 6] = d.Dx();
+        u[i * 6 + 1] = d.Dy();
+        u[i * 6 + 2] = d.Dz();
+        u[i * 6 + 3] = d.Rx();
+        u[i * 6 + 4] = d.Ry();
+        u[i * 6 + 5] = d.Rz();
+    }
+
+    // AssembleStiffnessMatrix()は上三角格納
+    Eigen::VectorXd r = model->AssembleStiffnessMatrix().selfadjointView<Eigen::Upper>() * u;
+
+    std::vector<NodeLoad> reacts;
+    for (size_t i = 0; i < N; i++)
+    {
+        if (!model->Nodes[i].Fix.IsAnyFix())
+            continue;
+
+        // 静的解析(SolveLinearStatic)と同様、固定自由度の成分のみ反力として報告する
+        auto fixed = model->Nodes[i].Fix.isdof_fixed();
+        double v[6];
+        for (int k = 0; k < 6; k++)
+            v[k] = fixed[k] ? r[i * 6 + k] : 0.0;
+        reacts.push_back(NodeLoad(i, v[0], v[1], v[2], v[3], v[4], v[5]));
+    }
+    return reacts;
+}
+
 ResponseSpectrumMethod::ResponseSpectrumMethod(std::shared_ptr<FEModel> model,
                                                FEVibrateResult vibrate_result, Vector direction, IResponseSpectrum *spectrum_function, ResponseSpectrumMethodType type)
     : FEDeformOperator(model), VibrateResult(vibrate_result), SpectrumFunction(spectrum_function), Direction(direction), MethodType(type)
@@ -259,6 +293,7 @@ void ResponseSpectrumMethod::Compute()
     displacements = calculate_response(ResponseValueType::Displacement);
     velocities = calculate_response(ResponseValueType::Velocity);
     accelerations = calculate_response(ResponseValueType::Acceleration);
+    react_forces = calculate_react_forces(displacements);
     m_computed = true;
 }
 
@@ -284,6 +319,14 @@ std::vector<Displacement> ResponseSpectrumMethod::GetAccelerations()
         return accelerations;
     else
         return calculate_response(ResponseValueType::Acceleration);
+}
+
+std::vector<NodeLoad> ResponseSpectrumMethod::GetReactForces()
+{
+    if (m_computed)
+        return react_forces;
+    else
+        return calculate_react_forces(calculate_response(ResponseValueType::Displacement));
 }
 
 BeamStressData ResponseSpectrumMethod::GetBeamStress(int eid, double p)

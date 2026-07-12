@@ -54,6 +54,7 @@ private:
 	friend class DynamicAnalysis;
     friend class FEBucklingAnalysis;
 	friend class FEVibrateResult;
+    friend class ResponseSpectrumMethod;
 
 public:
     FEModel();

@@ -29,10 +29,12 @@ private:
     std::vector<Displacement> calculate_responseSRSS(ResponseValueType vt);
     std::vector<Displacement> calculate_responseABS(ResponseValueType vt);
     std::vector<Displacement> calculate_response(ResponseValueType vt);
+    std::vector<NodeLoad> calculate_react_forces(const std::vector<Displacement> &disp);
 
     std::vector<Displacement> displacements; // 解析結果の変位ベクトル
     std::vector<Displacement> velocities;    // 解析結果の速度ベクトル
     std::vector<Displacement> accelerations; // 解析結果の加速度ベクトル
+    std::vector<NodeLoad> react_forces;      // 合成変位分布に基づく支点反力
 
     bool m_computed = false;
 
@@ -53,6 +55,9 @@ public:
     std::vector<Displacement> GetDisplacements() override;
     std::vector<Displacement> GetVelocities() override;
     std::vector<Displacement> GetAccelerations() override;
+
+    // 合成後の変位分布から K・u で算出した反力を返す
+    std::vector<NodeLoad> GetReactForces() override;
 
     // FEDeformCase を介して継承されました
     BeamStressData GetBeamStress(int eid, double p) override;

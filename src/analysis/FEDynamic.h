@@ -80,6 +80,8 @@ private:
 
     friend class FEDynamicDampInitializer;
     friend class FEDynamicStiffDampInitializer;
+    friend class FEDynamicMassDampInitializer;
+    friend class FEDynamicRayleighDampInitializer;
     friend class DAEnergyRecorder;
 
 public:
@@ -174,6 +176,11 @@ private:
 
 public:
     virtual bool Initialize(DynamicAnalysis *analysis) = 0;
+
+    /// <summary>
+    /// 固有周期 t における減衰比を返す(算定不能な場合は -1)
+    /// </summary>
+    virtual double DampRateAtPeriod(double t) = 0;
 };
 
 /// <summary>
@@ -190,5 +197,49 @@ public:
         : damp_rate(damp_rate) {}
 
     bool Initialize(DynamicAnalysis *analysis) override;
+    double DampRateAtPeriod(double t) override;
+};
+
+/// <summary>
+/// 時刻歴応答解析において比例減衰マトリクスを質量比例として初期化するクラス
+/// </summary>
+class FEDynamicMassDampInitializer : public FEDynamicDampInitializer
+{
+
+public:
+    double natural_angle_velocity = 0.0; // 自然角速度
+    double damp_rate = 0.05;             // 減衰比
+
+    FEDynamicMassDampInitializer(double damp_rate = 0.05)
+        : damp_rate(damp_rate) {}
+
+    bool Initialize(DynamicAnalysis *analysis) override;
+    double DampRateAtPeriod(double t) override;
+};
+
+/// <summary>
+/// 時刻歴応答解析において比例減衰マトリクスをレイリー減衰(C = αM + βK)として初期化するクラス
+/// </summary>
+class FEDynamicRayleighDampInitializer : public FEDynamicDampInitializer
+{
+
+public:
+    double alpha = 0.0;                          // 質量比例係数
+    double beta = 0.0;                           // 剛性比例係数
+    double damp_rate1 = 0.05, damp_rate2 = 0.05; // 対象モードの減衰比
+    int mode1 = 1, mode2 = 2;                    // 対象モード次数(1始まり)
+    double natural_angle_velocity1 = 0.0, natural_angle_velocity2 = 0.0; // 対象モードの自然角速度
+    bool direct_coefficients = false;            // α, βを直接指定する場合true
+
+    // α, βを直接指定
+    FEDynamicRayleighDampInitializer(double alpha, double beta)
+        : alpha(alpha), beta(beta), direct_coefficients(true) {}
+
+    // 2つのモードの減衰比を指定(Initialize時の固有値解析でα, βを算出)
+    FEDynamicRayleighDampInitializer(double damp_rate1, double damp_rate2, int mode1, int mode2)
+        : damp_rate1(damp_rate1), damp_rate2(damp_rate2), mode1(mode1), mode2(mode2) {}
+
+    bool Initialize(DynamicAnalysis *analysis) override;
+    double DampRateAtPeriod(double t) override;
 };
 #endif

@@ -899,6 +899,151 @@ void TestDynamicAnalysis() {
 
 }
 
+// 1次共振加振→自由振動の時刻歴を計算し、先端変位履歴と最大変位を返す
+double RunDampedResonance(std::shared_ptr<FEModel> model_ptr, FEDynamicDampInitializer* damp,
+    double T1, int tip_node, int steps_per_cycle, int excite_cycles, int free_cycles,
+    std::vector<double>& tip_history)
+{
+    double dt = T1 / steps_per_cycle;
+    int excite_steps = steps_per_cycle * excite_cycles;
+    int num_steps = excite_steps + steps_per_cycle * free_cycles;
+    std::vector<double> gaccels(num_steps, 0.0);
+    for (int i = 0; i < excite_steps; ++i)
+        gaccels[i] = sin(2 * PI * (i * dt) / T1);
+
+    DynamicAccelLoad accel_load(dt, 0, 0, 1, gaccels);
+    DynamicAnalysis analysis(model_ptr, accel_load, damp);
+    analysis.RecordEnabled = false;
+    if (!analysis.Initialize()) {
+        std::cout << "Failed to initialize dynamic analysis." << std::endl;
+        return -1.0;
+    }
+
+    double peak = 0.0;
+    tip_history.clear();
+    for (int i = 0; i < num_steps; ++i) {
+        analysis.ComputeStep();
+        double dz = analysis.GetDisplacements()[tip_node].Dz();
+        tip_history.push_back(dz);
+        peak = std::max(peak, std::abs(dz));
+    }
+    return peak;
+}
+
+// 自由振動部分の正ピークの対数減衰率から減衰比を推定
+double EstimateDampingFromDecay(const std::vector<double>& hist, size_t start)
+{
+    std::vector<double> peaks;
+    for (size_t i = start + 1; i + 1 < hist.size(); i++) {
+        if (hist[i] > hist[i - 1] && hist[i] > hist[i + 1] && hist[i] > 0)
+            peaks.push_back(hist[i]);
+    }
+    if (peaks.size() < 3)
+        return -1.0;
+    double delta = std::log(peaks.front() / peaks.back()) / (double)(peaks.size() - 1);
+    return delta / (2 * PI);
+}
+
+// 減衰初期化子(剛性比例・質量比例・レイリー)の比較検証
+void TestDampInitializers() {
+
+    std::cout << "TestDampInitializers Start" << std::endl;
+
+    int divnum = 4;
+    FEModel model = CantiBeamModel(200, divnum);
+    std::shared_ptr<FEModel> model_ptr = std::make_shared<FEModel>(model);
+    model_ptr->ComputeElementNodeMass();
+
+    // 固有値解析(断面が対称でモードが縮退するため、1次と異なる振動数のモードを探す)
+    std::vector<double> eigen_values;
+    std::vector<std::vector<Displacement>> mode_vectors;
+    int nconv = model_ptr->SolveVibration(4, eigen_values, mode_vectors);
+    if (nconv < 2) {
+        std::cout << "SolveVibration failed." << std::endl;
+        return;
+    }
+    double w1 = eigen_values[0];
+    double T1 = 2 * PI / w1;
+    int mode_j = 2; // 1-based
+    while (mode_j <= nconv && std::abs(eigen_values[mode_j - 1] - w1) / w1 < 1e-3)
+        mode_j++;
+    if (mode_j > nconv) {
+        std::cout << "No distinct second mode found." << std::endl;
+        return;
+    }
+    double wj = eigen_values[mode_j - 1];
+    std::cout << "w1: " << w1 << " (T1: " << T1 << " s), mode_j: " << mode_j
+        << ", wj: " << wj << std::endl;
+
+    const double zeta = 0.05;
+    const int steps_per_cycle = 40, excite_cycles = 20, free_cycles = 20;
+    const size_t free_start = (size_t)steps_per_cycle * excite_cycles;
+    std::vector<double> hist;
+
+    // Case 1: 剛性比例(既存)
+    FEDynamicStiffDampInitializer stiff_damp(zeta);
+    double peak_stiff = RunDampedResonance(model_ptr, &stiff_damp, T1, divnum,
+        steps_per_cycle, excite_cycles, free_cycles, hist);
+    double zeta_stiff = EstimateDampingFromDecay(hist, free_start);
+    std::cout << "[Stiffness] peak: " << peak_stiff << ", estimated zeta: " << zeta_stiff
+        << ", w1(internal): " << stiff_damp.natural_angle_velocity << std::endl;
+
+    // Case 2: 質量比例
+    FEDynamicMassDampInitializer mass_damp(zeta);
+    double peak_mass = RunDampedResonance(model_ptr, &mass_damp, T1, divnum,
+        steps_per_cycle, excite_cycles, free_cycles, hist);
+    double zeta_mass = EstimateDampingFromDecay(hist, free_start);
+    std::cout << "[Mass]      peak: " << peak_mass << ", estimated zeta: " << zeta_mass
+        << ", w1(internal): " << mass_damp.natural_angle_velocity << std::endl;
+
+    // Case 3: レイリー(1次・mode_j次モードで zeta を指定)
+    FEDynamicRayleighDampInitializer rayleigh_damp(zeta, zeta, 1, mode_j);
+    double peak_ray = RunDampedResonance(model_ptr, &rayleigh_damp, T1, divnum,
+        steps_per_cycle, excite_cycles, free_cycles, hist);
+    double zeta_ray = EstimateDampingFromDecay(hist, free_start);
+    std::cout << "[Rayleigh]  peak: " << peak_ray << ", estimated zeta: " << zeta_ray
+        << ", alpha: " << rayleigh_damp.alpha << ", beta: " << rayleigh_damp.beta << std::endl;
+
+    // 算出されたalpha, betaによる各モードの減衰比を逆算(= zetaになるはず)
+    std::cout << "  zeta(w1): " << rayleigh_damp.alpha / (2 * w1) + rayleigh_damp.beta * w1 / 2
+        << ", zeta(wj): " << rayleigh_damp.alpha / (2 * wj) + rayleigh_damp.beta * wj / 2 << std::endl;
+
+    // Case 4: レイリー(alpha, beta 直接指定; Case 3 と同値になるはず)
+    double alpha_direct = 2 * zeta * w1 * wj / (w1 + wj);
+    double beta_direct = 2 * zeta / (w1 + wj);
+    FEDynamicRayleighDampInitializer rayleigh_direct(alpha_direct, beta_direct);
+    double peak_ray2 = RunDampedResonance(model_ptr, &rayleigh_direct, T1, divnum,
+        steps_per_cycle, excite_cycles, free_cycles, hist);
+    std::cout << "[RayDirect] peak: " << peak_ray2
+        << ", alpha: " << alpha_direct << ", beta: " << beta_direct
+        << ", diff vs Case3: " << std::abs(peak_ray2 - peak_ray) << std::endl;
+
+    // DampRateAtPeriod の検証
+    double Tj = 2 * PI / wj;
+    std::cout << "DampRateAtPeriod checks:" << std::endl;
+    std::cout << "  [Stiffness] at T1: " << stiff_damp.DampRateAtPeriod(T1)
+        << " (expected " << zeta << "), at Tj: " << stiff_damp.DampRateAtPeriod(Tj)
+        << " (expected " << zeta * wj / w1 << ")" << std::endl;
+    std::cout << "  [Mass]      at T1: " << mass_damp.DampRateAtPeriod(T1)
+        << " (expected " << zeta << "), at Tj: " << mass_damp.DampRateAtPeriod(Tj)
+        << " (expected " << zeta * w1 / wj << ")" << std::endl;
+    std::cout << "  [Rayleigh]  at T1: " << rayleigh_damp.DampRateAtPeriod(T1)
+        << ", at Tj: " << rayleigh_damp.DampRateAtPeriod(Tj)
+        << " (both expected " << zeta << ")" << std::endl;
+
+    // alpha, beta 直接指定はInitialize前でも算定可能
+    FEDynamicRayleighDampInitializer ray_pre(alpha_direct, beta_direct);
+    std::cout << "  [RayDirect pre-Init] at T1: " << ray_pre.DampRateAtPeriod(T1)
+        << " (expected " << zeta << ")" << std::endl;
+
+    // Initialize前(w1未確定)は -1
+    FEDynamicMassDampInitializer mass_pre(zeta);
+    std::cout << "  [Mass pre-Init] returns: " << mass_pre.DampRateAtPeriod(T1)
+        << " (expected -1)" << std::endl;
+
+    std::cout << "TestDampInitializers End" << std::endl;
+}
+
 void TestSimplaFrame() {
 
     std::cout << "TestSimplaFrame Start" << std::endl;
@@ -1940,5 +2085,8 @@ int main(void) {
 
     // 剛体連結を用いた剛床サンプル
     TestRigidFloorWithCenterMaster_Shuffled();
+
+    // 260713 Debug - 減衰初期化子(質量比例・レイリー)のテスト
+    //TestDampInitializers();
 
 }

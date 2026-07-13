@@ -1,6 +1,7 @@
 #include "FEDynamic.h"
 
 #include <algorithm>
+#include <cmath>
 
 void DASampler_MaxDisplacement::Sampling(DynamicAnalysis &da)
 {
@@ -101,7 +102,11 @@ void DAEnergyRecorder::Record(DynamicAnalysis &da)
 DynamicAnalysis::DynamicAnalysis(std::shared_ptr<FEModel> model, const DynamicAccelLoad& accel_load, FEDynamicDampInitializer *damp)
     : FEDeformOperator(model), accel_load(accel_load)
 {
-    if (!damp_initializer)
+    if (damp)
+    {
+        damp_initializer = damp;
+    }
+    else
     {
         // デフォルトの減衰初期化子を用意
         static FEDynamicStiffDampInitializer defaultDamp;
@@ -576,4 +581,98 @@ bool FEDynamicStiffDampInitializer::Initialize(DynamicAnalysis *analysis)
     analysis->matC_bb = analysis->matK_bb * (2.0 * damp_rate / natural_angle_velocity);
 
     return true;
+}
+
+double FEDynamicStiffDampInitializer::DampRateAtPeriod(double t)
+{
+    // ζ(ω) = ζ0・ω/ω1
+    if (t <= 0.0 || natural_angle_velocity <= 0.0)
+        return -1.0;
+    return damp_rate * (2.0 * PI / t) / natural_angle_velocity;
+}
+
+bool FEDynamicMassDampInitializer::Initialize(DynamicAnalysis *analysis)
+{
+    // 解析モデルの固有振動数を計算
+    std::vector<double> eigen_values;
+    std::vector<std::vector<Displacement>> mode_vectors;
+    int nconv = analysis->model->SolveVibration(1, eigen_values, mode_vectors);
+    if (nconv < 1)
+    {
+        std::cout << "Eigenvalue calculations did not converge." << std::endl;
+        return false;
+    }
+
+    // C = 2ζω1・M (1次モードで減衰比ζとなる質量比例減衰)
+    natural_angle_velocity = eigen_values[0];
+    double coef = 2.0 * damp_rate * natural_angle_velocity;
+    analysis->matC_aa = analysis->matM_aa * coef;
+    analysis->matC_ab = analysis->matM_ab * coef;
+    analysis->matC_bb = analysis->matM_bb * coef;
+
+    return true;
+}
+
+double FEDynamicMassDampInitializer::DampRateAtPeriod(double t)
+{
+    // ζ(ω) = ζ0・ω1/ω
+    if (t <= 0.0 || natural_angle_velocity <= 0.0)
+        return -1.0;
+    return damp_rate * natural_angle_velocity / (2.0 * PI / t);
+}
+
+bool FEDynamicRayleighDampInitializer::Initialize(DynamicAnalysis *analysis)
+{
+    if (!direct_coefficients)
+    {
+        if (mode1 < 1 || mode2 < 1 || mode1 == mode2)
+        {
+            std::cerr << "Rayleigh damping: invalid mode numbers." << std::endl;
+            return false;
+        }
+
+        // 対象モードの固有振動数を計算
+        int nev = std::max(mode1, mode2);
+        std::vector<double> eigen_values;
+        std::vector<std::vector<Displacement>> mode_vectors;
+        int nconv = analysis->model->SolveVibration(nev, eigen_values, mode_vectors);
+        if (nconv < nev)
+        {
+            std::cout << "Eigenvalue calculations did not converge." << std::endl;
+            return false;
+        }
+
+        natural_angle_velocity1 = eigen_values[mode1 - 1];
+        natural_angle_velocity2 = eigen_values[mode2 - 1];
+
+        // 2つのモードで指定減衰比を満たすα, βを算出
+        double w1 = natural_angle_velocity1;
+        double w2 = natural_angle_velocity2;
+        double denom = w2 * w2 - w1 * w1;
+        if (std::abs(denom) < 1e-12)
+        {
+            std::cerr << "Rayleigh damping: natural angle velocities are too close." << std::endl;
+            return false;
+        }
+        alpha = 2.0 * w1 * w2 * (damp_rate1 * w2 - damp_rate2 * w1) / denom;
+        beta = 2.0 * (damp_rate2 * w2 - damp_rate1 * w1) / denom;
+    }
+
+    // C = αM + βK
+    analysis->matC_aa = alpha * analysis->matM_aa + beta * analysis->matK_aa;
+    analysis->matC_ab = alpha * analysis->matM_ab + beta * analysis->matK_ab;
+    analysis->matC_bb = alpha * analysis->matM_bb + beta * analysis->matK_bb;
+
+    return true;
+}
+
+double FEDynamicRayleighDampInitializer::DampRateAtPeriod(double t)
+{
+    // ζ(ω) = α/(2ω) + βω/2
+    if (t <= 0.0)
+        return -1.0;
+    if (!direct_coefficients && natural_angle_velocity1 <= 0.0)
+        return -1.0; // モード指定時はInitialize前は算定不能
+    double w = 2.0 * PI / t;
+    return alpha / (2.0 * w) + beta * w / 2.0;
 }

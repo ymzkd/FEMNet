@@ -61,6 +61,72 @@ public:
 };
 
 /// <summary>
+/// 時刻歴応答解析における時刻歴荷重の基底クラス。
+/// ステップ step(時刻 t=step*dt)ごとに「全体節点空間」の荷重ベクトルを返す。
+/// 縮約(RigidLink変換・固定DOF処理)は DynamicAnalysis 側で一括して行うため、
+/// 派生クラスは全節点空間の NodeLoadData(固定DOF成分も含めてよい)を返せばよい。
+/// </summary>
+class DynamicLoad
+{
+public:
+    virtual ~DynamicLoad() = default;
+
+    /// 解析開始時に一度だけ呼ばれる(空間分布のキャッシュ等に使う)
+    virtual void Prepare(DynamicAnalysis& analysis) {}
+
+    /// ステップ step(時刻 t)の全体節点荷重ベクトル。範囲外stepは派生側でクランプする。
+    virtual std::vector<NodeLoadData> load_vector(DynamicAnalysis& analysis, int step, double t) = 0;
+
+    /// 時間刻み
+    virtual double timestep() const = 0;
+    /// 総ステップ数
+    virtual int steps() const = 0;
+};
+
+/// <summary>
+/// 地震(地動加速度)による慣性外力 -M·ι·a_g(t) を表す時刻歴荷重。
+/// DynamicAccelLoad から構築する。質量は集中質量(対角)のため、各節点の
+/// 並進成分に -(m/g)·Direction·a_g を与える(回転成分は0)。
+/// </summary>
+class SeismicAccelLoad : public DynamicLoad
+{
+private:
+    DynamicAccelLoad accel;
+    std::vector<double> mass_over_g; // 節点ごとの SumMass/g (Prepareで構築)
+
+public:
+    SeismicAccelLoad(const DynamicAccelLoad& accel_load) : accel(accel_load) {}
+
+    const DynamicAccelLoad& AccelLoad() const { return accel; }
+
+    void Prepare(DynamicAnalysis& analysis) override;
+    std::vector<NodeLoadData> load_vector(DynamicAnalysis& analysis, int step, double t) override;
+    double timestep() const override { return accel.timestep; }
+    int steps() const override { return static_cast<int>(accel.Accels.size()); }
+};
+
+/// <summary>
+/// 節点に作用する時刻歴荷重。空間分布 pattern(一定) × 時刻係数 factors[step] で表す。
+/// 慣性力以外の一般の時刻歴外力(節点集中荷重の時刻歴)を扱う。
+/// </summary>
+class NodalDynamicLoad : public DynamicLoad
+{
+private:
+    double dt_;
+    std::vector<NodeLoadData> pattern_; // 空間分布(一定)
+    std::vector<double> factors_;       // 時刻係数
+
+public:
+    NodalDynamicLoad(double dt, const std::vector<NodeLoadData>& pattern,
+                     const std::vector<double>& factors)
+        : dt_(dt), pattern_(pattern), factors_(factors) {}
+
+    std::vector<NodeLoadData> load_vector(DynamicAnalysis& analysis, int step, double t) override;
+    double timestep() const override { return dt_; }
+    int steps() const override { return static_cast<int>(factors_.size()); }
+};
+
+/// <summary>
 /// 時刻歴応答解析クラス
 /// </summary>
 class DynamicAnalysis : public FEDeformOperator
@@ -83,9 +149,21 @@ private:
     friend class FEDynamicMassDampInitializer;
     friend class FEDynamicRayleighDampInitializer;
     friend class DAEnergyRecorder;
+    friend class SeismicAccelLoad;
+
+    // 全体節点荷重ベクトル(load->load_vector)を縮約空間へ変換する。
+    //   f_reduced: [T^T·f_slave ; f_free]  (RHS用, サイズ master_dof_num + free)
+    //   f_fix    : 固定DOF成分            (反力用, サイズ fixed)
+    void ReducedLoadVector(int step, Eigen::VectorXd& f_reduced, Eigen::VectorXd& f_fix);
+
+    // 静止状態からの初期加速度 a0 を M·a0 = f0 より求める(質量0のDOFは0)。
+    Eigen::VectorXd ComputeInitialAcceleration(const Eigen::VectorXd& f0);
 
 public:
-    DynamicAccelLoad accel_load;
+    DynamicAccelLoad accel_load;                 // 後方互換: 地震入力DTO(従来コンストラクタで設定)
+    std::shared_ptr<DynamicLoad> load;           // 実際に評価する時刻歴荷重
+    double dt = 0.0;                             // 時間刻み(Initializeでloadから取得)
+    int num_steps = 0;                           // 総ステップ数(Initializeでloadから取得)
     FEDynamicDampInitializer *damp_initializer = nullptr;
 
     int current_step = 0;
@@ -97,8 +175,13 @@ public:
     double beta = 0.25; // 平均加速度法
                         // double beta = 1.0/6.0; // 線形加速度法(発散しがち)
 
+    // 従来コンストラクタ(後方互換): DynamicAccelLoad から SeismicAccelLoad を生成する
     DynamicAnalysis(std::shared_ptr<FEModel> model,
                     const DynamicAccelLoad& accel_load, FEDynamicDampInitializer *damp = nullptr);
+
+    // 汎用コンストラクタ: 任意の時刻歴荷重(DynamicLoad)を与える
+    DynamicAnalysis(std::shared_ptr<FEModel> model,
+                    std::shared_ptr<DynamicLoad> load, FEDynamicDampInitializer *damp = nullptr);
 
     bool Initialize();
 

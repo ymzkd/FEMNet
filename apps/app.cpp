@@ -4,6 +4,7 @@
 #include <algorithm>
 #include<random>
 #include<memory>
+#include <fstream>
 
 //#ifdef USE_MKL
 //#define EIGEN_USE_MKL_ALL
@@ -938,6 +939,208 @@ void TestDynamicAnalysis() {
 
     std::cout << "TestDynamicAnalysis End" << std::endl;
 
+}
+
+// ============================================================================
+// 時刻歴荷重の一般化(DynamicLoad)に対する回帰検証ハーネス
+//   実装前後で同一の応答が得られることを確認するために、時刻歴応答解析の
+//   全ステップの変位/速度/加速度/反力を高精度でファイルへ書き出す。
+//   実装前(現行コード)で baseline を採取し、実装後の出力と diff で比較する。
+// ============================================================================
+
+Node* findNodeById(std::vector<Node>& nodes, int id); // 前方宣言(定義は後方)
+
+// 単一シナリオの時刻歴応答をストリームへダンプ
+static void DumpDynamicResponse(const std::string& tag,
+    std::shared_ptr<FEModel> model_ptr,
+    const DynamicAccelLoad& accel_load,
+    FEDynamicDampInitializer* damp,
+    std::ostream& os)
+{
+    DynamicAnalysis analysis(model_ptr, accel_load, damp);
+    if (!analysis.Initialize()) {
+        os << tag << " INIT_FAILED\n";
+        return;
+    }
+
+    int num_steps = static_cast<int>(accel_load.Accels.size());
+    os << std::scientific << std::setprecision(10);
+    os << "=== SCENARIO " << tag << " (steps=" << num_steps
+        << ", nodes=" << model_ptr->Nodes.size() << ") ===\n";
+
+    for (int s = 0; s < num_steps; s++) {
+        analysis.ComputeStep();
+        std::vector<Displacement> d = analysis.GetDisplacements();
+        std::vector<Displacement> v = analysis.GetVelocities();
+        std::vector<Displacement> a = analysis.GetAccelerations();
+        std::vector<NodeLoad> r = analysis.GetReactForces();
+
+        os << "step " << analysis.current_step << "\n";
+        for (size_t i = 0; i < d.size(); i++) {
+            os << " D" << i << " " << d[i].Dx() << " " << d[i].Dy() << " " << d[i].Dz()
+                << " " << d[i].Rx() << " " << d[i].Ry() << " " << d[i].Rz() << "\n";
+            os << " V" << i << " " << v[i].Dx() << " " << v[i].Dy() << " " << v[i].Dz()
+                << " " << v[i].Rx() << " " << v[i].Ry() << " " << v[i].Rz() << "\n";
+            os << " A" << i << " " << a[i].Dx() << " " << a[i].Dy() << " " << a[i].Dz()
+                << " " << a[i].Rx() << " " << a[i].Ry() << " " << a[i].Rz() << "\n";
+        }
+        for (const NodeLoad& rf : r) {
+            NodeLoad& m = const_cast<NodeLoad&>(rf);
+            os << " R" << rf.id << " " << m.Px() << " " << m.Py() << " " << m.Pz()
+                << " " << m.Mx() << " " << m.My() << " " << m.Mz() << "\n";
+        }
+    }
+}
+
+// 回帰検証用の簡易単層剛床モデル(RigidLink 経路の縮約・反力を確認)
+static FEModel RigidFloorModelForDynamic()
+{
+    double span = 5000.0;
+    double height = 3000.0;
+    Material steel(205000.0, 0.3, 79000.0);
+    Section columnSection(3468.32, 14693530.62, 14693530.62, 6830000.0);
+    Section beamSection(5558.94, 153247657.08, 10674961.13, 3520000.0);
+
+    FEModel model;
+    model.Materials.push_back(steel);
+    model.Sections.push_back(columnSection);
+    model.Sections.push_back(beamSection);
+
+    std::vector<std::array<double, 2>> grid = { {0,0}, {span,0}, {span,span}, {0,span} };
+
+    // 基礎(固定) id 0..3, 頂部 id 4..7
+    for (int i = 0; i < 4; i++) {
+        Node n(grid[i][0], grid[i][1], 0.0); n.id = i; n.Fix.FixAll();
+        model.Nodes.push_back(n);
+    }
+    for (int i = 0; i < 4; i++) {
+        Node n(grid[i][0], grid[i][1], height); n.id = 4 + i;
+        model.Nodes.push_back(n);
+    }
+
+    size_t eid = 0;
+    for (int i = 0; i < 4; i++) { // 柱
+        BeamElement col(eid++, &model.Nodes[i], &model.Nodes[4 + i],
+            &model.Sections[0], model.Materials[0]);
+        model.add_element(col);
+    }
+    int beamConn[4][2] = { {4,5},{5,6},{6,7},{7,4} };
+    for (auto& c : beamConn) { // 梁
+        BeamElement bm(eid++, findNodeById(model.Nodes, c[0]), findNodeById(model.Nodes, c[1]),
+            &model.Sections[1], model.Materials[0]);
+        model.add_element(bm);
+    }
+
+    // 剛床(UX,UY,RZ を剛体化, UZ,RX,RY は自由) 中心にマスター
+    RigidLink link;
+    link.flags[0] = true; link.flags[1] = true; link.flags[2] = false;
+    link.flags[3] = false; link.flags[4] = false; link.flags[5] = true;
+    Node master(span / 2.0, span / 2.0, height); master.id = 1000;
+    link.Master = master;
+    for (int i = 4; i < 8; i++) link.Slaves.push_back(*findNodeById(model.Nodes, i));
+    model.RigidLinkData->links.push_back(link);
+
+    return model;
+}
+
+void TestDynamicLoadRegression()
+{
+    std::cout << "TestDynamicLoadRegression Start" << std::endl;
+
+    const char* out_path = "dyn_regression.txt";
+    std::ofstream os(out_path);
+    if (!os) {
+        std::cerr << "Failed to open " << out_path << std::endl;
+        return;
+    }
+
+    // 共通の地動加速度履歴(sin波)
+    double dt = 0.01;
+    int num_steps = 300;
+    std::vector<double> gacc(num_steps);
+    for (int i = 0; i < num_steps; i++)
+        gacc[i] = 1.2 * std::sin(2 * PI * (i * dt) / 0.4) + 0.3 * std::sin(2 * PI * (i * dt) / 0.13);
+
+    // --- 片持ち梁(RigidLinkなし) ---
+    {
+        FEModel model = CantiBeamModel(200, 4);
+        auto mp = std::make_shared<FEModel>(model);
+        mp->ComputeElementNodeMass();
+
+        DynamicAccelLoad load_z(dt, 0, 0, 1, gacc);
+        FEDynamicStiffDampInitializer stiff(0.03);
+        DumpDynamicResponse("CANTI_Z_STIFF", mp, load_z, &stiff, os);
+
+        DynamicAccelLoad load_x(dt, 1, 0, 0, gacc);
+        FEDynamicMassDampInitializer mass(0.05);
+        DumpDynamicResponse("CANTI_X_MASS", mp, load_x, &mass, os);
+
+        DynamicAccelLoad load_y(dt, 0, 1, 0, gacc);
+        FEDynamicRayleighDampInitializer rayleigh(0.02, 0.02, 1, 3);
+        DumpDynamicResponse("CANTI_Y_RAYLEIGH", mp, load_y, &rayleigh, os);
+    }
+
+    // --- 単層剛床(RigidLink あり) ---
+    {
+        FEModel model = RigidFloorModelForDynamic();
+        auto mp = std::make_shared<FEModel>(model);
+        mp->ComputeElementNodeMass();
+
+        DynamicAccelLoad load_x(dt, 1, 0, 0, gacc);   // マスターDOF経由(UX)
+        FEDynamicStiffDampInitializer stiff(0.03);
+        DumpDynamicResponse("RFLOOR_X_STIFF", mp, load_x, &stiff, os);
+
+        DynamicAccelLoad load_z(dt, 0, 0, 1, gacc);   // 自由DOF経由(UZ)
+        FEDynamicMassDampInitializer mass(0.05);
+        DumpDynamicResponse("RFLOOR_Z_MASS", mp, load_z, &mass, os);
+    }
+
+    os.close();
+    std::cout << "TestDynamicLoadRegression wrote " << out_path << std::endl;
+    std::cout << "TestDynamicLoadRegression End" << std::endl;
+}
+
+// 新機能 NodalDynamicLoad(慣性力以外の時刻歴節点荷重)の物理検証:
+// 一定(ステップ)荷重を減衰付きで十分長く与えると、静的解に収束するはず。
+void TestNodalDynamicLoad()
+{
+    std::cout << "TestNodalDynamicLoad Start" << std::endl;
+
+    int tip = 4;
+    FEModel model = CantiBeamModel(200, 4);
+    auto mp = std::make_shared<FEModel>(model);
+    mp->ComputeElementNodeMass();
+
+    // 参照: 静的解(先端に -100 の集中荷重)
+    NodeLoad nl(tip, 0, 0, -100.0);
+    std::vector<std::shared_ptr<LoadBase>> sloads{ std::make_shared<NodeLoad>(nl) };
+    FELinearStaticOp stat(mp, sloads);
+    stat.Compute();
+    double d_static = stat.GetDisplacements()[tip].Dz();
+
+    // 動的: 同じ節点荷重をステップ状(factor=1一定)に与え、減衰付きで定常化させる
+    double dt = 0.005;
+    int num_steps = 6000;
+    std::vector<NodeLoadData> pattern{ NodeLoadData(tip, 0, 0, -100.0) };
+    std::vector<double> factors(num_steps, 1.0);
+    auto dyn_load = std::make_shared<NodalDynamicLoad>(dt, pattern, factors);
+
+    FEDynamicStiffDampInitializer damp(0.5); // 高めの減衰で早く定常化
+    DynamicAnalysis analysis(mp, dyn_load, &damp);
+    analysis.RecordEnabled = false;
+    if (!analysis.Initialize()) {
+        std::cout << "  Initialize failed" << std::endl;
+        return;
+    }
+    analysis.ComputeSteps(num_steps);
+    double d_dyn = analysis.GetDisplacements()[tip].Dz();
+
+    double rel_err = std::abs(d_dyn - d_static) / std::max(std::abs(d_static), 1e-30);
+    std::cout << "  static Dz = " << d_static << std::endl;
+    std::cout << "  dynamic Dz(steady) = " << d_dyn << std::endl;
+    std::cout << "  relative error = " << rel_err
+        << (rel_err < 1e-3 ? "  [OK: converges to static]" : "  [NG]") << std::endl;
+    std::cout << "TestNodalDynamicLoad End" << std::endl;
 }
 
 // 1次共振加振→自由振動の時刻歴を計算し、先端変位履歴と最大変位を返す
@@ -2338,6 +2541,12 @@ int main(void) {
 
     // 260103 Debug - SparseMatrixUtils のテスト
     // TestSparseMatrixUtils();
+
+    // 時刻歴荷重一般化(DynamicLoad)の回帰検証
+    TestDynamicLoadRegression();
+
+    // 新機能 NodalDynamicLoad の物理検証(ステップ荷重→静的解に収束)
+    TestNodalDynamicLoad();
 
     // 固有値解析の前後比較検証
     TestVibrationCheck();

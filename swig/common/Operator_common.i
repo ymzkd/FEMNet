@@ -11,6 +11,10 @@
 %shared_ptr(FELinearStaticOp);
 %shared_ptr(LinearStaticCombinationOperator);
 %shared_ptr(DynamicAnalysis);
+// 時刻歴荷重(慣性力以外にも対応する DynamicLoad 階層)
+%shared_ptr(DynamicLoad);
+%shared_ptr(SeismicAccelLoad);
+%shared_ptr(NodalDynamicLoad);
 %shared_ptr(FEBucklingAnalysis);
 %shared_ptr(FEVibrateResult);
 %shared_ptr(ResponseSpectrumMethod);

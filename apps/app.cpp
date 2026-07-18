@@ -954,7 +954,7 @@ Node* findNodeById(std::vector<Node>& nodes, int id); // 前方宣言(定義は�
 static void DumpDynamicResponse(const std::string& tag,
     std::shared_ptr<FEModel> model_ptr,
     const DynamicAccelLoad& accel_load,
-    FEDynamicDampInitializer* damp,
+    std::shared_ptr<FEDynamicDampInitializer> damp,
     std::ostream& os)
 {
     DynamicAnalysis analysis(model_ptr, accel_load, damp);
@@ -1068,16 +1068,16 @@ void TestDynamicLoadRegression()
         mp->ComputeElementNodeMass();
 
         DynamicAccelLoad load_z(dt, 0, 0, 1, gacc);
-        FEDynamicStiffDampInitializer stiff(0.03);
-        DumpDynamicResponse("CANTI_Z_STIFF", mp, load_z, &stiff, os);
+        auto stiff = std::make_shared<FEDynamicStiffDampInitializer>(0.03);
+        DumpDynamicResponse("CANTI_Z_STIFF", mp, load_z, stiff, os);
 
         DynamicAccelLoad load_x(dt, 1, 0, 0, gacc);
-        FEDynamicMassDampInitializer mass(0.05);
-        DumpDynamicResponse("CANTI_X_MASS", mp, load_x, &mass, os);
+        auto mass = std::make_shared<FEDynamicMassDampInitializer>(0.05);
+        DumpDynamicResponse("CANTI_X_MASS", mp, load_x, mass, os);
 
         DynamicAccelLoad load_y(dt, 0, 1, 0, gacc);
-        FEDynamicRayleighDampInitializer rayleigh(0.02, 0.02, 1, 3);
-        DumpDynamicResponse("CANTI_Y_RAYLEIGH", mp, load_y, &rayleigh, os);
+        auto rayleigh = std::make_shared<FEDynamicRayleighDampInitializer>(0.02, 0.02, 1, 3);
+        DumpDynamicResponse("CANTI_Y_RAYLEIGH", mp, load_y, rayleigh, os);
     }
 
     // --- 単層剛床(RigidLink あり) ---
@@ -1087,12 +1087,12 @@ void TestDynamicLoadRegression()
         mp->ComputeElementNodeMass();
 
         DynamicAccelLoad load_x(dt, 1, 0, 0, gacc);   // マスターDOF経由(UX)
-        FEDynamicStiffDampInitializer stiff(0.03);
-        DumpDynamicResponse("RFLOOR_X_STIFF", mp, load_x, &stiff, os);
+        auto stiff = std::make_shared<FEDynamicStiffDampInitializer>(0.03);
+        DumpDynamicResponse("RFLOOR_X_STIFF", mp, load_x, stiff, os);
 
         DynamicAccelLoad load_z(dt, 0, 0, 1, gacc);   // 自由DOF経由(UZ)
-        FEDynamicMassDampInitializer mass(0.05);
-        DumpDynamicResponse("RFLOOR_Z_MASS", mp, load_z, &mass, os);
+        auto mass = std::make_shared<FEDynamicMassDampInitializer>(0.05);
+        DumpDynamicResponse("RFLOOR_Z_MASS", mp, load_z, mass, os);
     }
 
     os.close();
@@ -1125,8 +1125,8 @@ void TestNodalDynamicLoad()
     std::vector<double> factors(num_steps, 1.0);
     auto dyn_load = std::make_shared<NodalDynamicLoad>(dt, pattern, factors);
 
-    FEDynamicStiffDampInitializer damp(0.5); // 高めの減衰で早く定常化
-    DynamicAnalysis analysis(mp, dyn_load, &damp);
+    auto damp = std::make_shared<FEDynamicStiffDampInitializer>(0.5); // 高めの減衰で早く定常化
+    DynamicAnalysis analysis(mp, dyn_load, damp);
     analysis.RecordEnabled = false;
     if (!analysis.Initialize()) {
         std::cout << "  Initialize failed" << std::endl;
@@ -1144,7 +1144,7 @@ void TestNodalDynamicLoad()
 }
 
 // 1次共振加振→自由振動の時刻歴を計算し、先端変位履歴と最大変位を返す
-double RunDampedResonance(std::shared_ptr<FEModel> model_ptr, FEDynamicDampInitializer* damp,
+double RunDampedResonance(std::shared_ptr<FEModel> model_ptr, std::shared_ptr<FEDynamicDampInitializer> damp,
     double T1, int tip_node, int steps_per_cycle, int excite_cycles, int free_cycles,
     std::vector<double>& tip_history)
 {
@@ -1225,38 +1225,38 @@ void TestDampInitializers() {
     std::vector<double> hist;
 
     // Case 1: 剛性比例(既存)
-    FEDynamicStiffDampInitializer stiff_damp(zeta);
-    double peak_stiff = RunDampedResonance(model_ptr, &stiff_damp, T1, divnum,
+    auto stiff_damp = std::make_shared<FEDynamicStiffDampInitializer>(zeta);
+    double peak_stiff = RunDampedResonance(model_ptr, stiff_damp, T1, divnum,
         steps_per_cycle, excite_cycles, free_cycles, hist);
     double zeta_stiff = EstimateDampingFromDecay(hist, free_start);
     std::cout << "[Stiffness] peak: " << peak_stiff << ", estimated zeta: " << zeta_stiff
-        << ", w1(internal): " << stiff_damp.natural_angle_velocity << std::endl;
+        << ", w1(internal): " << stiff_damp->natural_angle_velocity << std::endl;
 
     // Case 2: 質量比例
-    FEDynamicMassDampInitializer mass_damp(zeta);
-    double peak_mass = RunDampedResonance(model_ptr, &mass_damp, T1, divnum,
+    auto mass_damp = std::make_shared<FEDynamicMassDampInitializer>(zeta);
+    double peak_mass = RunDampedResonance(model_ptr, mass_damp, T1, divnum,
         steps_per_cycle, excite_cycles, free_cycles, hist);
     double zeta_mass = EstimateDampingFromDecay(hist, free_start);
     std::cout << "[Mass]      peak: " << peak_mass << ", estimated zeta: " << zeta_mass
-        << ", w1(internal): " << mass_damp.natural_angle_velocity << std::endl;
+        << ", w1(internal): " << mass_damp->natural_angle_velocity << std::endl;
 
     // Case 3: レイリー(1次・mode_j次モードで zeta を指定)
-    FEDynamicRayleighDampInitializer rayleigh_damp(zeta, zeta, 1, mode_j);
-    double peak_ray = RunDampedResonance(model_ptr, &rayleigh_damp, T1, divnum,
+    auto rayleigh_damp = std::make_shared<FEDynamicRayleighDampInitializer>(zeta, zeta, 1, mode_j);
+    double peak_ray = RunDampedResonance(model_ptr, rayleigh_damp, T1, divnum,
         steps_per_cycle, excite_cycles, free_cycles, hist);
     double zeta_ray = EstimateDampingFromDecay(hist, free_start);
     std::cout << "[Rayleigh]  peak: " << peak_ray << ", estimated zeta: " << zeta_ray
-        << ", alpha: " << rayleigh_damp.alpha << ", beta: " << rayleigh_damp.beta << std::endl;
+        << ", alpha: " << rayleigh_damp->alpha << ", beta: " << rayleigh_damp->beta << std::endl;
 
     // 算出されたalpha, betaによる各モードの減衰比を逆算(= zetaになるはず)
-    std::cout << "  zeta(w1): " << rayleigh_damp.alpha / (2 * w1) + rayleigh_damp.beta * w1 / 2
-        << ", zeta(wj): " << rayleigh_damp.alpha / (2 * wj) + rayleigh_damp.beta * wj / 2 << std::endl;
+    std::cout << "  zeta(w1): " << rayleigh_damp->alpha / (2 * w1) + rayleigh_damp->beta * w1 / 2
+        << ", zeta(wj): " << rayleigh_damp->alpha / (2 * wj) + rayleigh_damp->beta * wj / 2 << std::endl;
 
     // Case 4: レイリー(alpha, beta 直接指定; Case 3 と同値になるはず)
     double alpha_direct = 2 * zeta * w1 * wj / (w1 + wj);
     double beta_direct = 2 * zeta / (w1 + wj);
-    FEDynamicRayleighDampInitializer rayleigh_direct(alpha_direct, beta_direct);
-    double peak_ray2 = RunDampedResonance(model_ptr, &rayleigh_direct, T1, divnum,
+    auto rayleigh_direct = std::make_shared<FEDynamicRayleighDampInitializer>(alpha_direct, beta_direct);
+    double peak_ray2 = RunDampedResonance(model_ptr, rayleigh_direct, T1, divnum,
         steps_per_cycle, excite_cycles, free_cycles, hist);
     std::cout << "[RayDirect] peak: " << peak_ray2
         << ", alpha: " << alpha_direct << ", beta: " << beta_direct
@@ -1265,14 +1265,14 @@ void TestDampInitializers() {
     // DampRateAtPeriod の検証
     double Tj = 2 * PI / wj;
     std::cout << "DampRateAtPeriod checks:" << std::endl;
-    std::cout << "  [Stiffness] at T1: " << stiff_damp.DampRateAtPeriod(T1)
-        << " (expected " << zeta << "), at Tj: " << stiff_damp.DampRateAtPeriod(Tj)
+    std::cout << "  [Stiffness] at T1: " << stiff_damp->DampRateAtPeriod(T1)
+        << " (expected " << zeta << "), at Tj: " << stiff_damp->DampRateAtPeriod(Tj)
         << " (expected " << zeta * wj / w1 << ")" << std::endl;
-    std::cout << "  [Mass]      at T1: " << mass_damp.DampRateAtPeriod(T1)
-        << " (expected " << zeta << "), at Tj: " << mass_damp.DampRateAtPeriod(Tj)
+    std::cout << "  [Mass]      at T1: " << mass_damp->DampRateAtPeriod(T1)
+        << " (expected " << zeta << "), at Tj: " << mass_damp->DampRateAtPeriod(Tj)
         << " (expected " << zeta * w1 / wj << ")" << std::endl;
-    std::cout << "  [Rayleigh]  at T1: " << rayleigh_damp.DampRateAtPeriod(T1)
-        << ", at Tj: " << rayleigh_damp.DampRateAtPeriod(Tj)
+    std::cout << "  [Rayleigh]  at T1: " << rayleigh_damp->DampRateAtPeriod(T1)
+        << ", at Tj: " << rayleigh_damp->DampRateAtPeriod(Tj)
         << " (both expected " << zeta << ")" << std::endl;
 
     // alpha, beta 直接指定はInitialize前でも算定可能

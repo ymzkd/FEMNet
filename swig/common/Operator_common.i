@@ -11,6 +11,11 @@
 %shared_ptr(FELinearStaticOp);
 %shared_ptr(LinearStaticCombinationOperator);
 %shared_ptr(DynamicAnalysis);
+// 減衰初期化子(DynamicAnalysis が共同所有するため shared_ptr で公開)
+%shared_ptr(FEDynamicDampInitializer);
+%shared_ptr(FEDynamicStiffDampInitializer);
+%shared_ptr(FEDynamicMassDampInitializer);
+%shared_ptr(FEDynamicRayleighDampInitializer);
 // 時刻歴荷重(慣性力以外にも対応する DynamicLoad 階層)
 %shared_ptr(DynamicLoad);
 %shared_ptr(SeismicAccelLoad);

@@ -77,7 +77,7 @@ void DAEnergyRecorder::Record(DynamicAnalysis &da)
     RecordInputEnergy(da);
 }
 
-DynamicAnalysis::DynamicAnalysis(std::shared_ptr<FEModel> model, const DynamicAccelLoad& accel_load, FEDynamicDampInitializer *damp)
+DynamicAnalysis::DynamicAnalysis(std::shared_ptr<FEModel> model, const DynamicAccelLoad& accel_load, std::shared_ptr<FEDynamicDampInitializer> damp)
     : FEDeformOperator(model), accel_load(accel_load)
 {
     // 後方互換: 地震入力DTO から地震用の時刻歴荷重を生成する
@@ -90,12 +90,11 @@ DynamicAnalysis::DynamicAnalysis(std::shared_ptr<FEModel> model, const DynamicAc
     else
     {
         // デフォルトの減衰初期化子を用意
-        static FEDynamicStiffDampInitializer defaultDamp;
-        damp_initializer = &defaultDamp;
+        damp_initializer = std::make_shared<FEDynamicStiffDampInitializer>();
     }
 }
 
-DynamicAnalysis::DynamicAnalysis(std::shared_ptr<FEModel> model, std::shared_ptr<DynamicLoad> load, FEDynamicDampInitializer *damp)
+DynamicAnalysis::DynamicAnalysis(std::shared_ptr<FEModel> model, std::shared_ptr<DynamicLoad> load, std::shared_ptr<FEDynamicDampInitializer> damp)
     : FEDeformOperator(model), load(load)
 {
     if (damp)
@@ -105,8 +104,7 @@ DynamicAnalysis::DynamicAnalysis(std::shared_ptr<FEModel> model, std::shared_ptr
     else
     {
         // デフォルトの減衰初期化子を用意
-        static FEDynamicStiffDampInitializer defaultDamp;
-        damp_initializer = &defaultDamp;
+        damp_initializer = std::make_shared<FEDynamicStiffDampInitializer>();
     }
 }
 

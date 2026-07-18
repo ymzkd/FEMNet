@@ -164,7 +164,7 @@ public:
     std::shared_ptr<DynamicLoad> load;           // 実際に評価する時刻歴荷重
     double dt = 0.0;                             // 時間刻み(Initializeでloadから取得)
     int num_steps = 0;                           // 総ステップ数(Initializeでloadから取得)
-    FEDynamicDampInitializer *damp_initializer = nullptr;
+    std::shared_ptr<FEDynamicDampInitializer> damp_initializer = nullptr;
 
     int current_step = 0;
 
@@ -177,11 +177,13 @@ public:
 
     // 従来コンストラクタ(後方互換): DynamicAccelLoad から SeismicAccelLoad を生成する
     DynamicAnalysis(std::shared_ptr<FEModel> model,
-                    const DynamicAccelLoad& accel_load, FEDynamicDampInitializer *damp = nullptr);
+                    const DynamicAccelLoad& accel_load,
+                    std::shared_ptr<FEDynamicDampInitializer> damp = nullptr);
 
     // 汎用コンストラクタ: 任意の時刻歴荷重(DynamicLoad)を与える
     DynamicAnalysis(std::shared_ptr<FEModel> model,
-                    std::shared_ptr<DynamicLoad> load, FEDynamicDampInitializer *damp = nullptr);
+                    std::shared_ptr<DynamicLoad> load,
+                    std::shared_ptr<FEDynamicDampInitializer> damp = nullptr);
 
     bool Initialize();
 

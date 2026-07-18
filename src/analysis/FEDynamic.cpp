@@ -1,6 +1,7 @@
 #include "FEDynamic.h"
 
 #include <algorithm>
+#include <cmath>
 
 void DASampler_MaxDisplacement::Sampling(DynamicAnalysis &da)
 {
@@ -60,34 +61,12 @@ void DAEnergyRecorder::RecordDampingEnergy(DynamicAnalysis &da)
 
 void DAEnergyRecorder::RecordInputEnergy(DynamicAnalysis &da)
 {
-    Vector gacc = da.accel_load.Direction * da.accel_load.Accels[da.current_step - 1];
-
-    // 縮小空間での入力加速度ベクトル
-    int reduced_size = da.master_dof_num + da.free_indices.size();
-    Eigen::VectorXd post_accel0 = Eigen::VectorXd::Zero(reduced_size);
-
-    if (da.master_dof_num > 0) {
-        // マスターDOFに対して直接地動加速度を設定
-        int counter = 0;
-        for (RigidLink& link : da.model->RigidLinkData->links) {
-            if (link.Ux()) post_accel0[counter++] = gacc.x;
-            if (link.Uy()) post_accel0[counter++] = gacc.y;
-            if (link.Uz()) post_accel0[counter++] = gacc.z;
-            if (link.Rx()) counter++;  // 回転は0のまま
-            if (link.Ry()) counter++;
-            if (link.Rz()) counter++;
-        }
-    }
-
-    for (size_t i = 0; i < da.free_indices.size(); i++) {
-        int fi = da.free_indices[i] % NODE_DOF;
-        if (fi == 0) post_accel0[da.master_dof_num + i] = gacc.x;
-        else if (fi == 1) post_accel0[da.master_dof_num + i] = gacc.y;
-        else if (fi == 2) post_accel0[da.master_dof_num + i] = gacc.z;
-    }
-
-    Eigen::VectorXd post_accel = da.matM_aa.selfadjointView<Eigen::Upper>() * post_accel0;
-    input_energy.push_back(post_accel.dot(da.current_vel));
+    // Record は current_step 更新後に呼ばれる。既存実装に合わせ 1つ前のステップの
+    // 外力を参照する。入力エネルギーは現行の符号慣行に合わせ -F_ext·v を積算する
+    // (地震では F_ext=-M·ι·a_g なので (M·ι·a_g)·v となり従来と一致)。
+    Eigen::VectorXd f_reduced, f_fix;
+    da.ReducedLoadVector(da.current_step - 1, f_reduced, f_fix);
+    input_energy.push_back(-f_reduced.dot(da.current_vel));
 }
 
 void DAEnergyRecorder::Record(DynamicAnalysis &da)
@@ -98,15 +77,141 @@ void DAEnergyRecorder::Record(DynamicAnalysis &da)
     RecordInputEnergy(da);
 }
 
-DynamicAnalysis::DynamicAnalysis(std::shared_ptr<FEModel> model, const DynamicAccelLoad& accel_load, FEDynamicDampInitializer *damp)
+DynamicAnalysis::DynamicAnalysis(std::shared_ptr<FEModel> model, const DynamicAccelLoad& accel_load, std::shared_ptr<FEDynamicDampInitializer> damp)
     : FEDeformOperator(model), accel_load(accel_load)
 {
-    if (!damp_initializer)
+    // 後方互換: 地震入力DTO から地震用の時刻歴荷重を生成する
+    load = std::make_shared<SeismicAccelLoad>(accel_load);
+
+    if (damp)
+    {
+        damp_initializer = damp;
+    }
+    else
     {
         // デフォルトの減衰初期化子を用意
-        static FEDynamicStiffDampInitializer defaultDamp;
-        damp_initializer = &defaultDamp;
+        damp_initializer = std::make_shared<FEDynamicStiffDampInitializer>();
     }
+}
+
+DynamicAnalysis::DynamicAnalysis(std::shared_ptr<FEModel> model, std::shared_ptr<DynamicLoad> load, std::shared_ptr<FEDynamicDampInitializer> damp)
+    : FEDeformOperator(model), load(load)
+{
+    if (damp)
+    {
+        damp_initializer = damp;
+    }
+    else
+    {
+        // デフォルトの減衰初期化子を用意
+        damp_initializer = std::make_shared<FEDynamicStiffDampInitializer>();
+    }
+}
+
+// 地震荷重: 各節点の並進成分に -(m/g)·Direction·a_g を与える(回転成分は0)
+std::vector<NodeLoadData> SeismicAccelLoad::load_vector(DynamicAnalysis& analysis, int step, double /*t*/)
+{
+    std::vector<NodeLoadData> out;
+    if (accel.Accels.empty())
+        return out;
+
+    // 範囲外stepはクランプ(末尾ステップの参照や初期条件で使用)
+    size_t idx = (step < 0) ? 0
+        : std::min(static_cast<size_t>(step), accel.Accels.size() - 1);
+    Vector gacc = accel.Direction * accel.Accels[idx];
+
+    double inv_g = 1.0 / analysis.model->GraityAccel;
+    out.reserve(analysis.model->Nodes.size());
+    for (size_t i = 0; i < analysis.model->Nodes.size(); i++)
+    {
+        // -(m/g)·Direction·a_g  (SumMassは重量なのでgで割って真の質量に変換)
+        double f = -analysis.model->Nodes[i].MassData.SumMass() * inv_g;
+        out.push_back(NodeLoadData(static_cast<int>(i), f * gacc.x, f * gacc.y, f * gacc.z, 0.0, 0.0, 0.0));
+    }
+    return out;
+}
+
+// 節点時刻歴荷重: 空間分布 × 時刻係数
+std::vector<NodeLoadData> NodalDynamicLoad::load_vector(DynamicAnalysis& /*analysis*/, int step, double /*t*/)
+{
+    if (factors_.empty())
+        return std::vector<NodeLoadData>();
+
+    size_t idx = (step < 0) ? 0
+        : std::min(static_cast<size_t>(step), factors_.size() - 1);
+    double s = factors_[idx];
+
+    std::vector<NodeLoadData> out = pattern_;
+    for (NodeLoadData& nl : out)
+        for (int k = 0; k < 6; k++)
+            nl.loads[k] *= s;
+    return out;
+}
+
+// 全体節点荷重ベクトルを縮約空間へ変換
+void DynamicAnalysis::ReducedLoadVector(int step, Eigen::VectorXd& f_reduced, Eigen::VectorXd& f_fix)
+{
+    // 全体DOFベクトルへ集約
+    Eigen::VectorXd f_full = Eigen::VectorXd::Zero(model->Nodes.size() * NODE_DOF);
+    std::vector<NodeLoadData> node_loads = load->load_vector(*this, step, step * dt);
+    for (const NodeLoadData& nl : node_loads)
+    {
+        if (nl.id < 0) continue;
+        int pos = nl.id * NODE_DOF;
+        for (int k = 0; k < 6; k++)
+            f_full[pos + k] += nl.loads[k];
+    }
+
+    // slave / free / fix へ分割
+    Eigen::VectorXd f_slave(slave_indices.size());
+    Eigen::VectorXd f_free(free_indices.size());
+    for (size_t i = 0; i < slave_indices.size(); i++)
+        f_slave(i) = f_full(slave_indices[i]);
+    for (size_t i = 0; i < free_indices.size(); i++)
+        f_free(i) = f_full(free_indices[i]);
+
+    // RigidLink変換で縮約(master成分 = T^T·f_slave)
+    if (master_dof_num > 0)
+    {
+        Eigen::VectorXd f_master = linkTransMat.transpose() * f_slave;
+        f_reduced.resize(master_dof_num + free_indices.size());
+        f_reduced << f_master, f_free;
+    }
+    else
+    {
+        f_reduced = f_free;
+    }
+
+    // 固定DOF成分(反力計算に使用)
+    f_fix.resize(fixed_indices.size());
+    for (size_t i = 0; i < fixed_indices.size(); i++)
+        f_fix(i) = f_full(fixed_indices[i]);
+}
+
+// 静止状態(d=0,v=0)からの初期加速度 M·a0 = f0 を解く。
+// 集中質量(対角; 回転DOFは質量0)かつ master-free はブロック対角。
+// master ブロック(T^T·M11·T)は剛体回転慣性を含むためPD、質量0の自由DOFは a0=0。
+Eigen::VectorXd DynamicAnalysis::ComputeInitialAcceleration(const Eigen::VectorXd& f0)
+{
+    int reduced_size = master_dof_num + static_cast<int>(free_indices.size());
+    Eigen::VectorXd a0 = Eigen::VectorXd::Zero(reduced_size);
+
+    if (master_dof_num > 0)
+    {
+        Eigen::SparseMatrix<double> Mmm = matM_aa.block(0, 0, master_dof_num, master_dof_num);
+        Eigen::SimplicialLDLT<Eigen::SparseMatrix<double>, Eigen::Upper> ldlt;
+        ldlt.compute(Mmm);
+        if (ldlt.info() == Eigen::Success)
+            a0.head(master_dof_num) = ldlt.solve(f0.head(master_dof_num));
+    }
+
+    for (size_t i = 0; i < free_indices.size(); i++)
+    {
+        double mi = matM_aa.coeff(master_dof_num + static_cast<int>(i), master_dof_num + static_cast<int>(i));
+        a0(master_dof_num + i) = (mi > 0.0) ? f0(master_dof_num + i) / mi : 0.0;
+    }
+
+    return a0;
 }
 
 bool DynamicAnalysis::Initialize()
@@ -123,34 +228,15 @@ bool DynamicAnalysis::Initialize()
     linkTransMat = model->RigidLinkData->TransformationMatrix().sparseView(1e-10);
     master_dof_num = linkTransMat.cols();
 
+    // 時間グリッドを荷重から取得(Analysisが所有)
+    dt = load->timestep();
+    num_steps = load->steps();
+
     // 縮小空間のサイズ
     int reduced_size = master_dof_num + free_indices.size();
     current_disp = Eigen::VectorXd::Zero(reduced_size);
     current_vel = Eigen::VectorXd::Zero(reduced_size);
     current_accel = Eigen::VectorXd::Zero(reduced_size);
-
-    // 初期相対加速度: 静止状態(d=0, v=0)での運動方程式 M·a0 = -M·ι·a_g(0) より
-    //   a0 = -ι·a_g(0)。先頭サンプル Accels[0] を初期加速度として反映する。
-    if (!accel_load.Accels.empty()) {
-        Vector gacc0 = accel_load.Direction * accel_load.Accels[0];
-        if (master_dof_num > 0) {
-            int counter = 0;
-            for (RigidLink& link : model->RigidLinkData->links) {
-                if (link.Ux()) current_accel[counter++] = -gacc0.x;
-                if (link.Uy()) current_accel[counter++] = -gacc0.y;
-                if (link.Uz()) current_accel[counter++] = -gacc0.z;
-                if (link.Rx()) counter++;
-                if (link.Ry()) counter++;
-                if (link.Rz()) counter++;
-            }
-        }
-        for (size_t i = 0; i < free_indices.size(); i++) {
-            int fi = free_indices[i] % NODE_DOF;
-            if (fi == 0) current_accel[master_dof_num + i] = -gacc0.x;
-            else if (fi == 1) current_accel[master_dof_num + i] = -gacc0.y;
-            else if (fi == 2) current_accel[master_dof_num + i] = -gacc0.z;
-        }
-    }
 
     // マトリクスの組み立て
     if (master_dof_num > 0) {
@@ -197,8 +283,12 @@ bool DynamicAnalysis::Initialize()
         return false;
     }
 
+    // 初期加速度: 静止状態での M·a0 = f(0) を解く(縮約行列を使うため行列組立後に実行)
+    Eigen::VectorXd f0_reduced, f0_fix;
+    ReducedLoadVector(0, f0_reduced, f0_fix);
+    current_accel = ComputeInitialAcceleration(f0_reduced);
+
     // 因数分解しておく
-    double dt = accel_load.timestep;
     Eigen::SparseMatrix<double> compute_mat;
     compute_mat = matM_aa + 0.5 * dt * matC_aa + beta * dt * dt * matK_aa;
     solver = createSolver();
@@ -213,55 +303,19 @@ bool DynamicAnalysis::Initialize()
 void DynamicAnalysis::ComputeStep()
 {
     // ステップ数が最大に達した場合は終了
-    if (current_step >= accel_load.Accels.size())
+    if (current_step >= num_steps)
     {
         std::cout << "Dynamic analysis completed." << std::endl;
         return;
     }
 
-    double dt = accel_load.timestep;
-    // Newmarkは t_{n+1} の釣り合いを解くため、地動加速度も t_{n+1} の値を参照する
-    // (末尾ステップでは範囲内にクランプ)
-    size_t accel_index = std::min((size_t)current_step + 1, accel_load.Accels.size() - 1);
-    Vector gacc = accel_load.Direction * accel_load.Accels[accel_index];
-
-    // 縮小空間での入力加速度ベクトルを構築
-    int reduced_size = master_dof_num + free_indices.size();
-    Eigen::VectorXd post_accel0 = Eigen::VectorXd::Zero(reduced_size);
-
-    if (master_dof_num > 0) {
-        // マスターDOFに対して直接地動加速度を設定
-        int counter = 0;
-        for (RigidLink& link : model->RigidLinkData->links) {
-            if (link.Ux()) post_accel0[counter++] = gacc.x;
-            if (link.Uy()) post_accel0[counter++] = gacc.y;
-            if (link.Uz()) post_accel0[counter++] = gacc.z;
-            if (link.Rx()) counter++;  // 回転は0のまま
-            if (link.Ry()) counter++;
-            if (link.Rz()) counter++;
-        }
-    }
-
-    // free自由度への加速度
-    for (size_t i = 0; i < free_indices.size(); i++) {
-        int fi = free_indices[i] % NODE_DOF;
-        if (fi == 0) post_accel0[master_dof_num + i] = gacc.x;
-        else if (fi == 1) post_accel0[master_dof_num + i] = gacc.y;
-        else if (fi == 2) post_accel0[master_dof_num + i] = gacc.z;
-    }
-
-    // fixed自由度への加速度
-    Eigen::VectorXd post_accel0_fixed = Eigen::VectorXd::Zero(fixed_indices.size());
-    for (size_t i = 0; i < fixed_indices.size(); i++)
-    {
-        int fi = fixed_indices[i] % NODE_DOF;
-        if (fi == 0) post_accel0_fixed[i] = gacc.x;
-        else if (fi == 1) post_accel0_fixed[i] = gacc.y;
-        else if (fi == 2) post_accel0_fixed[i] = gacc.z;
-    }
+    // Newmarkは t_{n+1} の釣り合いを解くため、外力も t_{n+1} の値を参照する
+    // (末尾ステップは load 側でクランプ)。全体節点荷重→縮約空間 f_reduced / f_fix。
+    Eigen::VectorXd f_reduced, f_fix;
+    ReducedLoadVector(current_step + 1, f_reduced, f_fix);
 
     // 次ステップの変位、速度、加速度を取得
-    Eigen::VectorXd post_accel = matM_aa.selfadjointView<Eigen::Upper>() * (-post_accel0)
+    Eigen::VectorXd post_accel = f_reduced
         - matC_aa.selfadjointView<Eigen::Upper>() * (current_vel + 0.5 * dt * current_accel)
         - matK_aa.selfadjointView<Eigen::Upper>() * (current_disp + dt * current_vel + (0.5 - beta) * dt * dt * current_accel);
     post_accel = solver->solve(post_accel);
@@ -274,9 +328,9 @@ void DynamicAnalysis::ComputeStep()
     current_vel = post_vel;
     current_disp = post_disp;
 
-    // Compute reaction force
+    // 反力: R = K_ab^T·d + M_ab^T·a + C_ab^T·v - F_ext,b (F_ext,b = 外力の固定DOF成分)
     Eigen::VectorXd rf = matK_ab.transpose() * current_disp + matM_ab.transpose() * current_accel +
-                         matC_ab.transpose() * current_vel + matM_bb * post_accel0_fixed;
+                         matC_ab.transpose() * current_vel - f_fix;
     Eigen::VectorXd rf_full = Eigen::VectorXd::Zero(model->NodeNum() * 6);
     for (size_t i = 0; i < fixed_indices.size(); i++)
         rf_full(fixed_indices[i]) = rf(i);
@@ -576,4 +630,98 @@ bool FEDynamicStiffDampInitializer::Initialize(DynamicAnalysis *analysis)
     analysis->matC_bb = analysis->matK_bb * (2.0 * damp_rate / natural_angle_velocity);
 
     return true;
+}
+
+double FEDynamicStiffDampInitializer::DampRateAtPeriod(double t)
+{
+    // ζ(ω) = ζ0・ω/ω1
+    if (t <= 0.0 || natural_angle_velocity <= 0.0)
+        return -1.0;
+    return damp_rate * (2.0 * PI / t) / natural_angle_velocity;
+}
+
+bool FEDynamicMassDampInitializer::Initialize(DynamicAnalysis *analysis)
+{
+    // 解析モデルの固有振動数を計算
+    std::vector<double> eigen_values;
+    std::vector<std::vector<Displacement>> mode_vectors;
+    int nconv = analysis->model->SolveVibration(1, eigen_values, mode_vectors);
+    if (nconv < 1)
+    {
+        std::cout << "Eigenvalue calculations did not converge." << std::endl;
+        return false;
+    }
+
+    // C = 2ζω1・M (1次モードで減衰比ζとなる質量比例減衰)
+    natural_angle_velocity = eigen_values[0];
+    double coef = 2.0 * damp_rate * natural_angle_velocity;
+    analysis->matC_aa = analysis->matM_aa * coef;
+    analysis->matC_ab = analysis->matM_ab * coef;
+    analysis->matC_bb = analysis->matM_bb * coef;
+
+    return true;
+}
+
+double FEDynamicMassDampInitializer::DampRateAtPeriod(double t)
+{
+    // ζ(ω) = ζ0・ω1/ω
+    if (t <= 0.0 || natural_angle_velocity <= 0.0)
+        return -1.0;
+    return damp_rate * natural_angle_velocity / (2.0 * PI / t);
+}
+
+bool FEDynamicRayleighDampInitializer::Initialize(DynamicAnalysis *analysis)
+{
+    if (!direct_coefficients)
+    {
+        if (mode1 < 1 || mode2 < 1 || mode1 == mode2)
+        {
+            std::cerr << "Rayleigh damping: invalid mode numbers." << std::endl;
+            return false;
+        }
+
+        // 対象モードの固有振動数を計算
+        int nev = std::max(mode1, mode2);
+        std::vector<double> eigen_values;
+        std::vector<std::vector<Displacement>> mode_vectors;
+        int nconv = analysis->model->SolveVibration(nev, eigen_values, mode_vectors);
+        if (nconv < nev)
+        {
+            std::cout << "Eigenvalue calculations did not converge." << std::endl;
+            return false;
+        }
+
+        natural_angle_velocity1 = eigen_values[mode1 - 1];
+        natural_angle_velocity2 = eigen_values[mode2 - 1];
+
+        // 2つのモードで指定減衰比を満たすα, βを算出
+        double w1 = natural_angle_velocity1;
+        double w2 = natural_angle_velocity2;
+        double denom = w2 * w2 - w1 * w1;
+        if (std::abs(denom) < 1e-12)
+        {
+            std::cerr << "Rayleigh damping: natural angle velocities are too close." << std::endl;
+            return false;
+        }
+        alpha = 2.0 * w1 * w2 * (damp_rate1 * w2 - damp_rate2 * w1) / denom;
+        beta = 2.0 * (damp_rate2 * w2 - damp_rate1 * w1) / denom;
+    }
+
+    // C = αM + βK
+    analysis->matC_aa = alpha * analysis->matM_aa + beta * analysis->matK_aa;
+    analysis->matC_ab = alpha * analysis->matM_ab + beta * analysis->matK_ab;
+    analysis->matC_bb = alpha * analysis->matM_bb + beta * analysis->matK_bb;
+
+    return true;
+}
+
+double FEDynamicRayleighDampInitializer::DampRateAtPeriod(double t)
+{
+    // ζ(ω) = α/(2ω) + βω/2
+    if (t <= 0.0)
+        return -1.0;
+    if (!direct_coefficients && natural_angle_velocity1 <= 0.0)
+        return -1.0; // モード指定時はInitialize前は算定不能
+    double w = 2.0 * PI / t;
+    return alpha / (2.0 * w) + beta * w / 2.0;
 }

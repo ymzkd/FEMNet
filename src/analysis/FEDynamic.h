@@ -71,9 +71,6 @@ class DynamicLoad
 public:
     virtual ~DynamicLoad() = default;
 
-    /// 解析開始時に一度だけ呼ばれる(空間分布のキャッシュ等に使う)
-    virtual void Prepare(DynamicAnalysis& analysis) {}
-
     /// ステップ step(時刻 t)の全体節点荷重ベクトル。範囲外stepは派生側でクランプする。
     virtual std::vector<NodeLoadData> load_vector(DynamicAnalysis& analysis, int step, double t) = 0;
 
@@ -92,14 +89,12 @@ class SeismicAccelLoad : public DynamicLoad
 {
 private:
     DynamicAccelLoad accel;
-    std::vector<double> mass_over_g; // 節点ごとの SumMass/g (Prepareで構築)
 
 public:
     SeismicAccelLoad(const DynamicAccelLoad& accel_load) : accel(accel_load) {}
 
     const DynamicAccelLoad& AccelLoad() const { return accel; }
 
-    void Prepare(DynamicAnalysis& analysis) override;
     std::vector<NodeLoadData> load_vector(DynamicAnalysis& analysis, int step, double t) override;
     double timestep() const override { return accel.timestep; }
     int steps() const override { return static_cast<int>(accel.Accels.size()); }

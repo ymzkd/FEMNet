@@ -108,15 +108,6 @@ DynamicAnalysis::DynamicAnalysis(std::shared_ptr<FEModel> model, std::shared_ptr
     }
 }
 
-// 地震荷重: Prepare で各節点の SumMass/g をキャッシュ
-void SeismicAccelLoad::Prepare(DynamicAnalysis& analysis)
-{
-    double inv_g = 1.0 / analysis.model->GraityAccel;
-    mass_over_g.assign(analysis.model->Nodes.size(), 0.0);
-    for (size_t i = 0; i < analysis.model->Nodes.size(); i++)
-        mass_over_g[i] = analysis.model->Nodes[i].MassData.SumMass() * inv_g;
-}
-
 // 地震荷重: 各節点の並進成分に -(m/g)·Direction·a_g を与える(回転成分は0)
 std::vector<NodeLoadData> SeismicAccelLoad::load_vector(DynamicAnalysis& analysis, int step, double /*t*/)
 {
@@ -129,10 +120,12 @@ std::vector<NodeLoadData> SeismicAccelLoad::load_vector(DynamicAnalysis& analysi
         : std::min(static_cast<size_t>(step), accel.Accels.size() - 1);
     Vector gacc = accel.Direction * accel.Accels[idx];
 
+    double inv_g = 1.0 / analysis.model->GraityAccel;
     out.reserve(analysis.model->Nodes.size());
     for (size_t i = 0; i < analysis.model->Nodes.size(); i++)
     {
-        double f = -mass_over_g[i];
+        // -(m/g)·Direction·a_g  (SumMassは重量なのでgで割って真の質量に変換)
+        double f = -analysis.model->Nodes[i].MassData.SumMass() * inv_g;
         out.push_back(NodeLoadData(static_cast<int>(i), f * gacc.x, f * gacc.y, f * gacc.z, 0.0, 0.0, 0.0));
     }
     return out;
@@ -289,9 +282,6 @@ bool DynamicAnalysis::Initialize()
         std::cerr << "Failed to initialize damping matrix." << std::endl;
         return false;
     }
-
-    // 荷重の前処理(空間分布のキャッシュ等)
-    load->Prepare(*this);
 
     // 初期加速度: 静止状態での M·a0 = f(0) を解く(縮約行列を使うため行列組立後に実行)
     Eigen::VectorXd f0_reduced, f0_fix;

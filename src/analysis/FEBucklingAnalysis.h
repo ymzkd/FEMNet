@@ -12,7 +12,7 @@ public:
 
     int ModeNum() override { return mode_num; }
     const std::vector<std::vector<Displacement>>& ModeVectors() override { return mode_vectors; }
-    std::vector<double> EigenValues() override { return eigs; }
+    std::vector<double> EigenValues() const override { return eigs; }
 
     int SolveBuckling();
     int mode_num = 1;

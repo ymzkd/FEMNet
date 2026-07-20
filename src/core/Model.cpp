@@ -15,6 +15,8 @@
 #include "Model.h"
 #include "SparseMatrixUtils.h"
 
+#include "analysis/FEDynamic.h"
+
 FEModel::FEModel()
     : RigidLinkData(std::make_shared<RigidLinks>())
 {
@@ -677,6 +679,41 @@ void FEModel::SolveLinearStatic(std::vector<std::shared_ptr<LoadBase>>& loads,
     }
 }
 
+double IResponseSpectrum::DampingCorrectionFactor(const double t)
+{
+    if (DampInitializer == nullptr) return 1.0;
+
+    double h = DampInitializer->DampRateAtPeriod(t);
+    // 算定不能(t<=0のZPAや初期化前など、h<0)は補正なし。
+    // これにより零周期応答(t=0)は減衰非依存となり、Fhが負に化けるのも防ぐ。
+    if (h < 0.0) return 1.0;
+    return 1.5 / (1.0 + 10.0 * h);
+}
+
+double IResponseSpectrum::acceleration_factored(double t)
+{
+    if (enable_damp_factor)
+        return DampingCorrectionFactor(t) * Acceleration(t);
+    else
+        return Acceleration(t);
+}
+
+double IResponseSpectrum::velocity_factored(double t)
+{
+    if (enable_damp_factor)
+        return DampingCorrectionFactor(t) * Velocity(t);
+    else
+        return Velocity(t);
+}
+
+double IResponseSpectrum::displacement_factored(double t)
+{
+    if (enable_damp_factor)
+        return DampingCorrectionFactor(t) * Displacement(t);
+    else
+        return Displacement(t);
+}
+
 void FEModel::SolveLinearStaticIter(std::vector<std::shared_ptr<LoadBase>> &loads, std::vector<Displacement> &disp, std::vector<NodeLoad> &react)
 {
     int max_iter = 100;
@@ -828,5 +865,4 @@ void FEModel::SolveLinearStaticIter(std::vector<std::shared_ptr<LoadBase>> &load
         }
     }
     return; // 最大反復数に達して終了
-
 }

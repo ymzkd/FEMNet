@@ -176,6 +176,7 @@ struct Plane {
 
 struct Displacement {
     Displacement() :Displacement(0, 0, 0, 0, 0, 0) {};
+    Displacement(double dx, double dy, double dz) :Displacement(dx, dy, dz, 0, 0, 0) {};
     Displacement(double dx, double dy, double dz, double rx, double ry, double rz);
     double displace[6];
     double Dx() const { return displace[0]; }

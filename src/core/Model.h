@@ -27,6 +27,17 @@ class DynamicAnalysis;
 
 class IResponseSpectrum {
 public:
+    // 減衰の考慮
+    std::shared_ptr<FEDynamicDampInitializer> DampInitializer = nullptr;
+
+    // 減衰の影響係数計算
+    bool enable_damp_factor = false;
+    virtual double DampingCorrectionFactor(const double t);
+
+    double acceleration_factored(double t);
+    double velocity_factored(double t);
+    double displacement_factored(double t);
+
     virtual double Acceleration(double t) = 0;
     virtual double Velocity(double t) = 0;
 	virtual double Displacement(double t) = 0;

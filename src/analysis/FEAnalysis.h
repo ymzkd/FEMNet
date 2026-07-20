@@ -46,7 +46,7 @@ public:
     FEModeOperator(std::shared_ptr<FEModel> model) : model(model) {};
 
     virtual const std::vector<std::vector<Displacement>>& ModeVectors() = 0;
-    virtual std::vector<double> EigenValues() = 0;
+    virtual std::vector<double> EigenValues() const = 0;
     virtual int ModeNum() = 0;
 
     Displacement GetBeamDeform(int eid, int mode_id, double p);

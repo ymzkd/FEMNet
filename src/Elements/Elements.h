@@ -14,6 +14,7 @@
 #include "TrussElement.h"      // トラス要素
 #include "BeamElement.h"       // 梁要素
 #include "ComplexBeamElement.h" // 複合梁要素
+#include "TensionTrussElement.h" // 張力トラス要素
 
 // 平面要素系（2次元要素）
 #include "PlaneElement.h"      // 平面要素基底クラス

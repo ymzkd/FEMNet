@@ -2,7 +2,8 @@
 
 void FELinearStaticOp::Compute()
 {
-    this->model->SolveLinearStatic(this->loads, this->displace, this->react_force);
+    this->model->SolveLinearStaticIter(this->loads, this->displace, this->react_force);
+    // this->model->SolveLinearStatic(this->loads, this->displace, this->react_force);
     m_computed = true;
 }
 
@@ -12,6 +13,13 @@ BeamStressData FELinearStaticOp::GetBeamStress(int eid, double p)
         throw std::runtime_error("FELinearStaticOP: need to call compute()");
 
     BarElementBase *be = dynamic_cast<BarElementBase *>(model->Elements[eid].get());
+
+    if (auto sde = std::dynamic_pointer_cast<IStateDependentElement>(model->Elements[eid]))
+    {
+        BeamStress b_strs = sde->tangent_stress(displace[be->Nodes[0]->id], displace[be->Nodes[1]->id]);
+        BeamStressData strs = b_strs.Interpolate(p);
+        return strs;
+    }
 
     // BeamElement* elm = GetBeamElement(eid);
     BeamStress b_strs = be->stress(displace[be->Nodes[0]->id], displace[be->Nodes[1]->id]);

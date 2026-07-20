@@ -191,6 +191,7 @@ set(FEMNET_SOURCES
     src/Elements/ElementBase.cpp
     src/Elements/BarElement.cpp
     src/Elements/TrussElement.cpp
+    src/Elements/TensionTrussElement.cpp
     src/Elements/BeamElement.cpp
     src/Elements/ComplexBeamElement.cpp
     src/Elements/PlaneElement.cpp

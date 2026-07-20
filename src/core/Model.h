@@ -43,7 +43,8 @@ private:
     std::vector<int> UnLumpedFixIndices();
 
 	// 剛性マトリクスの組み立て
-    Eigen::SparseMatrix<double> AssembleStiffnessMatrix();
+	// applyTensionOnly: TensionTrussElementの圧縮側無効化を反映するか
+    Eigen::SparseMatrix<double> AssembleStiffnessMatrix(bool applyTensionOnly = false);
 
 	// 質量マトリクスの組み立て
     Eigen::SparseMatrix<double> AssembleMassMatrix();
@@ -92,6 +93,7 @@ public:
     void add_element(BeamElement data);
     void add_element(ComplexBeamElement data);
     void add_element(TrussElement data);
+    void add_element(TensionTrussElement data);
     void add_element(TriPlaneElement data);
     void add_element(TriPlateElement data);
     void add_element(QuadPlaneElement data);
@@ -122,6 +124,11 @@ public:
         std::vector<std::shared_ptr<LoadBase>>& loads,
         std::vector<Displacement>& disp,
         std::vector<NodeLoad>& react);
+
+    void SolveLinearStaticIter(
+        std::vector<std::shared_ptr<LoadBase>> &loads,
+        std::vector<Displacement> &disp,
+        std::vector<NodeLoad> &react);
 
     int SolveVibration(const int nev, std::vector<double>& eigen_values,
         std::vector<std::vector<Displacement>>& mode_vectors);

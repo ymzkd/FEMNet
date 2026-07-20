@@ -318,6 +318,12 @@ void FEModel::add_element(TrussElement data)
     Elements.push_back(ptr);
 }
 
+void FEModel::add_element(TensionTrussElement data)
+{
+    std::shared_ptr<TensionTrussElement> ptr = std::make_shared<TensionTrussElement>(data);
+    Elements.push_back(ptr);
+}
+
 void FEModel::add_element(TriPlaneElement data)
 {
     std::shared_ptr<TriPlaneElement> ptr = std::make_shared<TriPlaneElement>(data);
@@ -467,7 +473,7 @@ double FEModel::SumNodeMass()
     return sum;
 }
 
-Eigen::SparseMatrix<double> FEModel::AssembleStiffnessMatrix()
+Eigen::SparseMatrix<double> FEModel::AssembleStiffnessMatrix(bool applyTensionOnly)
 {
     int mat_size = Nodes.size() * 6;
 
@@ -478,6 +484,13 @@ Eigen::SparseMatrix<double> FEModel::AssembleStiffnessMatrix()
 
     // 各要素からTripletを収集
     for (const std::shared_ptr<ElementBase>& eh : Elements) {
+        if (applyTensionOnly) {
+            // 状態依存要素は現在状態に応じた接線剛性を組立てる
+            if (auto sde = std::dynamic_pointer_cast<IStateDependentElement>(eh)) {
+                sde->GetTangentStiffnessTriplets(tripletList);
+                continue;
+            }
+        }
         eh->GetStiffnessTriplets(tripletList);
     }
 
@@ -664,3 +677,156 @@ void FEModel::SolveLinearStatic(std::vector<std::shared_ptr<LoadBase>>& loads,
     }
 }
 
+void FEModel::SolveLinearStaticIter(std::vector<std::shared_ptr<LoadBase>> &loads, std::vector<Displacement> &disp, std::vector<NodeLoad> &react)
+{
+    int max_iter = 100;
+
+    Eigen::VectorXd force_vec(Nodes.size() * 6);
+    Eigen::VectorXd residual_vec(Nodes.size() * 6);
+    Eigen::VectorXd disp_vec = Eigen::VectorXd::Zero(Nodes.size() * 6);
+    force_vec.setZero();
+    for (auto &load : loads)
+    {
+
+        std::vector<NodeLoadData> node_loads;
+        if (std::shared_ptr<InertialForce> inertial = std::dynamic_pointer_cast<InertialForce>(load))
+        {
+            for (auto &e : Elements)
+            {
+                std::vector<NodeLoadData> elem_loads =
+                    e->InertialForceToNodeLoadData(Eigen::Vector3d(inertial->accels.x, inertial->accels.y, inertial->accels.z));
+                node_loads.insert(node_loads.end(), elem_loads.begin(), elem_loads.end());
+            }
+        }
+        else
+        {
+            node_loads = load->NodeLoads();
+        }
+
+        for (auto &nl : node_loads)
+        {
+            if (nl.id < 0)
+                continue;
+            int pos = nl.id * 6;
+            force_vec[pos] += nl.Px();
+            force_vec[pos + 1] += nl.Py();
+            force_vec[pos + 2] += nl.Pz();
+            force_vec[pos + 3] += nl.Mx();
+            force_vec[pos + 4] += nl.My();
+            force_vec[pos + 5] += nl.Mz();
+        }
+    }
+    residual_vec = force_vec;
+
+    std::vector<int> slave_indices = RigidLinkData->SlaveDOFIndices();
+    std::vector<int> free_indices = FreeIndices(true);
+    std::vector<int> fixed_indices = FixIndices();
+
+    // 状態依存要素の状態を初期化 (規定剛性で機能する状態へ)
+    for (auto &e : Elements)
+        if (auto sde = std::dynamic_pointer_cast<IStateDependentElement>(e))
+            sde->IsActive = true;
+    
+    Eigen::SparseMatrix<double> full_stiffmat = AssembleStiffnessMatrix(true);
+
+
+    for (size_t iter = 0; iter < max_iter; iter++)
+    {
+        Eigen::SparseMatrix<double> m11, m12, m13, m22, m23, m33;
+        SparseMatrixUtils::splitMatrix3x3(full_stiffmat, slave_indices, free_indices,
+                                        m11, m12, m13, m22, m23, m33);
+
+        Eigen::SparseMatrix<double> maa, mab, mac;
+        Eigen::SparseMatrix<double> linkTransMat = RigidLinkData->TransformationMatrix().sparseView(1e-10);
+        maa = (linkTransMat.transpose() * m11.selfadjointView<Eigen::Upper>() * linkTransMat).triangularView<Eigen::Upper>();
+        mab = (linkTransMat.transpose() * m12);
+        mac = (linkTransMat.transpose() * m13);
+
+        Eigen::SparseMatrix<double> mii, mij, mjj;
+        if (maa.rows() > 0)
+        {
+            SparseMatrixUtils::mergeMatrixWithResize(maa, mab, m22, mii);
+            mij = SparseMatrixUtils::vstack(mac, m23);
+        }
+        else
+        {
+            mii = m22;
+            mij = m23;
+        }
+        mjj = m33;
+
+        Eigen::VectorXd f_slave(slave_indices.size());
+        Eigen::VectorXd f_free(free_indices.size());
+        Eigen::VectorXd f_fix(fixed_indices.size());
+        for (size_t i = 0; i < slave_indices.size(); i++)
+            f_slave(i) = residual_vec(slave_indices[i]);
+        for (size_t i = 0; i < free_indices.size(); i++)
+            f_free(i) = residual_vec(free_indices[i]);
+        for (size_t i = 0; i < fixed_indices.size(); i++)
+            f_fix(i) = residual_vec(fixed_indices[i]);
+
+        Eigen::VectorXd f_master = linkTransMat.transpose() * f_slave;
+        Eigen::VectorXd f_input(f_master.size() + f_free.size());
+        f_input << f_master, f_free;
+
+        // Solve
+        auto solver_static = createSolver();
+        solver_static->compute(mii);
+        Eigen::VectorXd d_result = solver_static->solve(f_input);
+        Eigen::VectorXd r_fix = mij.transpose() * d_result - f_fix;
+
+        // 反力データ整理
+        Eigen::VectorXd r = Eigen::VectorXd::Zero(Nodes.size() * 6);
+        for (size_t i = 0; i < fixed_indices.size(); i++)
+            r(fixed_indices[i]) = r_fix(i);
+        react.clear();
+        for (size_t i = 0; i < Nodes.size(); i++)
+        {
+            if (!Nodes[i].Fix.IsAnyFix())
+                continue;
+            int pos = i * 6;
+            react.push_back(NodeLoad(i, r[pos], r[pos + 1], r[pos + 2], r[pos + 3], r[pos + 4], r[pos + 5]));
+        }
+
+        // 変形データ整理
+        Eigen::VectorXd delta_disp_vec = Eigen::VectorXd::Zero(Nodes.size() * 6);
+
+        // Eigen::VectorXd d_master = d_result.head(linkTransMat.cols());
+        Eigen::VectorXd d_slave = linkTransMat * d_result.head(linkTransMat.cols());
+        Eigen::VectorXd d_free = d_result.tail(free_indices.size());
+
+        for (size_t i = 0; i < slave_indices.size(); i++)
+            delta_disp_vec(slave_indices[i]) = d_slave(i);
+
+        for (size_t i = 0; i < free_indices.size(); i++)
+            delta_disp_vec(free_indices[i]) = d_free(i);
+        
+        disp_vec += delta_disp_vec;
+        disp.clear();
+        for (size_t i = 0; i < Nodes.size(); i++)
+        {
+            int pos = i * 6;
+            disp.push_back(Displacement(disp_vec[pos], disp_vec[pos + 1], disp_vec[pos + 2], disp_vec[pos + 3], disp_vec[pos + 4], disp_vec[pos + 5]));
+        }
+
+        // 判定と更新
+        // 状態依存要素の update を呼び、状態変化があれば剛性を再構築する
+        bool any_change = false;
+        for (const auto& elem : Elements) {
+            if (auto sde = std::dynamic_pointer_cast<IStateDependentElement>(elem)) {
+                if (sde->update(disp))
+                    any_change = true;
+            }
+        }
+
+        if (!any_change){
+            break; // 収束判定: 状態変化なしなら終了
+        }
+        else{
+            full_stiffmat = AssembleStiffnessMatrix(true); // 状態変化あり: 剛性行列を再構築
+            residual_vec = force_vec - full_stiffmat.selfadjointView<Eigen::Upper>() * disp_vec; // 内力を再計算
+        }
+    }
+    return; // 最大反復数に達して終了
+
+}

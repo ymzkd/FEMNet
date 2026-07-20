@@ -2497,6 +2497,283 @@ void TestWallNodalForces() {
     std::cout << "==========================================" << std::endl;
 }
 
+// =============================================================
+// TensionTrussElement の動作確認サンプル
+//
+// 構成: XZ平面上の正方形フレーム + X字ブレース
+//
+//   N3 ----top---- N2          ↑Z
+//   |  \         /  |          |
+//   |   \   ↘  /   |  +X荷重
+//   col   \  /    col          → X
+//   |     /  \      |
+//   |   /  ↗  \    |
+//   N0 ----bot--- N1
+//   (Fix)         (Fix)
+//
+// - 柱2本+はり1本: BeamElement (フレーム剛性確保)
+// - 対角2本: TensionTrussElement
+//   diagA: N0->N2 (右上向き) … 横荷重で引張になるはず
+//   diagB: N1->N3 (左上向き) … 横荷重で圧縮になり無効化されるはず
+//
+// 比較として、同じ配置を通常 TrussElement にした場合の解も計算する
+// =============================================================
+void TestTensionTrussElement() {
+    std::cout << "\n==================================================" << std::endl;
+    std::cout << " TestTensionTrussElement Start" << std::endl;
+    std::cout << "==================================================" << std::endl;
+
+    // 共通諸元
+    const double L = 10.0;
+    const double H = 10.0;
+    const double Px = 50.0; // 各節点に与える +X 荷重
+    Material mat(2.0e5, 0.3);
+    Section sec_beam(100.0, 833.33, 833.33, 1406.25);
+    Section sec_diag(50.0, 0.0, 0.0, 0.0);
+
+    // ----------------------------
+    // ケース1: 通常TrussElementでX字ブレース
+    // ----------------------------
+    {
+        std::cout << "\n[Case 1] 通常 TrussElement 使用 (両ブレース有効)" << std::endl;
+
+        FEModel model;
+        Node n0(0, 0.0, 0.0, 0.0); n0.Fix.FixAll();
+        Node n1(1, L,   0.0, 0.0); n1.Fix.FixAll();
+        Node n2(2, L,   0.0, H);
+        Node n3(3, 0.0, 0.0, H);
+        model.Nodes.push_back(n0);
+        model.Nodes.push_back(n1);
+        model.Nodes.push_back(n2);
+        model.Nodes.push_back(n3);
+        model.Materials.push_back(mat);
+        model.Sections.push_back(sec_beam);
+        model.Sections.push_back(sec_diag);
+
+        // フレーム
+        auto col_l = std::make_shared<BeamElement>(0, &model.Nodes[0], &model.Nodes[3], &model.Sections[0], mat);
+        auto col_r = std::make_shared<BeamElement>(1, &model.Nodes[1], &model.Nodes[2], &model.Sections[0], mat);
+        auto top   = std::make_shared<BeamElement>(2, &model.Nodes[3], &model.Nodes[2], &model.Sections[0], mat);
+        model.Elements.push_back(col_l);
+        model.Elements.push_back(col_r);
+        model.Elements.push_back(top);
+
+        // 通常Truss x 2
+        auto da = std::make_shared<TrussElement>(3, &model.Nodes[0], &model.Nodes[2], &model.Sections[1], mat);
+        auto db = std::make_shared<TrussElement>(4, &model.Nodes[1], &model.Nodes[3], &model.Sections[1], mat);
+        model.Elements.push_back(da);
+        model.Elements.push_back(db);
+
+        std::vector<std::shared_ptr<LoadBase>> loads;
+        loads.push_back(std::make_shared<NodeLoad>(NodeLoad(2, Px, 0, 0)));
+        loads.push_back(std::make_shared<NodeLoad>(NodeLoad(3, Px, 0, 0)));
+
+        std::vector<Displacement> disp;
+        std::vector<NodeLoad> react;
+        model.SolveLinearStatic(loads, disp, react);
+
+        std::cout << "  N2 dx=" << disp[2].Dx() << ", dz=" << disp[2].Dz() << std::endl;
+        std::cout << "  N3 dx=" << disp[3].Dx() << ", dz=" << disp[3].Dz() << std::endl;
+        BeamStress sa = da->stress(disp[0], disp[2]);
+        BeamStress sb = db->stress(disp[1], disp[3]);
+        std::cout << "  diagA(N0->N2) Nx=" << sa.S0.Nx
+                  << "  (>0:tension, <0:compression)" << std::endl;
+        std::cout << "  diagB(N1->N3) Nx=" << sb.S0.Nx
+                  << "  (>0:tension, <0:compression)" << std::endl;
+    }
+
+    // ----------------------------
+    // ケース2: TensionTrussElement で X字ブレース
+    // ----------------------------
+    {
+        std::cout << "\n[Case 2] TensionTrussElement 使用 + SolveLinearStaticIter" << std::endl;
+
+        FEModel model;
+        Node n0(0, 0.0, 0.0, 0.0); n0.Fix.FixAll();
+        Node n1(1, L,   0.0, 0.0); n1.Fix.FixAll();
+        Node n2(2, L,   0.0, H);
+        Node n3(3, 0.0, 0.0, H);
+        model.Nodes.push_back(n0);
+        model.Nodes.push_back(n1);
+        model.Nodes.push_back(n2);
+        model.Nodes.push_back(n3);
+        model.Materials.push_back(mat);
+        model.Sections.push_back(sec_beam);
+        model.Sections.push_back(sec_diag);
+
+        auto col_l = std::make_shared<BeamElement>(0, &model.Nodes[0], &model.Nodes[3], &model.Sections[0], mat);
+        auto col_r = std::make_shared<BeamElement>(1, &model.Nodes[1], &model.Nodes[2], &model.Sections[0], mat);
+        auto top   = std::make_shared<BeamElement>(2, &model.Nodes[3], &model.Nodes[2], &model.Sections[0], mat);
+        model.Elements.push_back(col_l);
+        model.Elements.push_back(col_r);
+        model.Elements.push_back(top);
+
+        auto da = std::make_shared<TensionTrussElement>(3, &model.Nodes[0], &model.Nodes[2], &model.Sections[1], mat);
+        auto db = std::make_shared<TensionTrussElement>(4, &model.Nodes[1], &model.Nodes[3], &model.Sections[1], mat);
+        model.Elements.push_back(da);
+        model.Elements.push_back(db);
+
+        std::vector<std::shared_ptr<LoadBase>> loads;
+        loads.push_back(std::make_shared<NodeLoad>(NodeLoad(2, Px, 0, 0)));
+        loads.push_back(std::make_shared<NodeLoad>(NodeLoad(3, Px, 0, 0)));
+
+        std::vector<Displacement> disp;
+        std::vector<NodeLoad> react;
+        model.SolveLinearStaticIter(loads, disp, react);
+
+        std::cout << "  N2 dx=" << disp[2].Dx() << ", dz=" << disp[2].Dz() << std::endl;
+        std::cout << "  N3 dx=" << disp[3].Dx() << ", dz=" << disp[3].Dz() << std::endl;
+
+        std::cout << "\n  --- TensionTrussElement 状態 ---" << std::endl;
+        BeamStress sa = da->stress(disp[0], disp[2]);
+        BeamStress sb = db->stress(disp[1], disp[3]);
+        std::cout << "  diagA(N0->N2) IsActive=" << (da->IsActive ? "true" : "false")
+                  << "  stress.Nx=" << sa.S0.Nx << std::endl;
+        std::cout << "  diagB(N1->N3) IsActive=" << (db->IsActive ? "true" : "false")
+                  << "  stress.Nx=" << sb.S0.Nx << std::endl;
+
+        std::cout << "\n  --- 反力 (平衡チェック用) ---" << std::endl;
+        double sumPx = 0, sumPz = 0;
+        for (auto& r : react) {
+            std::cout << "  Node " << r.id
+                      << ": Px=" << r.Px() << ", Pz=" << r.Pz() << std::endl;
+            sumPx += r.Px();
+            sumPz += r.Pz();
+        }
+        std::cout << "  反力合計 sumPx=" << sumPx << " (外力合計+200の逆 -> -200 期待)" << std::endl;
+        std::cout << "  反力合計 sumPz=" << sumPz << " (期待 0)" << std::endl;
+
+        std::cout << "\n  注: 圧縮側 (IsActive=false) でも stress() は要素剛性ベースで" << std::endl;
+        std::cout << "      非ゼロ値を返すことに注意。剛性組立から除外しただけで、" << std::endl;
+        std::cout << "      要素ローカルの応力計算ロジックは未変更。" << std::endl;
+    }
+
+    // ----------------------------
+    // ケース3: Case 2 の比較対象
+    // diagA だけ通常 TrussElement で配置 (diagB は物理的にモデルから除外)
+    // → Case 2 で iter が「diagB を deactivate した結果」と一致するはず
+    // ----------------------------
+    {
+        std::cout << "\n[Case 3] 通常 TrussElement だが diagB を物理的に除外 (比較用)" << std::endl;
+        std::cout << "        Case 2 の収束結果と一致すれば iter が正しく動作している証拠" << std::endl;
+
+        FEModel model;
+        Node n0(0, 0.0, 0.0, 0.0); n0.Fix.FixAll();
+        Node n1(1, L,   0.0, 0.0); n1.Fix.FixAll();
+        Node n2(2, L,   0.0, H);
+        Node n3(3, 0.0, 0.0, H);
+        model.Nodes.push_back(n0);
+        model.Nodes.push_back(n1);
+        model.Nodes.push_back(n2);
+        model.Nodes.push_back(n3);
+        model.Materials.push_back(mat);
+        model.Sections.push_back(sec_beam);
+        model.Sections.push_back(sec_diag);
+
+        auto col_l = std::make_shared<BeamElement>(0, &model.Nodes[0], &model.Nodes[3], &model.Sections[0], mat);
+        auto col_r = std::make_shared<BeamElement>(1, &model.Nodes[1], &model.Nodes[2], &model.Sections[0], mat);
+        auto top   = std::make_shared<BeamElement>(2, &model.Nodes[3], &model.Nodes[2], &model.Sections[0], mat);
+        model.Elements.push_back(col_l);
+        model.Elements.push_back(col_r);
+        model.Elements.push_back(top);
+
+        // diagA のみ配置 (diagB は除外)
+        auto da = std::make_shared<TrussElement>(3, &model.Nodes[0], &model.Nodes[2], &model.Sections[1], mat);
+        model.Elements.push_back(da);
+
+        std::vector<std::shared_ptr<LoadBase>> loads;
+        loads.push_back(std::make_shared<NodeLoad>(NodeLoad(2, Px, 0, 0)));
+        loads.push_back(std::make_shared<NodeLoad>(NodeLoad(3, Px, 0, 0)));
+
+        std::vector<Displacement> disp;
+        std::vector<NodeLoad> react;
+        model.SolveLinearStatic(loads, disp, react);
+
+        std::cout << "  N2 dx=" << disp[2].Dx() << ", dz=" << disp[2].Dz() << std::endl;
+        std::cout << "  N3 dx=" << disp[3].Dx() << ", dz=" << disp[3].Dz() << std::endl;
+        BeamStress sa = da->stress(disp[0], disp[2]);
+        std::cout << "  diagA stress.Nx=" << sa.S0.Nx << std::endl;
+
+        std::cout << "\n  --- 反力 ---" << std::endl;
+        for (auto& r : react) {
+            std::cout << "  Node " << r.id
+                      << ": Px=" << r.Px() << ", Pz=" << r.Pz() << std::endl;
+        }
+    }
+
+    // ----------------------------
+    // ケース4: 新設計の経路別検証
+    // 同じ収束済みTensionTruss(IsActive=false)に対して
+    //   - 要素直接 stress()           → full (非抗圧性 反映なし)
+    //   - 要素直接 tangent_stress()   → reduced (反映あり)
+    //   - FELinearStaticOp::GetBeamStress() → reduced (内部で tangent_stress 経由)
+    // ----------------------------
+    {
+        std::cout << "\n[Case 4] 新設計の経路別検証" << std::endl;
+        std::cout << "        同じ要素状態に対して各経路の応力出力を確認" << std::endl;
+
+        FEModel model;
+        Node n0(0, 0.0, 0.0, 0.0); n0.Fix.FixAll();
+        Node n1(1, L,   0.0, 0.0); n1.Fix.FixAll();
+        Node n2(2, L,   0.0, H);
+        Node n3(3, 0.0, 0.0, H);
+        model.Nodes.push_back(n0);
+        model.Nodes.push_back(n1);
+        model.Nodes.push_back(n2);
+        model.Nodes.push_back(n3);
+        model.Materials.push_back(mat);
+        model.Sections.push_back(sec_beam);
+        model.Sections.push_back(sec_diag);
+
+        auto col_l = std::make_shared<BeamElement>(0, &model.Nodes[0], &model.Nodes[3], &model.Sections[0], mat);
+        auto col_r = std::make_shared<BeamElement>(1, &model.Nodes[1], &model.Nodes[2], &model.Sections[0], mat);
+        auto top   = std::make_shared<BeamElement>(2, &model.Nodes[3], &model.Nodes[2], &model.Sections[0], mat);
+        model.Elements.push_back(col_l);
+        model.Elements.push_back(col_r);
+        model.Elements.push_back(top);
+
+        auto da = std::make_shared<TensionTrussElement>(3, &model.Nodes[0], &model.Nodes[2], &model.Sections[1], mat);
+        auto db = std::make_shared<TensionTrussElement>(4, &model.Nodes[1], &model.Nodes[3], &model.Sections[1], mat);
+        model.Elements.push_back(da);
+        model.Elements.push_back(db);
+
+        std::vector<std::shared_ptr<LoadBase>> loads;
+        loads.push_back(std::make_shared<NodeLoad>(NodeLoad(2, Px, 0, 0)));
+        loads.push_back(std::make_shared<NodeLoad>(NodeLoad(3, Px, 0, 0)));
+
+        // FELinearStaticOp は内部で SolveLinearStatic を呼ぶ (full K)
+        // ただし IsActive を手動で false にしておけば、GetBeamStress 経由では tangent_stress が返るはず
+        db->IsActive = false;
+
+        auto model_ptr = std::make_shared<FEModel>(model);
+        FELinearStaticOp op(model_ptr, loads);
+        op.Compute();
+
+        // Compute 後に IsActive はリセットされない (SolveLinearStaticIter ではないので)
+        // model_ptr 側の要素を取得して直接 stress / tangent_stress を比較
+        auto da_in = std::dynamic_pointer_cast<TensionTrussElement>(model_ptr->Elements[3]);
+        auto db_in = std::dynamic_pointer_cast<TensionTrussElement>(model_ptr->Elements[4]);
+        // IsActive 状態が make_shared<FEModel>(model) でコピーされるはずだが念のため再設定
+        db_in->IsActive = false;
+
+        const auto& disp = op.GetDisplacements();
+
+        std::cout << "  diagA (IsActive=" << (da_in->IsActive ? "true" : "false") << "):" << std::endl;
+        std::cout << "    direct stress().Nx        = " << da_in->stress(disp[da_in->Nodes[0]->id], disp[da_in->Nodes[1]->id]).S0.Nx << "  (full)" << std::endl;
+        std::cout << "    direct tangent_stress().Nx= " << da_in->tangent_stress(disp[da_in->Nodes[0]->id], disp[da_in->Nodes[1]->id]).S0.Nx << "  (factor=1)" << std::endl;
+        std::cout << "    op.GetBeamStress(3, 0).Nx = " << op.GetBeamStress(3, 0).Nx << "  (経由)" << std::endl;
+
+        std::cout << "  diagB (IsActive=" << (db_in->IsActive ? "true" : "false") << "):" << std::endl;
+        std::cout << "    direct stress().Nx        = " << db_in->stress(disp[db_in->Nodes[0]->id], disp[db_in->Nodes[1]->id]).S0.Nx << "  (full, factor 無視)" << std::endl;
+        std::cout << "    direct tangent_stress().Nx= " << db_in->tangent_stress(disp[db_in->Nodes[0]->id], disp[db_in->Nodes[1]->id]).S0.Nx << "  (factor=ReductionFactor=" << db_in->ReductionFactor << ")" << std::endl;
+        std::cout << "    op.GetBeamStress(4, 0).Nx = " << op.GetBeamStress(4, 0).Nx << "  (経由 → tangent)" << std::endl;
+    }
+
+    std::cout << "\n==================================================" << std::endl;
+    std::cout << " TestTensionTrussElement End" << std::endl;
+    std::cout << "==================================================" << std::endl;
+}
+
 int main(void) {
     // 壁→部材 節点力(手法1)の検証: TestWallNodalForces();
     //std::cout << "TestMethod1 Start" << std::endl;
@@ -2568,4 +2845,6 @@ int main(void) {
     // 260713 Debug - 減衰初期化子(質量比例・レイリー)のテスト
     //TestDampInitializers();
 
+    // TensionTrussElement の動作確認
+    TestTensionTrussElement();
 }

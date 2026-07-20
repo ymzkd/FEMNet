@@ -9,12 +9,16 @@ private:
     // static constexpr ElementType type = ElementType::Truss;
     static constexpr int total_dof = 6;
     static constexpr int node_num = 2;
-    Eigen::Matrix<double, node_num, total_dof> trans_matrix();
-    Eigen::MatrixXd stiffness_matrix_local();
-
+    
     // トラス要素の幾何剛性行列(6x6)
     Eigen::MatrixXd geometric_local_stiffness_matrix(const std::vector<Displacement> &disp) override;
     // double element_length();
+
+protected:
+    // 派生クラスから直接呼び出せるよう protected で公開
+    Eigen::MatrixXd stiffness_matrix_local();
+    Eigen::Matrix<double, node_num, total_dof> trans_matrix();
+
 public:
     // Node* Nodes[2];
     // Section* Sec;

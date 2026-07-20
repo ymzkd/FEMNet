@@ -1,7 +1,9 @@
 #ifndef _RESPONSE_SPECTRUM_METHOD_
 #define _RESPONSE_SPECTRUM_METHOD_
 
+#ifndef SWIG
 #include <cmath>
+#endif
 
 #include "FEAnalysis.h"
 #include "FELinearStaticOp.h"

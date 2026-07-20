@@ -68,6 +68,13 @@
 %ignore RigidLink::TransformationMatrix;
 %ignore RigidLinks::TransformationMatrix;
 
+// IResponseSpectrum: expose damping members as methods instead of properties.
+// C# subclasses (e.g. DesignResponseSpectrumFunc) are serialized with MessagePack,
+// which walks all public properties including inherited ones; a generated
+// DampInitializer property (SWIG proxy type) would break serialization.
+%ignore IResponseSpectrum::DampInitializer;
+%ignore IResponseSpectrum::enable_damp_factor;
+
 // Ignore pure virtual methods that use Eigen types
 %ignore ElementBase::geometric_local_stiffness_matrix;
 %ignore ElementBase::InertialForceToNodeLoadData;
@@ -144,6 +151,22 @@ namespace std {
 // ===================================================================
 // Class extensions (AFTER all classes are fully defined)
 // ===================================================================
+
+// IResponseSpectrum extension - method access to damping members
+// (kept out of property wrapping, see %ignore above)
+%extend IResponseSpectrum {
+    void SetDampInitializer(std::shared_ptr<FEDynamicDampInitializer> initializer) {
+        $self->DampInitializer = initializer;
+    }
+
+    void SetDampFactorEnabled(bool enable) {
+        $self->enable_damp_factor = enable;
+    }
+
+    bool IsDampFactorEnabled() {
+        return $self->enable_damp_factor;
+    }
+};
 
 // Material extension (language independent)
 %extend Material {

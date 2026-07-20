@@ -12,6 +12,7 @@
 
 #include "FEAnalysis.h"
 #include "LoadComponent.h"
+#include "FEVibrateResult.h"
 
 // 前方宣言
 class DynamicAnalysis;
@@ -251,11 +252,9 @@ public:
 /// </summary>
 class FEDynamicDampInitializer
 {
-private:
-    DynamicAnalysis *analysis;
-
 public:
     virtual bool Initialize(DynamicAnalysis *analysis) = 0;
+    virtual bool Initialize(const FEVibrateResult& vibrate_result) = 0;
 
     /// <summary>
     /// 固有周期 t における減衰比を返す(算定不能な場合は -1)
@@ -277,6 +276,8 @@ public:
         : damp_rate(damp_rate) {}
 
     bool Initialize(DynamicAnalysis *analysis) override;
+    bool Initialize(const FEVibrateResult& vibrate_result) override;
+
     double DampRateAtPeriod(double t) override;
 };
 
@@ -294,6 +295,8 @@ public:
         : damp_rate(damp_rate) {}
 
     bool Initialize(DynamicAnalysis *analysis) override;
+    bool Initialize(const FEVibrateResult& vibrate_result) override;
+
     double DampRateAtPeriod(double t) override;
 };
 
@@ -309,17 +312,18 @@ public:
     double damp_rate1 = 0.05, damp_rate2 = 0.05; // 対象モードの減衰比
     int mode1 = 1, mode2 = 2;                    // 対象モード次数(1始まり)
     double natural_angle_velocity1 = 0.0, natural_angle_velocity2 = 0.0; // 対象モードの自然角速度
-    bool direct_coefficients = false;            // α, βを直接指定する場合true
 
     // α, βを直接指定
     FEDynamicRayleighDampInitializer(double alpha, double beta)
-        : alpha(alpha), beta(beta), direct_coefficients(true) {}
+        : alpha(alpha), beta(beta) {}
 
     // 2つのモードの減衰比を指定(Initialize時の固有値解析でα, βを算出)
     FEDynamicRayleighDampInitializer(double damp_rate1, double damp_rate2, int mode1, int mode2)
         : damp_rate1(damp_rate1), damp_rate2(damp_rate2), mode1(mode1), mode2(mode2) {}
 
     bool Initialize(DynamicAnalysis *analysis) override;
+    bool Initialize(const FEVibrateResult& vibrate_result) override;
+
     double DampRateAtPeriod(double t) override;
 };
 #endif

@@ -7,7 +7,7 @@
 
 #include "FEAnalysis.h"
 #include "FELinearStaticOp.h"
-#include "FEVibrateResult.h"
+#include "FEVibrationAnalysis.h"
 
 
 // 応答スペクトルのモード合成方式。
@@ -89,7 +89,7 @@ public:
     double damping_rate = 0.05;               // 減衰比(CQC法の場合のみ計算に影響)
     Vector Direction = Vector(1.0, 1.0, 1.0); // 応答スペクトルの方向
 
-    FEVibrateResult VibrateResult;
+    FEVibrationAnalysis VibrateResult;
     IResponseSpectrum *SpectrumFunction;
     ResponseSpectrumMethodType MethodType = ResponseSpectrumMethodType::ABS;
     ResponseSignType sign_type = ResponseSignType::SIGN_NONE; // 応答成分の符号調整(既定=なし)。Compute()前に設定する。
@@ -101,7 +101,7 @@ public:
     RigidResponseComposition RigidResponse; // 剛応答と欠落質量補正
 
     ResponseSpectrumMethod() {}
-    ResponseSpectrumMethod(std::shared_ptr<FEModel> model, FEVibrateResult vibrate_result, Vector direction,
+    ResponseSpectrumMethod(std::shared_ptr<FEModel> model, FEVibrationAnalysis vibrate_result, Vector direction,
                            IResponseSpectrum *spectrum_function, ResponseSpectrumMethodType type);
 
     bool Computed() { return m_computed; }

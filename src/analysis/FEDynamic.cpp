@@ -1,4 +1,5 @@
 #include "FEDynamic.h"
+#include "ReducedSystem.h"
 
 #include <algorithm>
 #include <cmath>
@@ -219,61 +220,27 @@ bool DynamicAnalysis::Initialize()
     // 値を初期化
     current_step = 0;
 
-    // インデックスの取得（RigidLinkを考慮）
-    slave_indices = model->RigidLinkData->SlaveDOFIndices();
-    free_indices = model->FreeIndices(true);  // rigid_link=true
-    fixed_indices = model->FixIndices();
-
-    // 変換行列の取得
-    linkTransMat = model->RigidLinkData->TransformationMatrix().sparseView(1e-10);
-    master_dof_num = linkTransMat.cols();
+    // 縮約系の構築（RigidLinkを考慮）
+    ReducedSystem rs(*model);
+    slave_indices = rs.slave_indices;
+    free_indices = rs.free_indices;
+    fixed_indices = rs.fixed_indices;
+    linkTransMat = rs.linkTransMat;
+    master_dof_num = rs.master_dof_num;
 
     // 時間グリッドを荷重から取得(Analysisが所有)
     dt = load->timestep();
     num_steps = load->steps();
 
     // 縮小空間のサイズ
-    int reduced_size = master_dof_num + free_indices.size();
+    int reduced_size = rs.ReducedSize();
     current_disp = Eigen::VectorXd::Zero(reduced_size);
     current_vel = Eigen::VectorXd::Zero(reduced_size);
     current_accel = Eigen::VectorXd::Zero(reduced_size);
 
-    // マトリクスの組み立て
-    if (master_dof_num > 0) {
-        // RigidLinkがある場合: 3x3ブロックに分割して縮小
-        Eigen::SparseMatrix<double> k11, k12, k13, k22, k23, k33;
-        SparseMatrixUtils::splitMatrix3x3(model->AssembleStiffnessMatrix(),
-            slave_indices, free_indices, k11, k12, k13, k22, k23, k33);
-
-        Eigen::SparseMatrix<double> m11, m12, m13, m22, m23, m33;
-        SparseMatrixUtils::splitMatrix3x3(model->AssembleMassMatrix(),
-            slave_indices, free_indices, m11, m12, m13, m22, m23, m33);
-
-        // 剛性行列の縮小
-        Eigen::SparseMatrix<double> kaa, kab;
-        kaa = (linkTransMat.transpose() * k11.selfadjointView<Eigen::Upper>() * linkTransMat)
-              .triangularView<Eigen::Upper>();
-        kab = (linkTransMat.transpose() * k12);
-        SparseMatrixUtils::mergeMatrixWithResize(kaa, kab, k22, matK_aa);
-        matK_ab = SparseMatrixUtils::vstack(linkTransMat.transpose() * k13, k23);
-        matK_bb = k33;
-
-        // 質量行列の縮小
-        Eigen::SparseMatrix<double> maa, mab;
-        maa = (linkTransMat.transpose() * m11.selfadjointView<Eigen::Upper>() * linkTransMat)
-              .triangularView<Eigen::Upper>();
-        mab = (linkTransMat.transpose() * m12);
-        SparseMatrixUtils::mergeMatrixWithResize(maa, mab, m22, matM_aa);
-        matM_ab = SparseMatrixUtils::vstack(linkTransMat.transpose() * m13, m23);
-        matM_bb = m33;
-    }
-    else {
-        // RigidLinkがない場合: 従来通り2x2分割
-        SparseMatrixUtils::splitMatrixWithResize(model->AssembleStiffnessMatrix(),
-            fixed_indices, matK_aa, matK_ab, matK_bb);
-        SparseMatrixUtils::splitMatrixWithResize(model->AssembleMassMatrix(),
-            fixed_indices, matM_aa, matM_ab, matM_bb);
-    }
+    // マトリクスの組み立てと縮約
+    rs.Reduce(model->AssembleStiffnessMatrix(), matK_aa, &matK_ab, &matK_bb);
+    rs.Reduce(model->AssembleMassMatrix(), matM_aa, &matM_ab, &matM_bb);
 
     // 減衰マトリクスの組み立て
     bool damp_init = damp_initializer->Initialize(this);
@@ -615,16 +582,15 @@ Displacement DynamicAnalysis::GetBeamDisplace(int eid, double p)
 bool FEDynamicStiffDampInitializer::Initialize(DynamicAnalysis *analysis)
 {
     // 解析モデルの固有振動数を計算
-    std::vector<double> eigen_values;
-    std::vector<std::vector<Displacement>> mode_vectors;
-    int nconv = analysis->model->SolveVibration(1, eigen_values, mode_vectors);
+    FEVibrationAnalysis vib(analysis->model);
+    int nconv = vib.Compute(1);
     if (nconv < 0)
     {
         std::cout << "Eigenvalue calculations did not converge." << std::endl;
         return false;
     }
 
-    natural_angle_velocity = eigen_values[0];
+    natural_angle_velocity = vib.EigenValues()[0];
 
     // 減衰マトリクスの組み立て
     analysis->matC_aa = analysis->matK_aa * (2.0 * damp_rate / natural_angle_velocity);
@@ -634,7 +600,7 @@ bool FEDynamicStiffDampInitializer::Initialize(DynamicAnalysis *analysis)
     return true;
 }
 
-bool FEDynamicStiffDampInitializer::Initialize(const FEVibrateResult& vibrate_result)
+bool FEDynamicStiffDampInitializer::Initialize(const FEVibrationAnalysis& vibrate_result)
 {
     const std::vector<double>& eigs = vibrate_result.EigenValues();
     if (eigs.empty())
@@ -658,9 +624,8 @@ double FEDynamicStiffDampInitializer::DampRateAtPeriod(double t)
 bool FEDynamicMassDampInitializer::Initialize(DynamicAnalysis *analysis)
 {
     // 解析モデルの固有振動数を計算
-    std::vector<double> eigen_values;
-    std::vector<std::vector<Displacement>> mode_vectors;
-    int nconv = analysis->model->SolveVibration(1, eigen_values, mode_vectors);
+    FEVibrationAnalysis vib(analysis->model);
+    int nconv = vib.Compute(1);
     if (nconv < 1)
     {
         std::cout << "Eigenvalue calculations did not converge." << std::endl;
@@ -668,7 +633,7 @@ bool FEDynamicMassDampInitializer::Initialize(DynamicAnalysis *analysis)
     }
 
     // C = 2ζω1・M (1次モードで減衰比ζとなる質量比例減衰)
-    natural_angle_velocity = eigen_values[0];
+    natural_angle_velocity = vib.EigenValues()[0];
 
     // 減衰マトリクスの組み立て
     double coef = 2.0 * damp_rate * natural_angle_velocity;
@@ -679,7 +644,7 @@ bool FEDynamicMassDampInitializer::Initialize(DynamicAnalysis *analysis)
     return true;
 }
 
-bool FEDynamicMassDampInitializer::Initialize(const FEVibrateResult& vibrate_result)
+bool FEDynamicMassDampInitializer::Initialize(const FEVibrationAnalysis& vibrate_result)
 {
     const std::vector<double>& eigs = vibrate_result.EigenValues();
     if (eigs.empty())
@@ -710,15 +675,15 @@ bool FEDynamicRayleighDampInitializer::Initialize(DynamicAnalysis *analysis)
 
     // 対象モードの固有振動数を計算
     int nev = std::max(mode1, mode2);
-    std::vector<double> eigen_values;
-    std::vector<std::vector<Displacement>> mode_vectors;
-    int nconv = analysis->model->SolveVibration(nev, eigen_values, mode_vectors);
+    FEVibrationAnalysis vib(analysis->model);
+    int nconv = vib.Compute(nev);
     if (nconv < nev)
     {
         std::cout << "Eigenvalue calculations did not converge." << std::endl;
         return false;
     }
 
+    std::vector<double> eigen_values = vib.EigenValues();
     natural_angle_velocity1 = eigen_values[mode1 - 1];
     natural_angle_velocity2 = eigen_values[mode2 - 1];
 
@@ -742,7 +707,7 @@ bool FEDynamicRayleighDampInitializer::Initialize(DynamicAnalysis *analysis)
     return true;
 }
 
-bool FEDynamicRayleighDampInitializer::Initialize(const FEVibrateResult& vibrate_result)
+bool FEDynamicRayleighDampInitializer::Initialize(const FEVibrationAnalysis& vibrate_result)
 {
     if (mode1 < 1 || mode2 < 1 || mode1 == mode2)
     {

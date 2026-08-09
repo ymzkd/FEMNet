@@ -7,7 +7,6 @@
 %shared_ptr(DASampler_MaxDisplacement);
 %shared_ptr(FEDeformOperator);
 %shared_ptr(FEModeOperator);
-%shared_ptr(FEStaticResult);
 %shared_ptr(FELinearStaticOp);
 %shared_ptr(LinearStaticCombinationOperator);
 %shared_ptr(DynamicAnalysis);
@@ -21,7 +20,7 @@
 %shared_ptr(SeismicAccelLoad);
 %shared_ptr(NodalDynamicLoad);
 %shared_ptr(FEBucklingAnalysis);
-%shared_ptr(FEVibrateResult);
+%shared_ptr(FEVibrationAnalysis);
 %shared_ptr(ResponseSpectrumMethod);
 
 // Director feature for polymorphic classes
@@ -33,7 +32,7 @@
     #include "FELinearStaticOp.h"
     #include "FEDynamic.h"
     #include "FEBucklingAnalysis.h"
-    #include "FEVibrateResult.h"
+    #include "FEVibrationAnalysis.h"
     #include "ResponseSpectrumMethod.h"
 %}
 
@@ -47,5 +46,5 @@ namespace std {
 %include "FELinearStaticOp.h"
 %include "FEDynamic.h"
 %include "FEBucklingAnalysis.h"
-%include "FEVibrateResult.h"
+%include "FEVibrationAnalysis.h"
 %include "ResponseSpectrumMethod.h"

@@ -12,7 +12,7 @@
 
 // 荷重(LoadBase 派生群)のテキスト形式ファイル入出力。
 //
-// 荷重は FEModel に属さず、解析(FELinearStaticOp/SolveLinearStatic)へ
+// 荷重は FEModel に属さず、解析(FELinearStaticOp)へ
 // std::vector<std::shared_ptr<LoadBase>> として渡される。荷重は節点・要素を
 // ポインタ参照するため、読み込み時はモデルを与えてポインタを復元する。
 //

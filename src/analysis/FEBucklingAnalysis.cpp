@@ -5,15 +5,14 @@
 
 #include "FEBucklingAnalysis.h"
 #include "PardisoTriOp.h"
+#include "ReducedSystem.h"
 
 int FEBucklingAnalysis::SolveBuckling()
 {
     int computed_num = mode_num;
 
-    // インデックスの取得（RigidLinkを考慮）
-    std::vector<int> slave_indices = model->RigidLinkData->SlaveDOFIndices();
-    std::vector<int> free_indices = model->FreeIndices(true);  // rigid_link=true
-    std::vector<int> fixed_indices = model->FixIndices();
+    // 縮約系の構築（RigidLinkを考慮）
+    ReducedSystem rs(*model);
 
     // 剛性行列の組み立て
     Eigen::SparseMatrix<double> k_full = model->AssembleStiffnessMatrix();
@@ -24,43 +23,9 @@ int FEBucklingAnalysis::SolveBuckling()
     Eigen::SparseMatrix<double> kg_full =
         model->AssembleGeometricStiffnessMatrix(deform_case->GetDisplacements());
 
-    // 変換行列の取得
-    Eigen::SparseMatrix<double> linkTransMat =
-        model->RigidLinkData->TransformationMatrix().sparseView(1e-10);
-    int master_dof_num = linkTransMat.cols();
-
     Eigen::SparseMatrix<double> ka, kg;
-
-    if (master_dof_num > 0) {
-
-        // RigidLinkがある場合: 3x3ブロックに分割して縮小
-        Eigen::SparseMatrix<double> k11, k12, k13, k22, k23, k33;
-        SparseMatrixUtils::splitMatrix3x3(k_full, slave_indices, free_indices,
-            k11, k12, k13, k22, k23, k33);
-
-        Eigen::SparseMatrix<double> g11, g12, g13, g22, g23, g33;
-        SparseMatrixUtils::splitMatrix3x3(kg_full, slave_indices, free_indices,
-            g11, g12, g13, g22, g23, g33);
-
-        // 剛性行列の縮小
-        Eigen::SparseMatrix<double> kaa, kab;
-        kaa = (linkTransMat.transpose() * k11.selfadjointView<Eigen::Upper>() * linkTransMat)
-              .triangularView<Eigen::Upper>();
-        kab = (linkTransMat.transpose() * k12);
-        SparseMatrixUtils::mergeMatrixWithResize(kaa, kab, k22, ka);
-
-        // 幾何剛性行列の縮小
-        Eigen::SparseMatrix<double> gaa, gab;
-        gaa = (linkTransMat.transpose() * g11.selfadjointView<Eigen::Upper>() * linkTransMat)
-              .triangularView<Eigen::Upper>();
-        gab = (linkTransMat.transpose() * g12);
-        SparseMatrixUtils::mergeMatrixWithResize(gaa, gab, g22, kg);
-    }
-    else {
-        // RigidLinkがない場合: 従来通り2x2分割
-        SparseMatrixUtils::splitMatrixWithResize(k_full, fixed_indices, ka);
-        SparseMatrixUtils::splitMatrixWithResize(kg_full, fixed_indices, kg);
-    }
+    rs.Reduce(k_full, ka);
+    rs.Reduce(kg_full, kg);
 
     // 剛性が全く付かない自由度（トラス節点の回転等）で K が特異になるのを防ぐ。
     // PSD の組立行列では対角ゼロ⇔行・列全体ゼロ（完全非連成）なので、幾何剛性も
@@ -139,27 +104,10 @@ int FEBucklingAnalysis::SolveBuckling()
         return -1;
     }
 
+    // 全体DOFへの固有ベクトルを構築(master DOFはslave DOFへ展開)
     Eigen::MatrixXd eigs_vector = Eigen::MatrixXd::Zero(model->DOFNum(), computed_num);
-
-    if (master_dof_num > 0) {
-        // RigidLinkがある場合: master DOFをslave DOFに展開
-        for (size_t i = 0; i < nconv; i++) {
-            Eigen::VectorXd part_vec = part_eigen_vectors.col(i);
-            Eigen::VectorXd d_master = part_vec.head(master_dof_num);
-            Eigen::VectorXd d_free = part_vec.tail(free_indices.size());
-            Eigen::VectorXd d_slave = linkTransMat * d_master;
-
-            for (size_t j = 0; j < slave_indices.size(); j++)
-                eigs_vector(slave_indices[j], i) = d_slave(j);
-            for (size_t j = 0; j < free_indices.size(); j++)
-                eigs_vector(free_indices[j], i) = d_free(j);
-        }
-    }
-    else {
-        // RigidLinkがない場合: 従来通り
-        for (size_t i = 0; i < free_indices.size(); i++)
-            eigs_vector.row(free_indices[i]) = part_eigen_vectors.row(i);
-    }
+    for (int i = 0; i < nconv; i++)
+        eigs_vector.col(i) = rs.ExpandVector(part_eigen_vectors.col(i), model->DOFNum());
 
     for (size_t i = 0; i < nconv; i++)
     {

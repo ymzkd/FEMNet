@@ -124,12 +124,11 @@ print("\n6. Running modal analysis...")
 # Number of modes to extract
 n_modes = 3
 
-# Create output containers
-eigen_values = VectorDouble()
-mode_vectors = VectorMode()
-
-# Solve eigenvalue problem
-result = model.SolveVibration(n_modes, eigen_values, mode_vectors)
+# Solve eigenvalue problem (operator owns the computation)
+vib = FEVibrationAnalysis(model)
+result = vib.Compute(n_modes)
+eigen_values = vib.EigenValues()
+mode_vectors = vib.ModeVectors()
 
 if result > 0:
     print(f"   Modal analysis completed! {result} modes extracted.")

@@ -14,7 +14,7 @@
 #include "Model.h"
 #include "FELinearStaticOp.h"
 #include "FEBucklingAnalysis.h"
-#include "FEVibrateResult.h"
+#include "FEVibrationAnalysis.h"
 #include "FEAnalysis.h"
 #include "FEDynamic.h"
 #include "LoadComponent.h"
@@ -83,9 +83,9 @@ void TestMethod2() {
         loads.push_back(std::make_shared<NodeLoad>(nl1));
         loads.push_back(std::make_shared<NodeLoad>(nl2));
 
-        std::vector<Displacement> disp;
-        std::vector<NodeLoad> react;
-        model.SolveLinearStatic(loads, disp, react);
+        FELinearStaticOp op(std::make_shared<FEModel>(model), loads);
+        op.Compute();
+        std::vector<Displacement> disp = op.GetDisplacements();
 
         std::cout << h << "\t" << disp[2].Dx() << "\t" << disp[2].Dy() << "\t" << disp[2].Dz() << std::endl;
     }
@@ -227,9 +227,10 @@ FEModel CantiColumnModel(double l, int n) {
 
 // 固有値解析の検証用: 固有値・周期・質量正規化(φ^T M φ)を出力
 void PrintVibrationCheck(FEModel& model, int nev, const char* title) {
-    std::vector<double> eigs;
-    std::vector<std::vector<Displacement>> modes;
-    int computed = model.SolveVibration(nev, eigs, modes);
+    FEVibrationAnalysis vib(std::make_shared<FEModel>(model));
+    int computed = vib.Compute(nev);
+    std::vector<double> eigs = vib.EigenValues();
+    const std::vector<std::vector<Displacement>>& modes = vib.ModeVectors();
     std::cout << "\n--- VibrationCheck: " << title
               << " (requested=" << nev << ", computed=" << computed << ") ---" << std::endl;
     for (size_t i = 0; i < eigs.size(); i++) {
@@ -379,10 +380,9 @@ void CheckCantiBeamVibration2() {
 
     // model.Solve(loads, disp, react);
     // std::cout << "Displacement: " << disp[2] << std::endl;
-    std::vector<double> eigen_values;
-    std::vector<std::vector<Displacement>> mode_vectors;
-    model.SolveVibration(6, eigen_values, mode_vectors);
-    //model.SolveVibrationTest2();
+    FEVibrationAnalysis vib(std::make_shared<FEModel>(model));
+    vib.Compute(6);
+    std::vector<double> eigen_values = vib.EigenValues();
     double pi = 3.141592653589793238462643;
     std::cout << "Natural Periods" << std::endl;
     for (double var : eigen_values)
@@ -530,9 +530,6 @@ void CheckQuadPlateBuckling() {
     std::vector<std::shared_ptr<LoadBase>> loads;
     loads.push_back(std::make_shared<NodeLoad>(nl1));
     loads.push_back(std::make_shared<NodeLoad>(nl2));
-    std::vector<Displacement> disp;
-    std::vector<NodeLoad> react;
-    model.SolveLinearStatic(loads, disp, react);
     FELinearStaticOp result = FELinearStaticOp(std::make_shared<FEModel>(model), loads);
     result.Compute();
 
@@ -882,9 +879,9 @@ void TestDynamicAnalysis() {
     FEModel model = CantiBeamModel(200, divnum);
 
     std::cout << "mode analysis" << std::endl;
-    std::vector<double> eigen_values;
-    std::vector<std::vector<Displacement>> mode_vectors;
-    int computed_modenum = model.SolveVibration(6, eigen_values, mode_vectors);
+    FEVibrationAnalysis vib(std::make_shared<FEModel>(model));
+    int computed_modenum = vib.Compute(6);
+    std::vector<double> eigen_values = vib.EigenValues();
     
     // eigen_valuesを出力
     std::cout << "Modenum: " << computed_modenum << std::endl;
@@ -1199,13 +1196,13 @@ void TestDampInitializers() {
     model_ptr->ComputeElementNodeMass();
 
     // 固有値解析(断面が対称でモードが縮退するため、1次と異なる振動数のモードを探す)
-    std::vector<double> eigen_values;
-    std::vector<std::vector<Displacement>> mode_vectors;
-    int nconv = model_ptr->SolveVibration(4, eigen_values, mode_vectors);
+    FEVibrationAnalysis vib(model_ptr);
+    int nconv = vib.Compute(4);
     if (nconv < 2) {
-        std::cout << "SolveVibration failed." << std::endl;
+        std::cout << "Vibration analysis failed." << std::endl;
         return;
     }
+    std::vector<double> eigen_values = vib.EigenValues();
     double w1 = eigen_values[0];
     double T1 = 2 * PI / w1;
     int mode_j = 2; // 1-based
@@ -1720,9 +1717,10 @@ void TestRigidFloorWithCenterMaster_Shuffled() {
     std::cout << "Solving with CENTER master nodes (SHUFFLED)..." << std::endl;
     std::cout << "========================================\n" << std::endl;
 
-    std::vector<Displacement> disp_center;
-    std::vector<NodeLoad> react_center;
-    model.SolveLinearStatic(loads, disp_center, react_center);
+    FELinearStaticOp op_center(std::make_shared<FEModel>(model), loads);
+    op_center.Compute();
+    std::vector<Displacement> disp_center = op_center.GetDisplacements();
+    std::vector<NodeLoad> react_center = op_center.GetReactForces();
 
     // 結果表示
     std::cout << "\n  Note: Virtual master nodes are not in Displacement vector" << std::endl;
@@ -2047,14 +2045,17 @@ void BenchResponseSpectrumCQC() {
     // (2) モード解析
     int target_modes = 450;
     int nev = std::min(target_modes, freeDof - 2);
-    std::vector<double> eigs;
-    std::vector<std::vector<Displacement>> modes;
+
+    auto model_ptr = std::make_shared<FEModel>(model);
+    FEVibrationAnalysis vibresult(model_ptr);
 
     auto t2 = clock::now();
-    int computed = model.SolveVibration(nev, eigs, modes);
+    int computed = vibresult.Compute(nev);
     auto t3 = clock::now();
-    int M = (int)modes.size();
-    std::cout << "[2] SolveVibration    : " << sec(t2, t3) << " s   "
+    int M = vibresult.ModeNum();
+    std::vector<double> eigs = vibresult.EigenValues();
+    const std::vector<std::vector<Displacement>>& modes = vibresult.ModeVectors();
+    std::cout << "[2] Vibration Compute : " << sec(t2, t3) << " s   "
               << "requested=" << nev << " computed=" << computed
               << " modes_size=" << M << std::endl;
 
@@ -2065,8 +2066,6 @@ void BenchResponseSpectrumCQC() {
 
     // (3) CQC本体（Compute = 3 x calculate_responseCQC）
     NotifiedSpectrum spectrum;
-    auto model_ptr = std::make_shared<FEModel>(model);
-    FEVibrateResult vibresult(model_ptr, modes, eigs);
 
     auto t4 = clock::now();
     ResponseSpectrumMethod rsm(
@@ -2361,11 +2360,11 @@ void BenchVibrationScaling() {
         std::cout << "\n[" << name << "]  Nodes=" << model.NodeNum()
                   << "  FreeDOF=" << model.FreeDOFNum() << std::endl;
         for (int nev : nevs) {
-            std::vector<double> eigs;
-            std::vector<std::vector<Displacement>> modes;
+            FEVibrationAnalysis vib(std::make_shared<FEModel>(model));
             auto t0 = clock::now();
-            int computed = model.SolveVibration(nev, eigs, modes);
+            int computed = vib.Compute(nev);
             auto t1 = clock::now();
+            std::vector<double> eigs = vib.EigenValues();
             std::cout << "  nev=" << nev << "  computed=" << computed
                       << "  time=" << sec(t0, t1) << " s"
                       << "  T1=" << (eigs.empty() ? 0.0 : 2 * PI / eigs[0]) << std::endl;
@@ -2568,9 +2567,9 @@ void TestTensionTrussElement() {
         loads.push_back(std::make_shared<NodeLoad>(NodeLoad(2, Px, 0, 0)));
         loads.push_back(std::make_shared<NodeLoad>(NodeLoad(3, Px, 0, 0)));
 
-        std::vector<Displacement> disp;
-        std::vector<NodeLoad> react;
-        model.SolveLinearStatic(loads, disp, react);
+        FELinearStaticOp op(std::make_shared<FEModel>(model), loads);
+        op.Compute();
+        std::vector<Displacement> disp = op.GetDisplacements();
 
         std::cout << "  N2 dx=" << disp[2].Dx() << ", dz=" << disp[2].Dz() << std::endl;
         std::cout << "  N3 dx=" << disp[3].Dx() << ", dz=" << disp[3].Dz() << std::endl;
@@ -2586,50 +2585,51 @@ void TestTensionTrussElement() {
     // ケース2: TensionTrussElement で X字ブレース
     // ----------------------------
     {
-        std::cout << "\n[Case 2] TensionTrussElement 使用 + SolveLinearStaticIter" << std::endl;
+        std::cout << "\n[Case 2] TensionTrussElement 使用 + FELinearStaticOp(反復解法)" << std::endl;
 
-        FEModel model;
+        auto model = std::make_shared<FEModel>();
         Node n0(0, 0.0, 0.0, 0.0); n0.Fix.FixAll();
         Node n1(1, L,   0.0, 0.0); n1.Fix.FixAll();
         Node n2(2, L,   0.0, H);
         Node n3(3, 0.0, 0.0, H);
-        model.Nodes.push_back(n0);
-        model.Nodes.push_back(n1);
-        model.Nodes.push_back(n2);
-        model.Nodes.push_back(n3);
-        model.Materials.push_back(mat);
-        model.Sections.push_back(sec_beam);
-        model.Sections.push_back(sec_diag);
+        model->Nodes.push_back(n0);
+        model->Nodes.push_back(n1);
+        model->Nodes.push_back(n2);
+        model->Nodes.push_back(n3);
+        model->Materials.push_back(mat);
+        model->Sections.push_back(sec_beam);
+        model->Sections.push_back(sec_diag);
 
-        auto col_l = std::make_shared<BeamElement>(0, &model.Nodes[0], &model.Nodes[3], &model.Sections[0], mat);
-        auto col_r = std::make_shared<BeamElement>(1, &model.Nodes[1], &model.Nodes[2], &model.Sections[0], mat);
-        auto top   = std::make_shared<BeamElement>(2, &model.Nodes[3], &model.Nodes[2], &model.Sections[0], mat);
-        model.Elements.push_back(col_l);
-        model.Elements.push_back(col_r);
-        model.Elements.push_back(top);
+        auto col_l = std::make_shared<BeamElement>(0, &model->Nodes[0], &model->Nodes[3], &model->Sections[0], mat);
+        auto col_r = std::make_shared<BeamElement>(1, &model->Nodes[1], &model->Nodes[2], &model->Sections[0], mat);
+        auto top   = std::make_shared<BeamElement>(2, &model->Nodes[3], &model->Nodes[2], &model->Sections[0], mat);
+        model->Elements.push_back(col_l);
+        model->Elements.push_back(col_r);
+        model->Elements.push_back(top);
 
-        auto da = std::make_shared<TensionTrussElement>(3, &model.Nodes[0], &model.Nodes[2], &model.Sections[1], mat);
-        auto db = std::make_shared<TensionTrussElement>(4, &model.Nodes[1], &model.Nodes[3], &model.Sections[1], mat);
-        model.Elements.push_back(da);
-        model.Elements.push_back(db);
+        auto da = std::make_shared<TensionTrussElement>(3, &model->Nodes[0], &model->Nodes[2], &model->Sections[1], mat);
+        auto db = std::make_shared<TensionTrussElement>(4, &model->Nodes[1], &model->Nodes[3], &model->Sections[1], mat);
+        model->Elements.push_back(da);
+        model->Elements.push_back(db);
 
         std::vector<std::shared_ptr<LoadBase>> loads;
         loads.push_back(std::make_shared<NodeLoad>(NodeLoad(2, Px, 0, 0)));
         loads.push_back(std::make_shared<NodeLoad>(NodeLoad(3, Px, 0, 0)));
 
-        std::vector<Displacement> disp;
-        std::vector<NodeLoad> react;
-        model.SolveLinearStaticIter(loads, disp, react);
+        FELinearStaticOp op(model, loads);
+        op.Compute();
+        std::vector<Displacement> disp = op.GetDisplacements();
+        std::vector<NodeLoad> react = op.GetReactForces();
 
         std::cout << "  N2 dx=" << disp[2].Dx() << ", dz=" << disp[2].Dz() << std::endl;
         std::cout << "  N3 dx=" << disp[3].Dx() << ", dz=" << disp[3].Dz() << std::endl;
 
-        std::cout << "\n  --- TensionTrussElement 状態 ---" << std::endl;
+        std::cout << "\n  --- TensionTrussElement 状態 (Operator所有) ---" << std::endl;
         BeamStress sa = da->stress(disp[0], disp[2]);
         BeamStress sb = db->stress(disp[1], disp[3]);
-        std::cout << "  diagA(N0->N2) IsActive=" << (da->IsActive ? "true" : "false")
+        std::cout << "  diagA(N0->N2) state=" << (op.GetElementState(3) ? "active" : "inactive")
                   << "  stress.Nx=" << sa.S0.Nx << std::endl;
-        std::cout << "  diagB(N1->N3) IsActive=" << (db->IsActive ? "true" : "false")
+        std::cout << "  diagB(N1->N3) state=" << (op.GetElementState(4) ? "active" : "inactive")
                   << "  stress.Nx=" << sb.S0.Nx << std::endl;
 
         std::cout << "\n  --- 反力 (平衡チェック用) ---" << std::endl;
@@ -2640,10 +2640,10 @@ void TestTensionTrussElement() {
             sumPx += r.Px();
             sumPz += r.Pz();
         }
-        std::cout << "  反力合計 sumPx=" << sumPx << " (外力合計+200の逆 -> -200 期待)" << std::endl;
+        std::cout << "  反力合計 sumPx=" << sumPx << " (外力合計+100の逆 -> -100 期待)" << std::endl;
         std::cout << "  反力合計 sumPz=" << sumPz << " (期待 0)" << std::endl;
 
-        std::cout << "\n  注: 圧縮側 (IsActive=false) でも stress() は要素剛性ベースで" << std::endl;
+        std::cout << "\n  注: 圧縮側 (inactive) でも stress() は要素剛性ベースで" << std::endl;
         std::cout << "      非ゼロ値を返すことに注意。剛性組立から除外しただけで、" << std::endl;
         std::cout << "      要素ローカルの応力計算ロジックは未変更。" << std::endl;
     }
@@ -2685,9 +2685,10 @@ void TestTensionTrussElement() {
         loads.push_back(std::make_shared<NodeLoad>(NodeLoad(2, Px, 0, 0)));
         loads.push_back(std::make_shared<NodeLoad>(NodeLoad(3, Px, 0, 0)));
 
-        std::vector<Displacement> disp;
-        std::vector<NodeLoad> react;
-        model.SolveLinearStatic(loads, disp, react);
+        FELinearStaticOp op(std::make_shared<FEModel>(model), loads);
+        op.Compute();
+        std::vector<Displacement> disp = op.GetDisplacements();
+        std::vector<NodeLoad> react = op.GetReactForces();
 
         std::cout << "  N2 dx=" << disp[2].Dx() << ", dz=" << disp[2].Dz() << std::endl;
         std::cout << "  N3 dx=" << disp[3].Dx() << ", dz=" << disp[3].Dz() << std::endl;
@@ -2702,71 +2703,63 @@ void TestTensionTrussElement() {
     }
 
     // ----------------------------
-    // ケース4: 新設計の経路別検証
-    // 同じ収束済みTensionTruss(IsActive=false)に対して
-    //   - 要素直接 stress()           → full (非抗圧性 反映なし)
-    //   - 要素直接 tangent_stress()   → reduced (反映あり)
-    //   - FELinearStaticOp::GetBeamStress() → reduced (内部で tangent_stress 経由)
+    // ケース4: 応力取得経路別の検証
+    // 収束後のOperator所有状態に対して
+    //   - 要素直接 stress()                  → full (非抗圧性 反映なし)
+    //   - 要素直接 tangent_stress(state)     → 状態を明示指定 (反映あり)
+    //   - FELinearStaticOp::GetBeamStress()  → Operator状態で復元 (反映あり)
     // ----------------------------
     {
-        std::cout << "\n[Case 4] 新設計の経路別検証" << std::endl;
-        std::cout << "        同じ要素状態に対して各経路の応力出力を確認" << std::endl;
+        std::cout << "\n[Case 4] 応力取得経路別の検証" << std::endl;
+        std::cout << "        収束後のOperator所有状態に対して各経路の応力出力を確認" << std::endl;
 
-        FEModel model;
+        auto model = std::make_shared<FEModel>();
         Node n0(0, 0.0, 0.0, 0.0); n0.Fix.FixAll();
         Node n1(1, L,   0.0, 0.0); n1.Fix.FixAll();
         Node n2(2, L,   0.0, H);
         Node n3(3, 0.0, 0.0, H);
-        model.Nodes.push_back(n0);
-        model.Nodes.push_back(n1);
-        model.Nodes.push_back(n2);
-        model.Nodes.push_back(n3);
-        model.Materials.push_back(mat);
-        model.Sections.push_back(sec_beam);
-        model.Sections.push_back(sec_diag);
+        model->Nodes.push_back(n0);
+        model->Nodes.push_back(n1);
+        model->Nodes.push_back(n2);
+        model->Nodes.push_back(n3);
+        model->Materials.push_back(mat);
+        model->Sections.push_back(sec_beam);
+        model->Sections.push_back(sec_diag);
 
-        auto col_l = std::make_shared<BeamElement>(0, &model.Nodes[0], &model.Nodes[3], &model.Sections[0], mat);
-        auto col_r = std::make_shared<BeamElement>(1, &model.Nodes[1], &model.Nodes[2], &model.Sections[0], mat);
-        auto top   = std::make_shared<BeamElement>(2, &model.Nodes[3], &model.Nodes[2], &model.Sections[0], mat);
-        model.Elements.push_back(col_l);
-        model.Elements.push_back(col_r);
-        model.Elements.push_back(top);
+        auto col_l = std::make_shared<BeamElement>(0, &model->Nodes[0], &model->Nodes[3], &model->Sections[0], mat);
+        auto col_r = std::make_shared<BeamElement>(1, &model->Nodes[1], &model->Nodes[2], &model->Sections[0], mat);
+        auto top   = std::make_shared<BeamElement>(2, &model->Nodes[3], &model->Nodes[2], &model->Sections[0], mat);
+        model->Elements.push_back(col_l);
+        model->Elements.push_back(col_r);
+        model->Elements.push_back(top);
 
-        auto da = std::make_shared<TensionTrussElement>(3, &model.Nodes[0], &model.Nodes[2], &model.Sections[1], mat);
-        auto db = std::make_shared<TensionTrussElement>(4, &model.Nodes[1], &model.Nodes[3], &model.Sections[1], mat);
-        model.Elements.push_back(da);
-        model.Elements.push_back(db);
+        auto da = std::make_shared<TensionTrussElement>(3, &model->Nodes[0], &model->Nodes[2], &model->Sections[1], mat);
+        auto db = std::make_shared<TensionTrussElement>(4, &model->Nodes[1], &model->Nodes[3], &model->Sections[1], mat);
+        model->Elements.push_back(da);
+        model->Elements.push_back(db);
 
         std::vector<std::shared_ptr<LoadBase>> loads;
         loads.push_back(std::make_shared<NodeLoad>(NodeLoad(2, Px, 0, 0)));
         loads.push_back(std::make_shared<NodeLoad>(NodeLoad(3, Px, 0, 0)));
 
-        // FELinearStaticOp は内部で SolveLinearStatic を呼ぶ (full K)
-        // ただし IsActive を手動で false にしておけば、GetBeamStress 経由では tangent_stress が返るはず
-        db->IsActive = false;
-
-        auto model_ptr = std::make_shared<FEModel>(model);
-        FELinearStaticOp op(model_ptr, loads);
+        FELinearStaticOp op(model, loads);
         op.Compute();
 
-        // Compute 後に IsActive はリセットされない (SolveLinearStaticIter ではないので)
-        // model_ptr 側の要素を取得して直接 stress / tangent_stress を比較
-        auto da_in = std::dynamic_pointer_cast<TensionTrussElement>(model_ptr->Elements[3]);
-        auto db_in = std::dynamic_pointer_cast<TensionTrussElement>(model_ptr->Elements[4]);
-        // IsActive 状態が make_shared<FEModel>(model) でコピーされるはずだが念のため再設定
-        db_in->IsActive = false;
+        // Operatorが所有する収束時状態(diagA=active, diagB=inactive 期待)
+        bool stA = op.GetElementState(3);
+        bool stB = op.GetElementState(4);
 
         const auto& disp = op.GetDisplacements();
 
-        std::cout << "  diagA (IsActive=" << (da_in->IsActive ? "true" : "false") << "):" << std::endl;
-        std::cout << "    direct stress().Nx        = " << da_in->stress(disp[da_in->Nodes[0]->id], disp[da_in->Nodes[1]->id]).S0.Nx << "  (full)" << std::endl;
-        std::cout << "    direct tangent_stress().Nx= " << da_in->tangent_stress(disp[da_in->Nodes[0]->id], disp[da_in->Nodes[1]->id]).S0.Nx << "  (factor=1)" << std::endl;
-        std::cout << "    op.GetBeamStress(3, 0).Nx = " << op.GetBeamStress(3, 0).Nx << "  (経由)" << std::endl;
+        std::cout << "  diagA (state=" << (stA ? "active" : "inactive") << "):" << std::endl;
+        std::cout << "    direct stress().Nx              = " << da->stress(disp[da->Nodes[0]->id], disp[da->Nodes[1]->id]).S0.Nx << "  (full)" << std::endl;
+        std::cout << "    direct tangent_stress(state).Nx = " << da->tangent_stress(disp[da->Nodes[0]->id], disp[da->Nodes[1]->id], stA).S0.Nx << "  (factor=1)" << std::endl;
+        std::cout << "    op.GetBeamStress(3, 0).Nx       = " << op.GetBeamStress(3, 0).Nx << "  (経由)" << std::endl;
 
-        std::cout << "  diagB (IsActive=" << (db_in->IsActive ? "true" : "false") << "):" << std::endl;
-        std::cout << "    direct stress().Nx        = " << db_in->stress(disp[db_in->Nodes[0]->id], disp[db_in->Nodes[1]->id]).S0.Nx << "  (full, factor 無視)" << std::endl;
-        std::cout << "    direct tangent_stress().Nx= " << db_in->tangent_stress(disp[db_in->Nodes[0]->id], disp[db_in->Nodes[1]->id]).S0.Nx << "  (factor=ReductionFactor=" << db_in->ReductionFactor << ")" << std::endl;
-        std::cout << "    op.GetBeamStress(4, 0).Nx = " << op.GetBeamStress(4, 0).Nx << "  (経由 → tangent)" << std::endl;
+        std::cout << "  diagB (state=" << (stB ? "active" : "inactive") << "):" << std::endl;
+        std::cout << "    direct stress().Nx              = " << db->stress(disp[db->Nodes[0]->id], disp[db->Nodes[1]->id]).S0.Nx << "  (full, factor 無視)" << std::endl;
+        std::cout << "    direct tangent_stress(state).Nx = " << db->tangent_stress(disp[db->Nodes[0]->id], disp[db->Nodes[1]->id], stB).S0.Nx << "  (factor=ReductionFactor=" << db->ReductionFactor << ")" << std::endl;
+        std::cout << "    op.GetBeamStress(4, 0).Nx       = " << op.GetBeamStress(4, 0).Nx << "  (経由 → tangent)" << std::endl;
     }
 
     std::cout << "\n==================================================" << std::endl;
@@ -2832,9 +2825,6 @@ int main(void) {
     // 剛体連結を用いた剛床サンプル（末尾で固有値解析チェックも実行）
     TestRigidFloorWithCenterMaster_Shuffled();
 
-    // 多数モード（450本）のベンチマーク
-    BenchResponseSpectrumCQC();
-
     // 座屈解析の前後比較検証
     TestBucklingCheck();
 
@@ -2847,4 +2837,9 @@ int main(void) {
 
     // TensionTrussElement の動作確認
     TestTensionTrussElement();
+
+    // 多数モード（450本）のベンチマーク
+    // 注: VS2026+MKL 2025.1環境でSolveVibration(450モード)がクラッシュする
+    // 既知問題があるため最後に実行する(他テストの実行を妨げないように)
+    BenchResponseSpectrumCQC();
 }

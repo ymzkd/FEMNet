@@ -12,7 +12,7 @@
 
 #include "FEAnalysis.h"
 #include "LoadComponent.h"
-#include "FEVibrateResult.h"
+#include "FEVibrationAnalysis.h"
 
 // 前方宣言
 class DynamicAnalysis;
@@ -254,7 +254,7 @@ class FEDynamicDampInitializer
 {
 public:
     virtual bool Initialize(DynamicAnalysis *analysis) = 0;
-    virtual bool Initialize(const FEVibrateResult& vibrate_result) = 0;
+    virtual bool Initialize(const FEVibrationAnalysis& vibrate_result) = 0;
 
     /// <summary>
     /// 固有周期 t における減衰比を返す(算定不能な場合は -1)
@@ -276,7 +276,7 @@ public:
         : damp_rate(damp_rate) {}
 
     bool Initialize(DynamicAnalysis *analysis) override;
-    bool Initialize(const FEVibrateResult& vibrate_result) override;
+    bool Initialize(const FEVibrationAnalysis& vibrate_result) override;
 
     double DampRateAtPeriod(double t) override;
 };
@@ -295,7 +295,7 @@ public:
         : damp_rate(damp_rate) {}
 
     bool Initialize(DynamicAnalysis *analysis) override;
-    bool Initialize(const FEVibrateResult& vibrate_result) override;
+    bool Initialize(const FEVibrationAnalysis& vibrate_result) override;
 
     double DampRateAtPeriod(double t) override;
 };
@@ -322,7 +322,7 @@ public:
         : damp_rate1(damp_rate1), damp_rate2(damp_rate2), mode1(mode1), mode2(mode2) {}
 
     bool Initialize(DynamicAnalysis *analysis) override;
-    bool Initialize(const FEVibrateResult& vibrate_result) override;
+    bool Initialize(const FEVibrationAnalysis& vibrate_result) override;
 
     double DampRateAtPeriod(double t) override;
 };

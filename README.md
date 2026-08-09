@@ -15,7 +15,7 @@
 
 ### 解析機能
 - **線形静的解析** (`FELinearStaticOp`)
-- **固有値解析** (`FEVibrateResult`)
+- **固有値解析** (`FEVibrationAnalysis`)
 - **座屈解析** (`FEBucklingAnalysis`)
 - **動的解析** (`FEDynamic`)
 - **応答スペクトル解析** (`ResponseSpectrumMethod`)

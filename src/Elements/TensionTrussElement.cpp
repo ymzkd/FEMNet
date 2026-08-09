@@ -1,20 +1,17 @@
 #include "TensionTrussElement.h"
 
-Eigen::MatrixXd TensionTrussElement::tangentstiffness_matrix_local()
+Eigen::MatrixXd TensionTrussElement::TangentStiffnessMatrix(bool active)
 {
-    return TrussElement::stiffness_matrix_local() * (IsActive ? 1.0 : ReductionFactor);
-}
-
-Eigen::MatrixXd TensionTrussElement::TangentStiffnessMatrix()
-{
-    Eigen::Matrix2d local_stiffMat = tangentstiffness_matrix_local();
+    Eigen::Matrix2d local_stiffMat =
+        TrussElement::stiffness_matrix_local() * (active ? 1.0 : ReductionFactor);
     Eigen::MatrixXd transMat = trans_matrix();
     return transMat.transpose() * local_stiffMat * transMat;
 }
 
-void TensionTrussElement::GetTangentStiffnessTriplets(std::vector<Eigen::Triplet<double>> &triplets)
+void TensionTrussElement::GetTangentStiffnessTriplets(
+    std::vector<Eigen::Triplet<double>> &triplets, bool active)
 {
-    Eigen::MatrixXd K = TangentStiffnessMatrix();
+    Eigen::MatrixXd K = TangentStiffnessMatrix(active);
     int total_dof = TotalDof(); // 6 for TrussElement
 
     // Map to global DOFs - TrussElement uses only 3 DOF/node (X,Y,Z)
@@ -42,31 +39,26 @@ void TensionTrussElement::GetTangentStiffnessTriplets(std::vector<Eigen::Triplet
     }
 }
 
-BeamStress TensionTrussElement::tangent_stress(Displacement d0, Displacement d1)
+BeamStress TensionTrussElement::tangent_stress(Displacement d0, Displacement d1, bool active)
 {
     Eigen::VectorXd disp(6);
     disp << d0.Dx(), d0.Dy(), d0.Dz(), d1.Dx(), d1.Dy(), d1.Dz();
 
-    Eigen::Vector2d force = tangentstiffness_matrix_local() * trans_matrix() * disp;
+    Eigen::MatrixXd k_local =
+        TrussElement::stiffness_matrix_local() * (active ? 1.0 : ReductionFactor);
+    Eigen::Vector2d force = k_local * trans_matrix() * disp;
 
     BeamStressData str0(-force(0), 0, 0, 0, 0, 0);
     BeamStressData str1(force(1), 0, 0, 0, 0, 0);
     return BeamStress(str0, str1);
 }
 
-bool TensionTrussElement::update(const std::vector<Displacement> &disp)
+bool TensionTrussElement::NextState(const std::vector<Displacement> &disp, bool current)
 {
-    bool any_change = false;
-    BeamStress stress = this->tangent_stress(disp[Nodes[0]->id], disp[Nodes[1]->id]);
-    if (stress.S0.Nx < this->CutoffTension && this->IsActive) // 圧縮状態に移行
-    {
-        this->IsActive = false; // 要素を無効化
-        any_change = true;
-    }
-    else if (stress.S0.Nx > this->CutoffTension && !this->IsActive) // 引張状態に移行
-    {
-        this->IsActive = true; // 要素を有効化
-        any_change = true;
-    }
-    return any_change;
+    BeamStress stress = tangent_stress(disp[Nodes[0]->id], disp[Nodes[1]->id], current);
+    if (stress.S0.Nx < CutoffTension && current)
+        return false; // 圧縮状態に移行 → 無効化
+    if (stress.S0.Nx > CutoffTension && !current)
+        return true; // 引張状態に移行 → 有効化
+    return current;
 }

@@ -212,10 +212,10 @@ print("\n6. Running modal analysis...")
 
 n_modes = 5  # Number of modes to extract
 
-eigen_values = VectorDouble()
-mode_vectors = VectorMode()
-
-result = model.SolveVibration(n_modes, eigen_values, mode_vectors)
+vib = FEVibrationAnalysis(model)
+result = vib.Compute(n_modes)
+eigen_values = vib.EigenValues()
+mode_vectors = vib.ModeVectors()
 
 if result > 0:
     print(f"   Extracted {result} modes successfully!")
@@ -235,12 +235,12 @@ for i in range(len(eigen_values)):
     print(f"   {i+1:<6} {omega:<15.4f} {f:<12.4f} {T:<12.4f}")
 
 # ============================================================
-# 8. Create FEVibrateResult and response spectrum
+# 8. Create FEVibrationAnalysis and response spectrum
 # ============================================================
 print("\n7. Setting up response spectrum analysis...")
 
-# Create FEVibrateResult object
-vibrate_result = FEVibrateResult(model, mode_vectors, eigen_values)
+# Create FEVibrationAnalysis object
+vibrate_result = FEVibrationAnalysis(model, mode_vectors, eigen_values)
 
 # Get natural periods
 periods = vibrate_result.NaturalPeriods()

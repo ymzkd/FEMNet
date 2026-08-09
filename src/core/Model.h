@@ -43,6 +43,40 @@ public:
 	virtual double Displacement(double t) = 0;
 };
 
+// 状態依存要素(非抗圧トラス等)の解析時状態(要素インデックス→有効フラグ)。
+// 状態は FEModel の要素内ではなく各解析Operatorが所有し、
+// 剛性組立や応力復元の際に明示的に渡す。未登録の要素は true(規定剛性で有効)。
+class ElementStates
+{
+private:
+    std::vector<std::pair<int, bool>> states;
+
+public:
+    // 指定要素の状態を返す(未登録は true)
+    bool Get(int eid) const
+    {
+        for (const auto &s : states)
+            if (s.first == eid)
+                return s.second;
+        return true;
+    }
+
+    void Set(int eid, bool active)
+    {
+        for (auto &s : states)
+        {
+            if (s.first == eid)
+            {
+                s.second = active;
+                return;
+            }
+        }
+        states.emplace_back(eid, active);
+    }
+
+    void Clear() { states.clear(); }
+};
+
 class FEModel
 {
 private:
@@ -53,22 +87,25 @@ private:
     /// <returns></returns>
     std::vector<int> UnLumpedFixIndices();
 
-	// 剛性マトリクスの組み立て
-	// applyTensionOnly: TensionTrussElementの圧縮側無効化を反映するか
-    Eigen::SparseMatrix<double> AssembleStiffnessMatrix(bool applyTensionOnly = false);
+public:
+    // === 行列・ベクトル組立サービス(解析Operator向け, SWIG非公開) ===
+    // FEModelは構造データの保持と組立のみを担い、解析(ソルバー)は
+    // 各解析Operator(FELinearStaticOp, FEVibrationAnalysis等)が実装する。
 
-	// 質量マトリクスの組み立て
+	// 剛性マトリクスの組み立て(上三角格納)
+	// states: 状態依存要素の状態(nullptrなら全要素を規定剛性で組立)
+    Eigen::SparseMatrix<double> AssembleStiffnessMatrix(const ElementStates *states = nullptr);
+
+    // 荷重リストから全体節点荷重ベクトルを組み立てる(InertialForceは要素質量から展開)
+    Eigen::VectorXd AssembleLoadVector(const std::vector<std::shared_ptr<LoadBase>> &loads);
+
+	// 質量マトリクスの組み立て(上三角格納)
     Eigen::SparseMatrix<double> AssembleMassMatrix();
 
+    // 幾何剛性マトリクスの組み立て(上三角格納)
     Eigen::SparseMatrix<double> AssembleGeometricStiffnessMatrix(
         const std::vector<Displacement> &displacements);
 
-	friend class DynamicAnalysis;
-    friend class FEBucklingAnalysis;
-	friend class FEVibrateResult;
-    friend class ResponseSpectrumMethod;
-
-public:
     FEModel();
 
     double GraityAccel = 9806.65;
@@ -130,19 +167,6 @@ public:
 
     // 要素質量に基づく節点質量を計算してセットアップ
     void ComputeElementNodeMass();
-
-    void SolveLinearStatic(
-        std::vector<std::shared_ptr<LoadBase>>& loads,
-        std::vector<Displacement>& disp,
-        std::vector<NodeLoad>& react);
-
-    void SolveLinearStaticIter(
-        std::vector<std::shared_ptr<LoadBase>> &loads,
-        std::vector<Displacement> &disp,
-        std::vector<NodeLoad> &react);
-
-    int SolveVibration(const int nev, std::vector<double>& eigen_values,
-        std::vector<std::vector<Displacement>>& mode_vectors);
 
     // 構造モデルのテキスト形式ファイル入出力
     // Save: 現在のモデルを path に書き出す

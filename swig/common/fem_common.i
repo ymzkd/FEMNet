@@ -68,6 +68,13 @@
 %ignore RigidLink::TransformationMatrix;
 %ignore RigidLinks::TransformationMatrix;
 
+// FEModelの組立サービス(Eigen型を返すためSWIG非公開)。
+// 解析はOperator側(FELinearStaticOp, FEVibrationAnalysis等)から利用する。
+%ignore FEModel::AssembleStiffnessMatrix;
+%ignore FEModel::AssembleMassMatrix;
+%ignore FEModel::AssembleGeometricStiffnessMatrix;
+%ignore FEModel::AssembleLoadVector;
+
 // IResponseSpectrum: expose damping members as methods instead of properties.
 // C# subclasses (e.g. DesignResponseSpectrumFunc) are serialized with MessagePack,
 // which walks all public properties including inherited ones; a generated

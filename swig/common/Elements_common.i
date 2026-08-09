@@ -40,10 +40,12 @@
 %ignore TrussElement::GetGeometricStiffnessTriplets;
 
 // IStateDependentElement は C++ 側の多重継承用の純粋インターフェース。
-// C# は単一継承のため SWIG で公開しない (TensionTrussElement に直接メソッドを再露出する)
+// C# は単一継承のため SWIG で公開しない。
+// 要素状態(有効フラグ)は解析Operator側が所有する(FELinearStaticOp::GetElementState)。
 %ignore IStateDependentElement;
 %ignore TensionTrussElement::GetTangentStiffnessTriplets;
-%ignore TensionTrussElement::TangentStiffnessMatrix();
+%ignore TensionTrussElement::TangentStiffnessMatrix;
+%ignore TensionTrussElement::NextState;
 
 %ignore TriPlaneElement::StiffnessMatrix();
 %ignore TriPlaneElement::AssembleStiffMatrix(Eigen::SparseMatrix<double>& mat);
@@ -156,11 +158,6 @@ namespace std {
     Node* getNodes(int index) {
         return $self->Nodes[index];
     }
-
-    // IStateDependentElement::IsActive は SWIG で非公開のため、TensionTrussElement に
-    // getter/setter として再露出する (C# からは tt.GetIsActive()/SetIsActive() でアクセス)
-    bool GetIsActive() { return $self->IsActive; }
-    void SetIsActive(bool val) { $self->IsActive = val; }
 }
 
 %extend PlaneElementBase {

@@ -79,7 +79,7 @@ cmake --build .
 
 **解析オペレーター**:
 - `FELinearStaticOp` ([src/analysis/FELinearStaticOp.h](src/analysis/FELinearStaticOp.h)) - 線形静的解析
-- `FEVibrateResult` ([src/analysis/FEVibrateResult.h](src/analysis/FEVibrateResult.h)) - 固有値解析
+- `FEVibrationAnalysis` ([src/analysis/FEVibrationAnalysis.h](src/analysis/FEVibrationAnalysis.h)) - 固有値解析
 - `FEBucklingAnalysis` ([src/analysis/FEBucklingAnalysis.h](src/analysis/FEBucklingAnalysis.h)) - 座屈解析
 - `FEDynamic` ([src/analysis/FEDynamic.h](src/analysis/FEDynamic.h)) - 動的解析
 - `ResponseSpectrumMethod` ([src/analysis/ResponseSpectrumMethod.h](src/analysis/ResponseSpectrumMethod.h)) - 応答スペクトル法

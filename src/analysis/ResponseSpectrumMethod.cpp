@@ -506,7 +506,7 @@ std::vector<NodeLoad> ResponseSpectrumMethod::calculate_react_forces(const std::
         if (!model->Nodes[i].Fix.IsAnyFix())
             continue;
 
-        // 静的解析(SolveLinearStatic)と同様、固定自由度の成分のみ反力として報告する
+        // 静的解析(FELinearStaticOp)と同様、固定自由度の成分のみ反力として報告する
         auto fixed = model->Nodes[i].Fix.isdof_fixed();
         double v[6];
         for (int k = 0; k < 6; k++)
@@ -517,7 +517,7 @@ std::vector<NodeLoad> ResponseSpectrumMethod::calculate_react_forces(const std::
 }
 
 ResponseSpectrumMethod::ResponseSpectrumMethod(std::shared_ptr<FEModel> model,
-                                               FEVibrateResult vibrate_result, Vector direction, IResponseSpectrum *spectrum_function, ResponseSpectrumMethodType type)
+                                               FEVibrationAnalysis vibrate_result, Vector direction, IResponseSpectrum *spectrum_function, ResponseSpectrumMethodType type)
     : FEDeformOperator(model), VibrateResult(vibrate_result), SpectrumFunction(spectrum_function), Direction(direction), MethodType(type)
 {
     Compute();

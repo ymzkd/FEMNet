@@ -1,10 +1,109 @@
 #include "FELinearStaticOp.h"
+#include "ReducedSystem.h"
 
+// 状態依存要素(引張専用トラス等)を考慮した反復解法による線形静的解析。
+// 要素状態はOperator(m_states)が所有し、剛性組立時にFEModelへ明示的に渡す。
+// 収束時は Iterations に反復回数が入り Converged=true、
+// 最大反復数に達した場合は Converged=false となる。
 void FELinearStaticOp::Compute()
 {
-    this->model->SolveLinearStaticIter(this->loads, this->displace, this->react_force);
-    // this->model->SolveLinearStatic(this->loads, this->displace, this->react_force);
+    const int max_iter = 100;
+    FEModel &m = *model;
+    const int full_size = (int)m.Nodes.size() * 6;
+
+    Eigen::VectorXd force_vec = m.AssembleLoadVector(loads);
+    Eigen::VectorXd residual_vec = force_vec;
+    Eigen::VectorXd disp_vec = Eigen::VectorXd::Zero(full_size);
+
+    ReducedSystem rs(m);
+
+    // 状態依存要素の状態を初期化 (規定剛性で機能する状態へ)
+    m_states.Clear();
+
+    Eigen::SparseMatrix<double> full_stiffmat = m.AssembleStiffnessMatrix(&m_states);
+
+    int iter_result = -max_iter;
+    for (int iter = 0; iter < max_iter; iter++)
+    {
+        // 縮約系の構築
+        Eigen::SparseMatrix<double> mii, mij;
+        rs.Reduce(full_stiffmat, mii, &mij);
+
+        Eigen::VectorXd f_input, f_fix;
+        rs.ReduceVector(residual_vec, f_input, f_fix);
+
+        // Solve
+        auto solver_static = createSolver();
+        solver_static->compute(mii);
+        Eigen::VectorXd d_result = solver_static->solve(f_input);
+        Eigen::VectorXd r_fix = mij.transpose() * d_result - f_fix;
+
+        // 反力データ整理
+        Eigen::VectorXd r = Eigen::VectorXd::Zero(full_size);
+        for (size_t i = 0; i < rs.fixed_indices.size(); i++)
+            r(rs.fixed_indices[i]) = r_fix(i);
+        react_force.clear();
+        for (size_t i = 0; i < m.Nodes.size(); i++)
+        {
+            if (!m.Nodes[i].Fix.IsAnyFix())
+                continue;
+            int pos = i * 6;
+            react_force.push_back(NodeLoad(i, r[pos], r[pos + 1], r[pos + 2], r[pos + 3], r[pos + 4], r[pos + 5]));
+        }
+
+        // 変形データ整理
+        disp_vec += rs.ExpandVector(d_result, full_size);
+        displace.clear();
+        for (size_t i = 0; i < m.Nodes.size(); i++)
+        {
+            int pos = i * 6;
+            displace.push_back(Displacement(disp_vec[pos], disp_vec[pos + 1], disp_vec[pos + 2], disp_vec[pos + 3], disp_vec[pos + 4], disp_vec[pos + 5]));
+        }
+
+        // 判定と更新
+        // 状態依存要素の次状態を判定し、状態変化があれば剛性を再構築する
+        bool any_change = false;
+        for (size_t i = 0; i < m.Elements.size(); i++)
+        {
+            if (auto sde = std::dynamic_pointer_cast<IStateDependentElement>(m.Elements[i]))
+            {
+                bool current = m_states.Get((int)i);
+                bool next = sde->NextState(displace, current);
+                if (next != current)
+                {
+                    m_states.Set((int)i, next);
+                    any_change = true;
+                }
+            }
+        }
+
+        if (!any_change)
+        {
+            iter_result = iter + 1; // 収束判定: 状態変化なしなら終了
+            break;
+        }
+        full_stiffmat = m.AssembleStiffnessMatrix(&m_states); // 状態変化あり: 剛性行列を再構築
+        residual_vec = force_vec - full_stiffmat.selfadjointView<Eigen::Upper>() * disp_vec; // 内力を再計算
+    }
+
+    Converged = iter_result > 0;
+    Iterations = iter_result > 0 ? iter_result : -iter_result;
     m_computed = true;
+}
+
+std::shared_ptr<FELinearStaticOp> FELinearStaticOp::FromCombination(
+    std::shared_ptr<FEModel> model,
+    const std::vector<LinearStaticDeformFactor>& cases)
+{
+    std::vector<std::shared_ptr<LoadBase>> merged;
+    for (const auto& c : cases)
+    {
+        if (c.op == nullptr)
+            throw std::invalid_argument("FromCombination: case operator is null");
+        for (const auto& load : c.op->loads)
+            merged.push_back(load->scaled(c.factor));
+    }
+    return std::make_shared<FELinearStaticOp>(model, merged);
 }
 
 BeamStressData FELinearStaticOp::GetBeamStress(int eid, double p)
@@ -16,7 +115,9 @@ BeamStressData FELinearStaticOp::GetBeamStress(int eid, double p)
 
     if (auto sde = std::dynamic_pointer_cast<IStateDependentElement>(model->Elements[eid]))
     {
-        BeamStress b_strs = sde->tangent_stress(displace[be->Nodes[0]->id], displace[be->Nodes[1]->id]);
+        // Operatorが所有するこのケースの収束時状態で応力を復元する
+        BeamStress b_strs = sde->tangent_stress(
+            displace[be->Nodes[0]->id], displace[be->Nodes[1]->id], m_states.Get(eid));
         BeamStressData strs = b_strs.Interpolate(p);
         return strs;
     }

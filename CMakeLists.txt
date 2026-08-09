@@ -204,7 +204,7 @@ set(FEMNET_SOURCES
     src/analysis/FELinearStaticOp.cpp
     src/analysis/FEDynamic.cpp
     src/analysis/FEBucklingAnalysis.cpp
-    src/analysis/FEVibrateResult.cpp
+    src/analysis/FEVibrationAnalysis.cpp
     src/analysis/ResponseSpectrumMethod.cpp
 )
 

@@ -17,9 +17,14 @@ enum class LoadType {
 class LoadBase {
 public:
     LoadBase(){};
+    virtual ~LoadBase() = default;
 
     virtual LoadType Type() { return LoadType::None; }
     virtual std::vector<NodeLoadData> NodeLoads() = 0;
+
+    // 荷重値を係数倍した複製を返す。
+    // 荷重組み合わせを単一の静的荷重ケースへ合成する際に使用する。
+    virtual std::shared_ptr<LoadBase> scaled(double factor) const = 0;
 };
 
 class InertialForce: public LoadBase {
@@ -29,11 +34,16 @@ public:
     InertialForce() : InertialForce(0, 0, 0) {};
     InertialForce(double x, double y, double z) : accels(x, y, z) {};
     InertialForce(Vector v) : accels(v) {};
-    
+
     LoadType Type() override { return LoadType::BodyForce; }
-    
+
     std::vector<NodeLoadData> NodeLoads() override {
         return std::vector<NodeLoadData>();
+    }
+
+    std::shared_ptr<LoadBase> scaled(double factor) const override {
+        return std::make_shared<InertialForce>(
+            accels.x * factor, accels.y * factor, accels.z * factor);
     }
 };
 
@@ -60,6 +70,12 @@ public:
         Vector f = Accels * node->MassData.SumMass(); // ここで質量を掛けて加速度を計算
         return std::vector<NodeLoadData>{ NodeLoadData(node->id, f.x, f.y, f.z) };
     }
+
+    std::shared_ptr<LoadBase> scaled(double factor) const override {
+        auto copy = std::make_shared<NodeBodyForce>(*this);
+        copy->Accels = copy->Accels * factor;
+        return copy;
+    }
 };
 
 class NodeLoad : public LoadBase {
@@ -80,6 +96,12 @@ public:
     double& Mz() { return data.loads[5]; }
 
     std::vector<NodeLoadData> NodeLoads() override { return { data }; }
+
+    std::shared_ptr<LoadBase> scaled(double factor) const override {
+        auto copy = std::make_shared<NodeLoad>(*this);
+        copy->data *= factor;
+        return copy;
+    }
 
     // operator<<
     friend std::ostream &operator<<(std::ostream &os, const NodeLoad &nodeLoad)
@@ -186,6 +208,13 @@ public:
     }
 
     std::vector<NodeLoadData> NodeLoads() override;
+
+    std::shared_ptr<LoadBase> scaled(double factor) const override {
+        auto copy = std::make_shared<PlateLoad>(*this);
+        for (auto& v : copy->load_vecs)
+            v = v * factor;
+        return copy;
+    }
 };
 
 
@@ -353,6 +382,15 @@ public:
         return { load_i(), load_j() };
     }
 
+    // コンストラクタ経由で再構築することで内部のtrapsにも係数を反映する
+    std::shared_ptr<LoadBase> scaled(double factor) const override {
+        std::vector<double> ws = w;
+        for (auto& x : ws) x *= factor;
+        if (element == nullptr)
+            return std::make_shared<BeamPolyLoad>(ws, params, axis);
+        return std::make_shared<BeamPolyLoad>(ws, params, element, axis);
+    }
+
     static BeamPolyLoad CreateFromUniLoad(double w, BeamElement* element, BeamLoadAxis axis) {
         return BeamPolyLoad(std::vector<double>{w, w}, std::vector<double>{0, 1}, element, axis);
     }
@@ -429,6 +467,15 @@ public:
 
     std::vector<NodeLoadData> NodeLoads() override {
         return { load_i(), load_j() };
+    }
+
+    // コンストラクタ経由で再構築することで内部のtrapsにも係数を反映する
+    std::shared_ptr<LoadBase> scaled(double factor) const override {
+        std::vector<double> ws = w;
+        for (auto& x : ws) x *= factor;
+        if (element == nullptr)
+            return std::make_shared<AxialPolyLoad>(ws, params);
+        return std::make_shared<AxialPolyLoad>(ws, params, element);
     }
 
     BeamStressData GetBeamStress(double p) override;

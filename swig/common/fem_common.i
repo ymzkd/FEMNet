@@ -7,7 +7,7 @@
 %include <std_shared_ptr.i>
 %include <std_string.i>
 
-// Note: Default constructors have been added to BeamPolyLoad, DynamicAccelLoad, Node, and Section
+// Note: Default constructors have been added to BeamPolyLoad, Node, and Section
 // so they can now be used in STL containers
 
 // Shared pointer declarations for base classes

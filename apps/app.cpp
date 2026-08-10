@@ -910,9 +910,9 @@ void TestDynamicAnalysis() {
         gaccels[i] = amplitude * sin(2 * PI * time / natural_period);
     }
 
-    // DynamicAccelLoadを定義
-    // ここでは、x軸方向に重力加速度を設定
-    DynamicAccelLoad accel_load(delta_t, 0, 0, 1, gaccels);
+    // 地動加速度による時刻歴荷重を定義(z軸方向)
+    auto accel_load = std::make_shared<SeismicAccelLoad>(
+        Vector(0, 0, 1), TimeSeries(delta_t, gaccels));
     
     // gaccelsを出力
     //std::cout << "gaccels: " << std::endl;
@@ -925,12 +925,12 @@ void TestDynamicAnalysis() {
     DynamicAnalysis analysis(model_ptr, accel_load);
     analysis.Initialize();
 
-    for (size_t i = 0; i < num_steps; i++)
+    for (int i = 0; i < analysis.num_steps; i++)
     {
         analysis.ComputeStep();
         auto disp = analysis.GetDisplacements();
-        std::cout << "Step: " << analysis.current_step << ", Time[s]: " << 
-            analysis.current_step * analysis.accel_load.timestep << ", Z dir: " << disp[divnum].Dz() << std::endl;
+        std::cout << "Step: " << analysis.current_step << ", Time[s]: " <<
+            analysis.CurrentTime() << ", Z dir: " << disp[divnum].Dz() << std::endl;
     }
     //analysis.ComputeSteps(10);
 
@@ -950,17 +950,17 @@ Node* findNodeById(std::vector<Node>& nodes, int id); // 前方宣言(定義は�
 // 単一シナリオの時刻歴応答をストリームへダンプ
 static void DumpDynamicResponse(const std::string& tag,
     std::shared_ptr<FEModel> model_ptr,
-    const DynamicAccelLoad& accel_load,
+    std::shared_ptr<DynamicLoad> load,
     std::shared_ptr<FEDynamicDampInitializer> damp,
     std::ostream& os)
 {
-    DynamicAnalysis analysis(model_ptr, accel_load, damp);
+    DynamicAnalysis analysis(model_ptr, load, damp);
     if (!analysis.Initialize()) {
         os << tag << " INIT_FAILED\n";
         return;
     }
 
-    int num_steps = static_cast<int>(accel_load.Accels.size());
+    int num_steps = analysis.num_steps;
     os << std::scientific << std::setprecision(10);
     os << "=== SCENARIO " << tag << " (steps=" << num_steps
         << ", nodes=" << model_ptr->Nodes.size() << ") ===\n";
@@ -1064,15 +1064,15 @@ void TestDynamicLoadRegression()
         auto mp = std::make_shared<FEModel>(model);
         mp->ComputeElementNodeMass();
 
-        DynamicAccelLoad load_z(dt, 0, 0, 1, gacc);
+        auto load_z = std::make_shared<SeismicAccelLoad>(Vector(0, 0, 1), TimeSeries(dt, gacc));
         auto stiff = std::make_shared<FEDynamicStiffDampInitializer>(0.03);
         DumpDynamicResponse("CANTI_Z_STIFF", mp, load_z, stiff, os);
 
-        DynamicAccelLoad load_x(dt, 1, 0, 0, gacc);
+        auto load_x = std::make_shared<SeismicAccelLoad>(Vector(1, 0, 0), TimeSeries(dt, gacc));
         auto mass = std::make_shared<FEDynamicMassDampInitializer>(0.05);
         DumpDynamicResponse("CANTI_X_MASS", mp, load_x, mass, os);
 
-        DynamicAccelLoad load_y(dt, 0, 1, 0, gacc);
+        auto load_y = std::make_shared<SeismicAccelLoad>(Vector(0, 1, 0), TimeSeries(dt, gacc));
         auto rayleigh = std::make_shared<FEDynamicRayleighDampInitializer>(0.02, 0.02, 1, 3);
         DumpDynamicResponse("CANTI_Y_RAYLEIGH", mp, load_y, rayleigh, os);
     }
@@ -1083,11 +1083,13 @@ void TestDynamicLoadRegression()
         auto mp = std::make_shared<FEModel>(model);
         mp->ComputeElementNodeMass();
 
-        DynamicAccelLoad load_x(dt, 1, 0, 0, gacc);   // マスターDOF経由(UX)
+        // マスターDOF経由(UX)
+        auto load_x = std::make_shared<SeismicAccelLoad>(Vector(1, 0, 0), TimeSeries(dt, gacc));
         auto stiff = std::make_shared<FEDynamicStiffDampInitializer>(0.03);
         DumpDynamicResponse("RFLOOR_X_STIFF", mp, load_x, stiff, os);
 
-        DynamicAccelLoad load_z(dt, 0, 0, 1, gacc);   // 自由DOF経由(UZ)
+        // 自由DOF経由(UZ)
+        auto load_z = std::make_shared<SeismicAccelLoad>(Vector(0, 0, 1), TimeSeries(dt, gacc));
         auto mass = std::make_shared<FEDynamicMassDampInitializer>(0.05);
         DumpDynamicResponse("RFLOOR_Z_MASS", mp, load_z, mass, os);
     }
@@ -1129,7 +1131,7 @@ void TestNodalDynamicLoad()
         std::cout << "  Initialize failed" << std::endl;
         return;
     }
-    analysis.ComputeSteps(num_steps);
+    analysis.ComputeAll();
     double d_dyn = analysis.GetDisplacements()[tip].Dz();
 
     double rel_err = std::abs(d_dyn - d_static) / std::max(std::abs(d_static), 1e-30);
@@ -1138,6 +1140,215 @@ void TestNodalDynamicLoad()
     std::cout << "  relative error = " << rel_err
         << (rel_err < 1e-3 ? "  [OK: converges to static]" : "  [NG]") << std::endl;
     std::cout << "TestNodalDynamicLoad End" << std::endl;
+}
+
+// 検証用: 離散データを持たず「時間の関数」として定義される時刻歴荷重。
+// 空間分布 pattern × amplitude·sin(2πt/period) を任意の時刻で評価する。
+class SinNodalLoad : public DynamicLoad
+{
+private:
+    std::vector<NodeLoadData> pattern_;
+    double period_;
+    double amplitude_;
+
+public:
+    SinNodalLoad(const std::vector<NodeLoadData>& pattern, double period, double amplitude = 1.0)
+        : pattern_(pattern), period_(period), amplitude_(amplitude) {}
+
+    std::vector<NodeLoadData> load_vector(DynamicAnalysis& /*analysis*/, double t) override
+    {
+        double s = reference_value(t);
+        std::vector<NodeLoadData> out = pattern_;
+        for (NodeLoadData& nl : out)
+            for (int k = 0; k < 6; k++)
+                nl.loads[k] *= s;
+        return out;
+    }
+
+    // 離散データを持たないため has_time_series() は既定(false)のまま。
+    // 時間グリッドのヒントと代表値のみ独自に定義する。
+    double suggested_timestep() const override { return period_ > 0.0 ? period_ / 20.0 : 0.0; }
+    double reference_value(double t) const override
+    {
+        return period_ > 0.0 ? amplitude_ * std::sin(2.0 * PI * t / period_) : 0.0;
+    }
+};
+
+// 時刻歴荷重の一般化(複数荷重・任意時間グリッド・補間)の検証:
+//   (1) 複数荷重の重ね合わせが単独応答の和と一致する(線形系)
+//   (2) 解析の時間刻みを荷重データの刻みと独立に設定できる(線形補間)
+//   (3) 荷重の継続時間を超えて解析すると外力ゼロの自由振動になる
+//   (4) 時間の関数として定義した荷重(HarmonicNodalLoad)が離散データ版と一致する
+void TestGeneralizedDynamicLoads()
+{
+    std::cout << "TestGeneralizedDynamicLoads Start" << std::endl;
+
+    const int tip = 4;
+    const int mid = 2;
+    FEModel model = CantiBeamModel(200, 4);
+    auto mp = std::make_shared<FEModel>(model);
+    mp->ComputeElementNodeMass();
+
+    const double load_dt = 0.005;
+    const double period = 0.05;
+    const int ndata = 401;                       // 0.0 〜 2.0 s
+    std::vector<double> sin_factors(ndata), const_factors(ndata, 1.0);
+    for (int i = 0; i < ndata; i++)
+        sin_factors[i] = std::sin(2 * PI * (i * load_dt) / period);
+
+    std::vector<NodeLoadData> pattern_a{ NodeLoadData(tip, 0, 0, -100.0) };
+    std::vector<NodeLoadData> pattern_b{ NodeLoadData(mid, 0, 50.0, 0.0) };
+
+    // 指定の荷重群・時間グリッドで解析し、先端の最終変位(Dz, Dy)を返す
+    auto run = [&](const std::vector<std::shared_ptr<DynamicLoad>>& lds,
+                   double dt, int steps, double& dz, double& dy) -> bool {
+        DynamicAnalysis a(mp, std::make_shared<FEDynamicStiffDampInitializer>(0.03));
+        for (const auto& l : lds)
+            a.AddLoad(l);
+        a.SetTimeGrid(dt, steps);
+        a.RecordEnabled = false;
+        if (!a.Initialize())
+            return false;
+        a.ComputeAll();
+        dz = a.GetDisplacements()[tip].Dz();
+        dy = a.GetDisplacements()[tip].Dy();
+        return true;
+    };
+
+    auto load_a = std::make_shared<NodalDynamicLoad>(load_dt, pattern_a, sin_factors);
+    auto load_b = std::make_shared<NodalDynamicLoad>(load_dt, pattern_b, const_factors);
+
+    // --- (0) TimeSeries の補間 ---
+    {
+        TimeSeries ts(1.0, std::vector<double>{ 0.0, 10.0, 20.0 });
+        struct { double t, expect; } cases[] = {
+            { -0.5, 0.0 },   // 区間外
+            {  0.0, 0.0 },   // 先頭データ点
+            {  0.5, 5.0 },   // 格子点間(線形補間)
+            {  1.0, 10.0 },  // データ点
+            {  1.25, 12.5 },
+            {  2.0, 20.0 },  // 末尾データ点
+            {  2.5, 0.0 },   // 区間外
+        };
+        bool ok = true;
+        for (const auto& c : cases) {
+            double v = ts.Value(c.t);
+            if (std::abs(v - c.expect) > 1e-12) {
+                ok = false;
+                std::cout << "      t=" << c.t << " -> " << v << " (expected " << c.expect << ")" << std::endl;
+            }
+        }
+        std::cout << "  [0] TimeSeries interpolation (duration=" << ts.Duration() << ")"
+            << (ok ? "  [OK]" : "  [NG]") << std::endl;
+    }
+
+    // --- (1) 重ね合わせ ---
+    {
+        double az = 0, ay = 0, bz = 0, by = 0, abz = 0, aby = 0;
+        bool ok = run({ load_a }, load_dt, 400, az, ay)
+            && run({ load_b }, load_dt, 400, bz, by)
+            && run({ load_a, load_b }, load_dt, 400, abz, aby);
+
+        double err_z = std::abs((az + bz) - abz) / std::max(std::abs(abz), 1e-30);
+        double err_y = std::abs((ay + by) - aby) / std::max(std::abs(aby), 1e-30);
+        std::cout << "  [1] superposition: A+B = " << (az + bz) << " / " << (ay + by)
+            << ", AB = " << abz << " / " << aby << std::endl;
+        std::cout << "      relative error = " << err_z << ", " << err_y
+            << (ok && err_z < 1e-9 && err_y < 1e-9 ? "  [OK]" : "  [NG]") << std::endl;
+    }
+
+    // --- (2) 解析刻みを荷重データ刻みと独立に設定(補間) ---
+    {
+        // 構造の1次固有周期(解析刻みが十分細かいかの目安)
+        FEVibrationAnalysis vib(mp);
+        vib.Compute(1);
+        double T1 = 2 * PI / vib.EigenValues()[0];
+
+        // 荷重は T1 に対し十分ゆっくり(準静的)な正弦波。データ刻みは粗く、
+        // 解析刻みは T1 を解像できるよう細かく取る(= 両者が独立であることを示す)。
+        double slow_period = 0.5;
+        double slow_dt = 0.01;              // 荷重データの刻み(周期の1/50)
+        int slow_n = 101;                   // 0.0 〜 1.0 s
+        std::vector<double> slow_factors(slow_n);
+        for (int i = 0; i < slow_n; i++)
+            slow_factors[i] = std::sin(2 * PI * (i * slow_dt) / slow_period);
+        auto load_slow = std::make_shared<NodalDynamicLoad>(slow_dt, pattern_a, slow_factors);
+
+        // 準静的加振なので応答ピークは静的解(|Dz|=64.0)に漸近し、解析刻みに依らないはず
+        auto run_peak = [&](std::shared_ptr<DynamicLoad> ld, double dt, int steps) -> double {
+            DynamicAnalysis a(mp, std::make_shared<FEDynamicStiffDampInitializer>(0.03));
+            a.AddLoad(ld);
+            a.SetTimeGrid(dt, steps);
+            a.RecordEnabled = false;
+            if (!a.Initialize())
+                return 0.0;
+            double peak = 0.0;
+            for (int s = 0; s < a.num_steps; s++) {
+                a.ComputeStep();
+                peak = std::max(peak, std::abs(a.GetDisplacements()[tip].Dz()));
+            }
+            return peak;
+        };
+
+        double dt_a = T1 / 16.0;
+        double dt_b = T1 / 32.0;
+        double pa = run_peak(load_slow, dt_a, static_cast<int>(std::ceil(1.0 / dt_a)));
+        double pb = run_peak(load_slow, dt_b, static_cast<int>(std::ceil(1.0 / dt_b)));
+
+        double err = std::abs(pb - pa) / std::max(std::abs(pa), 1e-30);
+        std::cout << "  [2] load dt=" << slow_dt << " (fixed), analysis dt="
+            << dt_a << " -> peak " << pa << ", dt=" << dt_b << " -> peak " << pb
+            << "  (T1=" << T1 << ", static |Dz|=64.0)" << std::endl;
+        std::cout << "      relative difference = " << err
+            << (err < 1e-2 ? "  [OK: independent of load sampling]" : "  [NG]") << std::endl;
+    }
+
+    // --- (3) 荷重終了後は外力ゼロの自由振動 ---
+    {
+        // 荷重は 0.5 s まで(101点)、解析は 3.0 s まで続ける
+        std::vector<double> short_factors(sin_factors.begin(), sin_factors.begin() + 101);
+        auto load_short = std::make_shared<NodalDynamicLoad>(load_dt, pattern_a, short_factors);
+
+        DynamicAnalysis a(mp, std::make_shared<FEDynamicStiffDampInitializer>(0.03));
+        a.AddLoad(load_short);
+        a.SetTimeGridByDuration(load_dt, 3.0);
+        a.RecordEnabled = false;
+        bool ok = a.Initialize();
+
+        // 加振中と自由振動後半のピークを比較
+        double peak_excite = 0.0, peak_free = 0.0;
+        for (int s = 0; s < a.num_steps && ok; s++) {
+            a.ComputeStep();
+            double dz = std::abs(a.GetDisplacements()[tip].Dz());
+            if (a.CurrentTime() <= 0.5)
+                peak_excite = std::max(peak_excite, dz);
+            else if (a.CurrentTime() > 2.0)
+                peak_free = std::max(peak_free, dz);
+        }
+        std::cout << "  [3] free vibration after load ends: steps=" << a.num_steps
+            << " (duration 3.0s / dt " << load_dt << ")" << std::endl;
+        std::cout << "      peak during excitation = " << peak_excite
+            << ", peak after 2.0s = " << peak_free
+            << (ok && peak_free < peak_excite ? "  [OK: decaying]" : "  [NG]") << std::endl;
+    }
+
+    // --- (4) 時間の関数として定義した荷重と離散データ版の一致 ---
+    {
+        // SinNodalLoad は解析時刻で直接評価される。解析刻み=データ刻みなら
+        // 離散データ(格子点評価)と厳密に一致するはず。
+        auto harmonic = std::make_shared<SinNodalLoad>(pattern_a, period);
+
+        double dz_disc = 0, dy_disc = 0, dz_func = 0, dy_func = 0;
+        bool ok = run({ load_a }, load_dt, 400, dz_disc, dy_disc)
+            && run({ harmonic }, load_dt, 400, dz_func, dy_func);
+
+        double err = std::abs(dz_func - dz_disc) / std::max(std::abs(dz_disc), 1e-30);
+        std::cout << "  [4] function load vs sampled load: " << dz_func << " vs " << dz_disc << std::endl;
+        std::cout << "      relative error = " << err
+            << (ok && err < 1e-9 ? "  [OK]" : "  [NG]") << std::endl;
+    }
+
+    std::cout << "TestGeneralizedDynamicLoads End" << std::endl;
 }
 
 // 1次共振加振→自由振動の時刻歴を計算し、先端変位履歴と最大変位を返す
@@ -1152,7 +1363,7 @@ double RunDampedResonance(std::shared_ptr<FEModel> model_ptr, std::shared_ptr<FE
     for (int i = 0; i < excite_steps; ++i)
         gaccels[i] = sin(2 * PI * (i * dt) / T1);
 
-    DynamicAccelLoad accel_load(dt, 0, 0, 1, gaccels);
+    auto accel_load = std::make_shared<SeismicAccelLoad>(Vector(0, 0, 1), TimeSeries(dt, gaccels));
     DynamicAnalysis analysis(model_ptr, accel_load, damp);
     analysis.RecordEnabled = false;
     if (!analysis.Initialize()) {
@@ -1162,7 +1373,7 @@ double RunDampedResonance(std::shared_ptr<FEModel> model_ptr, std::shared_ptr<FE
 
     double peak = 0.0;
     tip_history.clear();
-    for (int i = 0; i < num_steps; ++i) {
+    for (int i = 0; i < analysis.num_steps; ++i) {
         analysis.ComputeStep();
         double dz = analysis.GetDisplacements()[tip_node].Dz();
         tip_history.push_back(dz);
@@ -2817,6 +3028,9 @@ int main(void) {
 
     // 新機能 NodalDynamicLoad の物理検証(ステップ荷重→静的解に収束)
     TestNodalDynamicLoad();
+
+    // 時刻歴荷重の一般化(複数荷重・任意時間グリッド・補間)の検証
+    TestGeneralizedDynamicLoads();
 
     // 固有値解析の前後比較検証
     TestVibrationCheck();

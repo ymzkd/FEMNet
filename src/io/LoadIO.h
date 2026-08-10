@@ -18,7 +18,7 @@
 //
 // 対象: NodeLoad / InertialForce / NodeBodyForce / PlateLoad /
 //       BeamPolyLoad / AxialPolyLoad
-// (DynamicAccelLoad は LoadBase 派生でなく対象外)
+// (時刻歴荷重 DynamicLoad は LoadBase 派生でなく対象外)
 
 // 荷重リストを path に書き出す。
 void SaveLoads(const std::string &path,

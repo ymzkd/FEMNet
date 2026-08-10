@@ -159,9 +159,10 @@ for i in range(n_steps):
     a = amplitude * math.sin(omega_excitation * t) * ramp
     accel_data.append(a)
 
-# Create DynamicAccelLoad (direction: Y-direction)
-accel_load = DynamicAccelLoad(dt * 1000, 0, 1, 0)  # dt in ms, direction vector
-accel_load.Accels = accel_data
+# Create seismic time history load (direction: Y-direction)
+# TimeSeries(time step, values, start time) is linearly interpolated at any time
+accel_series = TimeSeries(dt * 1000, accel_data)  # dt in ms
+accel_load = SeismicAccelLoad(Vector(0, 1, 0), accel_series)
 
 print(f"   Duration: {duration:.1f} s")
 print(f"   Time step: {dt*1000:.0f} ms")

@@ -62,64 +62,126 @@ public:
 };
 
 /// <summary>
+/// 等間隔サンプリングされた離散時系列データ。時刻 t に対する値を線形補間で返す。
+/// データ区間 [t0, t0+(N-1)*dt] の外では 0 を返す(荷重の開始前・終了後は無載荷)。
+/// </summary>
+class TimeSeries
+{
+public:
+    double t0 = 0.0;             // 先頭データ点の時刻
+    double dt = 0.0;             // データの時間刻み
+    std::vector<double> values;  // データ列
+
+    TimeSeries() = default;
+    TimeSeries(double dt, const std::vector<double>& values, double t0 = 0.0)
+        : t0(t0), dt(dt), values(values) {}
+
+    bool IsEmpty() const { return values.empty() || dt <= 0.0; }
+    /// データ数
+    int Count() const { return static_cast<int>(values.size()); }
+    /// データの継続時間((N-1)*dt。データ点が1個以下なら0)
+    double Duration() const { return IsEmpty() ? 0.0 : (values.size() - 1) * dt; }
+    /// 末尾データ点の時刻
+    double EndTime() const { return t0 + Duration(); }
+
+    /// 時刻 t における値(線形補間)。データ区間外は 0。
+    double Value(double t) const;
+};
+
+/// <summary>
 /// 時刻歴応答解析における時刻歴荷重の基底クラス。
-/// ステップ step(時刻 t=step*dt)ごとに「全体節点空間」の荷重ベクトルを返す。
+/// 時刻 t の関数として「全体節点空間」の荷重ベクトルを返す。
 /// 縮約(RigidLink変換・固定DOF処理)は DynamicAnalysis 側で一括して行うため、
 /// 派生クラスは全節点空間の NodeLoadData(固定DOF成分も含めてよい)を返せばよい。
+///
+/// 解析の時間刻み・ステップ数は DynamicAnalysis が所有する。荷重側は
+/// suggested_timestep() / end_time() で「時間グリッド未指定時のヒント」を返すのみで、
+/// 解析時間を拘束しない(ヒント不要な荷重は既定実装のまま 0 を返せばよい)。
+///
+/// 地震波のように離散データを補間して評価する荷重は has_time_series() が true を返し、
+/// time_series() で元データ(データ数・時間刻み・開始時刻・値列)を公開する。波形の
+/// プロットなど、解析グリッドではなく荷重固有のグリッドが必要な用途で利用する。
+/// 時間グリッドのヒントと代表値は既定でこの時系列から導かれるため、離散データを持つ
+/// 派生クラスは has_time_series() / time_series() を実装するだけでよい。
 /// </summary>
 class DynamicLoad
 {
 public:
     virtual ~DynamicLoad() = default;
 
-    /// ステップ step(時刻 t)の全体節点荷重ベクトル。範囲外stepは派生側でクランプする。
-    virtual std::vector<NodeLoadData> load_vector(DynamicAnalysis& analysis, int step, double t) = 0;
+    std::string Name;      // 識別用の名称(任意)
+    double Factor = 1.0;   // 荷重倍率
 
-    /// 時間刻み
-    virtual double timestep() const = 0;
-    /// 総ステップ数
-    virtual int steps() const = 0;
+    /// 時刻 t における全体節点荷重ベクトル
+    virtual std::vector<NodeLoadData> load_vector(DynamicAnalysis& analysis, double t) = 0;
+
+    /// 離散データ(時系列)を元に評価される荷重かどうか
+    virtual bool has_time_series() const { return false; }
+    /// 荷重の元データ時系列。has_time_series() が false の場合は空の時系列を返す。
+    virtual const TimeSeries& time_series() const;
+
+    /// 時間グリッド自動決定用のヒント: 推奨時間刻み(0 = ヒントなし)
+    virtual double suggested_timestep() const { return has_time_series() ? time_series().dt : 0.0; }
+    /// 時間グリッド自動決定用のヒント: 荷重の終端時刻(0 = ヒントなし・定常荷重)
+    virtual double end_time() const { return has_time_series() ? time_series().EndTime() : 0.0; }
+
+    /// 入力波形の表示等に用いる時刻 t の代表スカラー値
+    /// (地動加速度・時刻係数など。荷重倍率は含まない)。既定は時系列の補間値。
+    virtual double reference_value(double t) const
+    {
+        return has_time_series() ? time_series().Value(t) : 0.0;
+    }
 };
 
 /// <summary>
 /// 地震(地動加速度)による慣性外力 -M·ι·a_g(t) を表す時刻歴荷重。
-/// DynamicAccelLoad から構築する。質量は集中質量(対角)のため、各節点の
-/// 並進成分に -(m/g)·Direction·a_g を与える(回転成分は0)。
+/// 質量は集中質量(対角)のため、各節点の並進成分に -(m/g)·Direction·a_g を
+/// 与える(回転成分は0)。地動加速度は離散データを線形補間して評価する。
 /// </summary>
 class SeismicAccelLoad : public DynamicLoad
 {
 private:
-    DynamicAccelLoad accel;
+    Vector direction_;
+    TimeSeries accels_;
 
 public:
-    SeismicAccelLoad(const DynamicAccelLoad& accel_load) : accel(accel_load) {}
+    SeismicAccelLoad(const Vector& direction, const TimeSeries& accels)
+        : direction_(direction), accels_(accels) {}
 
-    const DynamicAccelLoad& AccelLoad() const { return accel; }
+    const Vector& Direction() const { return direction_; }
+    void SetAccels(const TimeSeries& accels) { accels_ = accels; }
 
-    std::vector<NodeLoadData> load_vector(DynamicAnalysis& analysis, int step, double t) override;
-    double timestep() const override { return accel.timestep; }
-    int steps() const override { return static_cast<int>(accel.Accels.size()); }
+    std::vector<NodeLoadData> load_vector(DynamicAnalysis& analysis, double t) override;
+    /// 地動加速度の時刻歴
+    bool has_time_series() const override { return true; }
+    const TimeSeries& time_series() const override { return accels_; }
 };
 
 /// <summary>
-/// 節点に作用する時刻歴荷重。空間分布 pattern(一定) × 時刻係数 factors[step] で表す。
+/// 節点に作用する時刻歴荷重。空間分布 pattern(一定) × 時刻係数 factors(t) で表す。
 /// 慣性力以外の一般の時刻歴外力(節点集中荷重の時刻歴)を扱う。
+/// 時刻係数は離散データを線形補間して評価する。
 /// </summary>
 class NodalDynamicLoad : public DynamicLoad
 {
 private:
-    double dt_;
     std::vector<NodeLoadData> pattern_; // 空間分布(一定)
-    std::vector<double> factors_;       // 時刻係数
+    TimeSeries factors_;                // 時刻係数
 
 public:
     NodalDynamicLoad(double dt, const std::vector<NodeLoadData>& pattern,
-                     const std::vector<double>& factors)
-        : dt_(dt), pattern_(pattern), factors_(factors) {}
+                     const std::vector<double>& factors, double t0 = 0.0)
+        : pattern_(pattern), factors_(dt, factors, t0) {}
+    NodalDynamicLoad(const std::vector<NodeLoadData>& pattern, const TimeSeries& factors)
+        : pattern_(pattern), factors_(factors) {}
 
-    std::vector<NodeLoadData> load_vector(DynamicAnalysis& analysis, int step, double t) override;
-    double timestep() const override { return dt_; }
-    int steps() const override { return static_cast<int>(factors_.size()); }
+    const std::vector<NodeLoadData>& Pattern() const { return pattern_; }
+    void SetFactors(const TimeSeries& factors) { factors_ = factors; }
+
+    std::vector<NodeLoadData> load_vector(DynamicAnalysis& analysis, double t) override;
+    /// 時刻係数の時刻歴
+    bool has_time_series() const override { return true; }
+    const TimeSeries& time_series() const override { return factors_; }
 };
 
 /// <summary>
@@ -147,19 +209,18 @@ private:
     friend class DAEnergyRecorder;
     friend class SeismicAccelLoad;
 
-    // 全体節点荷重ベクトル(load->load_vector)を縮約空間へ変換する。
+    // 時刻 t における全荷重の合計を縮約空間へ変換する。
     //   f_reduced: [T^T·f_slave ; f_free]  (RHS用, サイズ master_dof_num + free)
     //   f_fix    : 固定DOF成分            (反力用, サイズ fixed)
-    void ReducedLoadVector(int step, Eigen::VectorXd& f_reduced, Eigen::VectorXd& f_fix);
+    void ReducedLoadVector(double t, Eigen::VectorXd& f_reduced, Eigen::VectorXd& f_fix);
 
     // 静止状態からの初期加速度 a0 を M·a0 = f0 より求める(質量0のDOFは0)。
     Eigen::VectorXd ComputeInitialAcceleration(const Eigen::VectorXd& f0);
 
 public:
-    DynamicAccelLoad accel_load;                 // 後方互換: 地震入力DTO(従来コンストラクタで設定)
-    std::shared_ptr<DynamicLoad> load;           // 実際に評価する時刻歴荷重
-    double dt = 0.0;                             // 時間刻み(Initializeでloadから取得)
-    int num_steps = 0;                           // 総ステップ数(Initializeでloadから取得)
+    std::vector<std::shared_ptr<DynamicLoad>> loads;   // 実際に評価する時刻歴荷重(複数登録可)
+    double dt = 0.0;                                   // 解析の時間刻み
+    int num_steps = 0;                                 // 解析ステップ数
     std::shared_ptr<FEDynamicDampInitializer> damp_initializer = nullptr;
 
     int current_step = 0;
@@ -171,15 +232,34 @@ public:
     double beta = 0.25; // 平均加速度法
                         // double beta = 1.0/6.0; // 線形加速度法(発散しがち)
 
-    // 従来コンストラクタ(後方互換): DynamicAccelLoad から SeismicAccelLoad を生成する
-    DynamicAnalysis(std::shared_ptr<FEModel> model,
-                    const DynamicAccelLoad& accel_load,
-                    std::shared_ptr<FEDynamicDampInitializer> damp = nullptr);
-
     // 汎用コンストラクタ: 任意の時刻歴荷重(DynamicLoad)を与える
     DynamicAnalysis(std::shared_ptr<FEModel> model,
                     std::shared_ptr<DynamicLoad> load,
                     std::shared_ptr<FEDynamicDampInitializer> damp = nullptr);
+
+    // 荷重を持たずに構築し、AddLoad で追加していく
+    DynamicAnalysis(std::shared_ptr<FEModel> model,
+                    std::shared_ptr<FEDynamicDampInitializer> damp = nullptr);
+
+    /// 時刻歴荷重を追加する(同時に作用する荷重を重ね合わせる)
+    void AddLoad(std::shared_ptr<DynamicLoad> load);
+    /// 登録済みの時刻歴荷重をすべて削除する
+    void ClearLoads() { loads.clear(); }
+
+    /// 時間刻みとステップ数を直接指定する(解析時刻は step*dt, step = 0..steps)
+    void SetTimeGrid(double timestep, int steps);
+    /// 時間刻みと継続時間を指定する。ステップ数は継続時間を下回らないよう切り上げる。
+    void SetTimeGridByDuration(double timestep, double duration);
+    /// 登録済み荷重のヒントから時間グリッドを決定する
+    /// (dt = 推奨刻みの最小値、継続時間 = 終端時刻の最大値)。決定できない場合 false。
+    bool SetTimeGridFromLoads();
+
+    /// 指定ステップの時刻
+    double TimeAt(int step) const { return step * dt; }
+    /// 現在ステップの時刻
+    double CurrentTime() const { return TimeAt(current_step); }
+    /// 解析の終端時刻
+    double EndTime() const { return TimeAt(num_steps); }
 
     bool Initialize();
 
@@ -197,7 +277,12 @@ public:
 
     // Newmarkのβ法による動的解析
     void ComputeStep();
+    /// 指定ステップ番号に到達するまで計算を進める
     void ComputeSteps(int steps);
+    /// 最終ステップまで計算を進める
+    void ComputeAll() { ComputeSteps(num_steps); }
+    /// 指定時刻に到達するまで計算を進める
+    void ComputeUntil(double t);
 
     bool SetDisplacements(std::vector<Displacement> disps);
     bool SetVelocities(std::vector<Displacement> vels);

@@ -21,6 +21,8 @@ class DASampler
 {
 
 public:
+    virtual ~DASampler() = default;
+
     int step;
     std::string Name;
     std::vector<Displacement> velocity, displacement, acceleration;
@@ -41,23 +43,146 @@ public:
     void Sampling(DynamicAnalysis &da) override;
 };
 
+class DASampler_MaxVelocity : public DASampler
+{
+public:
+    double max_velocity = 0.0;
+
+    DASampler_MaxVelocity() : DASampler("MaxVelocity") {}
+
+    void Sampling(DynamicAnalysis &da) override;
+};
+
+class DASampler_MaxAcceleration : public DASampler
+{
+public:
+    double max_acceleration = 0.0;
+
+    DASampler_MaxAcceleration() : DASampler("MaxAcceleration") {}
+
+    void Sampling(DynamicAnalysis &da) override;
+};
+
+class DASampler_MaxDispDirection : public DASampler
+{
+public:
+
+    double max_displacement = 0.0;
+    Vector direction;
+
+    DASampler_MaxDispDirection() : DASampler("MaxDispDirection") {}
+    DASampler_MaxDispDirection(Vector direction) : DASampler("MaxDispDirection")
+    {
+        this->direction = direction;
+    }
+    
+    void Sampling(DynamicAnalysis &da) override;
+};
+
+class DASampler_MaxVelocityDirection : public DASampler
+{
+public:
+
+    double max_velocity = 0.0;
+    Vector direction;
+
+    DASampler_MaxVelocityDirection() : DASampler("MaxVelocityDirection"){}
+    DASampler_MaxVelocityDirection(Vector direction) : DASampler("MaxVelocityDirection")
+    {
+        this->direction = direction;
+    }
+
+    void Sampling(DynamicAnalysis &da) override;
+};
+
+class DASampler_MaxAccelDirection : public DASampler
+{
+public:
+    double max_accel = 0.0;
+    Vector direction;
+
+    DASampler_MaxAccelDirection() : DASampler("MaxAccelDirection"){}
+    DASampler_MaxAccelDirection(Vector direction) : DASampler("MaxAccelDirection")
+    {
+        this->direction = direction;
+    }
+
+    void Sampling(DynamicAnalysis &da) override;
+};
+
+/// <summary>
+/// 時刻歴応答解析の各ステップで任意の量を記録するレコーダの基底クラス。
+/// DASampler と同様に DynamicAnalysis へ複数登録でき、C#/Python 側でも派生できる。
+/// </summary>
 class DARecorder
 {
 public:
+    virtual ~DARecorder() = default;
+
+    std::string Name;
+    std::string Description;
+    std::vector<double> Values;
+
+    DARecorder() = default;
+    DARecorder(std::string name, std::string description = "")
+        : Name(name), Description(description) {}
+
+    /// 解析の初期化時(DynamicAnalysis::Initialize)に呼ばれる。記録バッファの初期化に使う。
+    virtual void Initialize(DynamicAnalysis &da) { Values.clear(); }
+    /// 各ステップの計算後に呼ばれる。
     virtual void Record(DynamicAnalysis &da) = 0;
 };
 
-class DAEnergyRecorder : public DARecorder
+/// <summary>
+/// 運動エネルギー 1/2·vᵀ·M·v を記録する。
+/// </summary>
+class DARecorder_KineticEnergy : public DARecorder
 {
 public:
-    std::vector<double> kinetic_energy, potential_energy, damping_energy, input_energy;
+    DARecorder_KineticEnergy()
+        : DARecorder("KineticEnergy", "Kinetic energy 1/2*v^T*M*v") {}
 
-    void Initialize();
-    void RecordKineticEnergy(DynamicAnalysis &da);
-    void RecordPotentialEnergy(DynamicAnalysis &da);
-    void RecordDampingEnergy(DynamicAnalysis &da);
-    void RecordInputEnergy(DynamicAnalysis &da);
+    /// step 0 の値として 0 を積んでから記録を開始する
+    void Initialize(DynamicAnalysis &da) override { DARecorder::Initialize(da); Values.push_back(0.0); }
+    void Record(DynamicAnalysis &da) override;
+};
 
+/// <summary>
+/// ポテンシャル(ひずみ)エネルギー 1/2·dᵀ·K·d を記録する。
+/// </summary>
+class DARecorder_PotentialEnergy : public DARecorder
+{
+public:
+    DARecorder_PotentialEnergy()
+        : DARecorder("PotentialEnergy", "Potential (strain) energy 1/2*d^T*K*d") {}
+
+    void Initialize(DynamicAnalysis &da) override { DARecorder::Initialize(da); Values.push_back(0.0); }
+    void Record(DynamicAnalysis &da) override;
+};
+
+/// <summary>
+/// 減衰による消散量 vᵀ·C·v を記録する(各ステップの瞬時値。時間積分は利用側で行う)。
+/// </summary>
+class DARecorder_DampingEnergy : public DARecorder
+{
+public:
+    DARecorder_DampingEnergy()
+        : DARecorder("DampingEnergy", "Damping dissipation v^T*C*v") {}
+
+    void Initialize(DynamicAnalysis &da) override { DARecorder::Initialize(da); Values.push_back(0.0); }
+    void Record(DynamicAnalysis &da) override;
+};
+
+/// <summary>
+/// 外力による入力量 -F_ext·v を記録する(各ステップの瞬時値。時間積分は利用側で行う)。
+/// </summary>
+class DARecorder_InputEnergy : public DARecorder
+{
+public:
+    DARecorder_InputEnergy()
+        : DARecorder("InputEnergy", "Input energy -F_ext*v") {}
+
+    void Initialize(DynamicAnalysis &da) override { DARecorder::Initialize(da); Values.push_back(0.0); }
     void Record(DynamicAnalysis &da) override;
 };
 
@@ -206,7 +331,10 @@ private:
     friend class FEDynamicStiffDampInitializer;
     friend class FEDynamicMassDampInitializer;
     friend class FEDynamicRayleighDampInitializer;
-    friend class DAEnergyRecorder;
+    friend class DARecorder_KineticEnergy;
+    friend class DARecorder_PotentialEnergy;
+    friend class DARecorder_DampingEnergy;
+    friend class DARecorder_InputEnergy;
     friend class SeismicAccelLoad;
 
     // 時刻 t における全荷重の合計を縮約空間へ変換する。
@@ -226,7 +354,8 @@ public:
     int current_step = 0;
 
     std::vector<std::shared_ptr<DASampler>> samplers;
-    DAEnergyRecorder energy_recorder;
+    // 各ステップで呼ばれるレコーダ(複数登録可)。既定でエネルギー系の4種が入っている。
+    std::vector<std::shared_ptr<DARecorder>> recorders;
     bool RecordEnabled = true;
 
     double beta = 0.25; // 平均加速度法
@@ -245,6 +374,11 @@ public:
     void AddLoad(std::shared_ptr<DynamicLoad> load);
     /// 登録済みの時刻歴荷重をすべて削除する
     void ClearLoads() { loads.clear(); }
+
+    /// レコーダを追加する(各ステップの計算後に Record が呼ばれる)
+    void AddRecorder(std::shared_ptr<DARecorder> recorder);
+    /// 登録済みのレコーダをすべて削除する(既定のエネルギーレコーダも外れる)
+    void ClearRecorders() { recorders.clear(); }
 
     /// 時間刻みとステップ数を直接指定する(解析時刻は step*dt, step = 0..steps)
     void SetTimeGrid(double timestep, int steps);

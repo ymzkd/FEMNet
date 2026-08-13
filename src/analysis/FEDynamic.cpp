@@ -4,205 +4,6 @@
 #include <algorithm>
 #include <cmath>
 
-void DASampler_MaxDisplacement::Sampling(DynamicAnalysis &da)
-{
-    bool updated = false;
-    std::vector<Displacement> disp = da.GetDisplacements();
-
-    // 任意節点の変位が最大となるステップを記録
-    for (int i = 0; i < da.model->Nodes.size(); i++)
-    {
-        double d_length = disp[i].Translation().norm();
-        if (d_length > max_displacement)
-        {
-            max_displacement = d_length;
-            step = da.current_step;
-            updated = true;
-        }
-    }
-
-    if (updated)
-    {
-        velocity = da.GetVelocities();
-        displacement = disp;
-        acceleration = da.GetAccelerations();
-    }
-}
-
-void DASampler_MaxVelocity::Sampling(DynamicAnalysis &da)
-{
-    bool updated = false;
-    std::vector<Displacement> vel = da.GetVelocities();
-
-    // 任意節点の速度が最大となるステップを記録
-    for (size_t i = 0; i < da.model->Nodes.size(); i++)
-    {
-        double v_length = vel[i].Translation().norm();
-        if (v_length > max_velocity)
-        {
-            max_velocity = v_length;
-            step = da.current_step;
-            updated = true;
-        }
-    }
-
-    if (updated)
-    {
-        velocity = vel;
-        displacement = da.GetDisplacements();
-        acceleration = da.GetAccelerations();
-    }
-}
-
-void DASampler_MaxAcceleration::Sampling(DynamicAnalysis &da)
-{
-    bool updated = false;
-    std::vector<Displacement> acc = da.GetAccelerations();
-
-    // 任意節点の加速度が最大となるステップを記録
-    for (size_t i = 0; i < da.model->Nodes.size(); i++)
-    {
-        double a_length = acc[i].Translation().norm();
-        if (a_length > max_acceleration)
-        {
-            max_acceleration = a_length;
-            step = da.current_step;
-            updated = true;
-        }
-    }
-
-    if (updated)
-    {
-        velocity = da.GetVelocities();
-        displacement = da.GetDisplacements();
-        acceleration = acc;
-    }
-}
-
-void DASampler_MaxDispDirection::Sampling(DynamicAnalysis &da)
-{
-    // 方向が未設定(零ベクトル)の場合は評価できないためサンプリングしない
-    Vector dir = direction;
-    double dir_norm = dir.norm();
-    if (dir_norm <= 0.0)
-        return;
-    Vector unit = Vector::multiply(dir, 1.0 / dir_norm);
-
-    bool updated = false;
-    std::vector<Displacement> disp = da.GetDisplacements();
-
-    // 任意節点の指定方向並進変位成分(絶対値)が最大となるステップを記録
-    for (size_t i = 0; i < da.model->Nodes.size(); i++)
-    {
-        double d_dir = std::abs(Vector::multiply(disp[i].Translation(), unit));
-        if (d_dir > max_displacement)
-        {
-            max_displacement = d_dir;
-            step = da.current_step;
-            updated = true;
-        }
-    }
-
-    if (updated)
-    {
-        velocity = da.GetVelocities();
-        displacement = disp;
-        acceleration = da.GetAccelerations();
-    }
-}
-
-void DASampler_MaxVelocityDirection::Sampling(DynamicAnalysis &da)
-{
-    // 方向が未設定(零ベクトル)の場合は評価できないためサンプリングしない
-    Vector dir = direction;
-    double dir_norm = dir.norm();
-    if (dir_norm <= 0.0)
-        return;
-    Vector unit = Vector::multiply(dir, 1.0 / dir_norm);
-
-    bool updated = false;
-    std::vector<Displacement> vel = da.GetVelocities();
-
-    // 任意節点の指定方向並進速度成分(絶対値)が最大となるステップを記録
-    for (size_t i = 0; i < da.model->Nodes.size(); i++)
-    {
-        double v_dir = std::abs(Vector::multiply(vel[i].Translation(), unit));
-        if (v_dir > max_velocity)
-        {
-            max_velocity = v_dir;
-            step = da.current_step;
-            updated = true;
-        }
-    }
-
-    if (updated)
-    {
-        velocity = vel;
-        displacement = da.GetDisplacements();
-        acceleration = da.GetAccelerations();
-    }
-}
-
-void DASampler_MaxAccelDirection::Sampling(DynamicAnalysis &da)
-{
-    // 方向が未設定(零ベクトル)の場合は評価できないためサンプリングしない
-    Vector dir = direction;
-    double dir_norm = dir.norm();
-    if (dir_norm <= 0.0)
-        return;
-    Vector unit = Vector::multiply(dir, 1.0 / dir_norm);
-
-    bool updated = false;
-    std::vector<Displacement> acc = da.GetAccelerations();
-
-    // 任意節点の指定方向並進加速度成分(絶対値)が最大となるステップを記録
-    for (size_t i = 0; i < da.model->Nodes.size(); i++)
-    {
-        double a_dir = std::abs(Vector::multiply(acc[i].Translation(), unit));
-        if (a_dir > max_accel)
-        {
-            max_accel = a_dir;
-            step = da.current_step;
-            updated = true;
-        }
-    }
-
-    if (updated)
-    {
-        velocity = da.GetVelocities();
-        displacement = da.GetDisplacements();
-        acceleration = acc;
-    }
-}
-
-void DARecorder_KineticEnergy::Record(DynamicAnalysis &da)
-{
-    double energy = 0.5 * da.current_vel.dot(da.matM_aa.selfadjointView<Eigen::Upper>() * da.current_vel);
-    Values.push_back(energy);
-}
-
-void DARecorder_PotentialEnergy::Record(DynamicAnalysis &da)
-{
-    double energy = 0.5 * da.current_disp.dot(da.matK_aa.selfadjointView<Eigen::Upper>() * da.current_disp);
-    Values.push_back(energy);
-}
-
-void DARecorder_DampingEnergy::Record(DynamicAnalysis &da)
-{
-    double energy = da.current_vel.dot(da.matC_aa.selfadjointView<Eigen::Upper>() * da.current_vel);
-    Values.push_back(energy);
-}
-
-void DARecorder_InputEnergy::Record(DynamicAnalysis &da)
-{
-    // Record は current_step 更新後に呼ばれる。既存実装に合わせ 1つ前のステップの
-    // 外力を参照する。入力エネルギーは現行の符号慣行に合わせ -F_ext·v を積算する
-    // (地震では F_ext=-M·ι·a_g なので (M·ι·a_g)·v となり従来と一致)。
-    Eigen::VectorXd f_reduced, f_fix;
-    da.ReducedLoadVector(da.TimeAt(da.current_step - 1), f_reduced, f_fix);
-    Values.push_back(-f_reduced.dot(da.current_vel));
-}
-
 // 時刻 t における値(線形補間)。データ区間外は 0。
 double TimeSeries::Value(double t) const
 {
@@ -256,10 +57,10 @@ DynamicAnalysis::DynamicAnalysis(std::shared_ptr<FEModel> model, std::shared_ptr
     }
 
     // 既定のエネルギーレコーダを登録(不要なら ClearRecorders で外せる)
-    recorders.push_back(std::make_shared<DARecorder_KineticEnergy>());
-    recorders.push_back(std::make_shared<DARecorder_PotentialEnergy>());
-    recorders.push_back(std::make_shared<DARecorder_DampingEnergy>());
-    recorders.push_back(std::make_shared<DARecorder_InputEnergy>());
+    // recorders.push_back(std::make_shared<DARecorder_KineticEnergy>());
+    // recorders.push_back(std::make_shared<DARecorder_PotentialEnergy>());
+    // recorders.push_back(std::make_shared<DARecorder_DampingEnergy>());
+    // recorders.push_back(std::make_shared<DARecorder_InputEnergy>());
 }
 
 void DynamicAnalysis::AddLoad(std::shared_ptr<DynamicLoad> load)
@@ -481,10 +282,16 @@ bool DynamicAnalysis::Initialize()
     solver->compute(compute_mat);
 
     // Recorder初期化
-    for (auto &recorder : recorders)
+    // RecordEnabled == false は「記録済み・記録しない」状態であり、Initialize() は
+    // 系の再構築とステップ0への巻き戻しのみを行う(計算済みの記録を保持する)。
+    // 記録し直す場合は RecordEnabled を true に戻してから Initialize() を呼ぶ。
+    if (RecordEnabled)
     {
-        if (recorder)
-            recorder->Initialize(*this);
+        for (auto &recorder : recorders)
+        {
+            if (recorder)
+                recorder->Initialize(*this);
+        }
     }
 
     return true;

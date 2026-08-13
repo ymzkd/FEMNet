@@ -8,6 +8,8 @@
 %shared_ptr(DASampler_MaxDispDirection);
 %shared_ptr(DASampler_MaxVelocityDirection);
 %shared_ptr(DASampler_MaxAccelDirection);
+%shared_ptr(DASampler_MaxBaseShear);
+%shared_ptr(DASampler_MaxBaseShearDirection);
 // レコーダ(DynamicAnalysis が複数保持するため shared_ptr で公開)
 %shared_ptr(DARecorder);
 %shared_ptr(DARecorder_KineticEnergy);
@@ -47,6 +49,8 @@
 %{
     #include "FEAnalysis.h"
     #include "FELinearStaticOp.h"
+    #include "DASampler.h"
+    #include "DARecorder.h"
     #include "FEDynamic.h"
     #include "FEBucklingAnalysis.h"
     #include "FEVibrationAnalysis.h"
@@ -63,6 +67,8 @@ namespace std {
 
 %include "FEAnalysis.h"
 %include "FELinearStaticOp.h"
+%include "DASampler.h"
+%include "DARecorder.h"
 %include "FEDynamic.h"
 %include "FEBucklingAnalysis.h"
 %include "FEVibrationAnalysis.h"

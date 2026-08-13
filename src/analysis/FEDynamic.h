@@ -13,178 +13,11 @@
 #include "FEAnalysis.h"
 #include "LoadComponent.h"
 #include "FEVibrationAnalysis.h"
+#include "DASampler.h"
+#include "DARecorder.h"
 
 // 前方宣言
 class DynamicAnalysis;
-
-class DASampler
-{
-
-public:
-    virtual ~DASampler() = default;
-
-    int step;
-    std::string Name;
-    std::vector<Displacement> velocity, displacement, acceleration;
-
-    DASampler() : step(0), Name("") {}
-    DASampler(std::string name) : step(0), Name(name) {}
-
-    virtual void Sampling(DynamicAnalysis &analysis) = 0;
-};
-
-class DASampler_MaxDisplacement : public DASampler
-{
-public:
-    double max_displacement = 0.0;
-
-    DASampler_MaxDisplacement() : DASampler("MaxDisplacement") {}
-
-    void Sampling(DynamicAnalysis &da) override;
-};
-
-class DASampler_MaxVelocity : public DASampler
-{
-public:
-    double max_velocity = 0.0;
-
-    DASampler_MaxVelocity() : DASampler("MaxVelocity") {}
-
-    void Sampling(DynamicAnalysis &da) override;
-};
-
-class DASampler_MaxAcceleration : public DASampler
-{
-public:
-    double max_acceleration = 0.0;
-
-    DASampler_MaxAcceleration() : DASampler("MaxAcceleration") {}
-
-    void Sampling(DynamicAnalysis &da) override;
-};
-
-class DASampler_MaxDispDirection : public DASampler
-{
-public:
-
-    double max_displacement = 0.0;
-    Vector direction;
-
-    DASampler_MaxDispDirection() : DASampler("MaxDispDirection") {}
-    DASampler_MaxDispDirection(Vector direction) : DASampler("MaxDispDirection")
-    {
-        this->direction = direction;
-    }
-    
-    void Sampling(DynamicAnalysis &da) override;
-};
-
-class DASampler_MaxVelocityDirection : public DASampler
-{
-public:
-
-    double max_velocity = 0.0;
-    Vector direction;
-
-    DASampler_MaxVelocityDirection() : DASampler("MaxVelocityDirection"){}
-    DASampler_MaxVelocityDirection(Vector direction) : DASampler("MaxVelocityDirection")
-    {
-        this->direction = direction;
-    }
-
-    void Sampling(DynamicAnalysis &da) override;
-};
-
-class DASampler_MaxAccelDirection : public DASampler
-{
-public:
-    double max_accel = 0.0;
-    Vector direction;
-
-    DASampler_MaxAccelDirection() : DASampler("MaxAccelDirection"){}
-    DASampler_MaxAccelDirection(Vector direction) : DASampler("MaxAccelDirection")
-    {
-        this->direction = direction;
-    }
-
-    void Sampling(DynamicAnalysis &da) override;
-};
-
-/// <summary>
-/// 時刻歴応答解析の各ステップで任意の量を記録するレコーダの基底クラス。
-/// DASampler と同様に DynamicAnalysis へ複数登録でき、C#/Python 側でも派生できる。
-/// </summary>
-class DARecorder
-{
-public:
-    virtual ~DARecorder() = default;
-
-    std::string Name;
-    std::string Description;
-    std::vector<double> Values;
-
-    DARecorder() = default;
-    DARecorder(std::string name, std::string description = "")
-        : Name(name), Description(description) {}
-
-    /// 解析の初期化時(DynamicAnalysis::Initialize)に呼ばれる。記録バッファの初期化に使う。
-    virtual void Initialize(DynamicAnalysis &da) { Values.clear(); }
-    /// 各ステップの計算後に呼ばれる。
-    virtual void Record(DynamicAnalysis &da) = 0;
-};
-
-/// <summary>
-/// 運動エネルギー 1/2·vᵀ·M·v を記録する。
-/// </summary>
-class DARecorder_KineticEnergy : public DARecorder
-{
-public:
-    DARecorder_KineticEnergy()
-        : DARecorder("KineticEnergy", "Kinetic energy 1/2*v^T*M*v") {}
-
-    /// step 0 の値として 0 を積んでから記録を開始する
-    void Initialize(DynamicAnalysis &da) override { DARecorder::Initialize(da); Values.push_back(0.0); }
-    void Record(DynamicAnalysis &da) override;
-};
-
-/// <summary>
-/// ポテンシャル(ひずみ)エネルギー 1/2·dᵀ·K·d を記録する。
-/// </summary>
-class DARecorder_PotentialEnergy : public DARecorder
-{
-public:
-    DARecorder_PotentialEnergy()
-        : DARecorder("PotentialEnergy", "Potential (strain) energy 1/2*d^T*K*d") {}
-
-    void Initialize(DynamicAnalysis &da) override { DARecorder::Initialize(da); Values.push_back(0.0); }
-    void Record(DynamicAnalysis &da) override;
-};
-
-/// <summary>
-/// 減衰による消散量 vᵀ·C·v を記録する(各ステップの瞬時値。時間積分は利用側で行う)。
-/// </summary>
-class DARecorder_DampingEnergy : public DARecorder
-{
-public:
-    DARecorder_DampingEnergy()
-        : DARecorder("DampingEnergy", "Damping dissipation v^T*C*v") {}
-
-    void Initialize(DynamicAnalysis &da) override { DARecorder::Initialize(da); Values.push_back(0.0); }
-    void Record(DynamicAnalysis &da) override;
-};
-
-/// <summary>
-/// 外力による入力量 -F_ext·v を記録する(各ステップの瞬時値。時間積分は利用側で行う)。
-/// </summary>
-class DARecorder_InputEnergy : public DARecorder
-{
-public:
-    DARecorder_InputEnergy()
-        : DARecorder("InputEnergy", "Input energy -F_ext*v") {}
-
-    void Initialize(DynamicAnalysis &da) override { DARecorder::Initialize(da); Values.push_back(0.0); }
-    void Record(DynamicAnalysis &da) override;
-};
 
 /// <summary>
 /// 等間隔サンプリングされた離散時系列データ。時刻 t に対する値を線形補間で返す。
@@ -356,6 +189,8 @@ public:
     std::vector<std::shared_ptr<DASampler>> samplers;
     // 各ステップで呼ばれるレコーダ(複数登録可)。既定でエネルギー系の4種が入っている。
     std::vector<std::shared_ptr<DARecorder>> recorders;
+    /// サンプラー/レコーダを動作させるか。false の間は各ステップの記録を行わず、
+    /// Initialize() もレコーダのバッファを初期化しない(計算済みの記録を保持する)。
     bool RecordEnabled = true;
 
     double beta = 0.25; // 平均加速度法

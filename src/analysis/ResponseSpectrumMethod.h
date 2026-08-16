@@ -86,7 +86,8 @@ private:
     bool m_computed = false;
 
 public:
-    double damping_rate = 0.05;               // 減衰比(CQC法の場合のみ計算に影響)
+    // CQCの減衰比はSpectrumFunction->effective_damping_rate()から取得する
+    // (旧damping_rateは廃止。スペクトル側と二重管理になっていたため)
     Vector Direction = Vector(1.0, 1.0, 1.0); // 応答スペクトルの方向
 
     FEVibrationAnalysis VibrateResult;

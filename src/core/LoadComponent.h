@@ -482,28 +482,5 @@ public:
     Displacement GetDisplacement(double p) override;
 };
 
-class DynamicAccelLoad {
-public:
-    double timestep;
-    Vector Direction;
-    std::vector<double> Accels;
-
-    size_t DataCount() {
-        return Accels.size();
-    }
-
-    DynamicAccelLoad() : timestep(0), Direction(0, 0, 0) {};
-
-    DynamicAccelLoad(double timestep, Vector Direction, std::vector<double> Accels)
-        : timestep(timestep), Direction(Direction), Accels(Accels) {
-    }
-    DynamicAccelLoad(double timestep, double x, double y, double z, std::vector<double> Accels)
-        : timestep(timestep), Direction(x, y, z), Accels(Accels) {
-    }
-    DynamicAccelLoad(double timestep, double x, double y, double z)
-        : timestep(timestep), Direction(x, y, z) {
-    }
-};
-
 
 #endif

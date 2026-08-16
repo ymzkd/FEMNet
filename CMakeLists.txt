@@ -203,6 +203,8 @@ set(FEMNET_SOURCES
     src/analysis/FEAnalysis.cpp
     src/analysis/FELinearStaticOp.cpp
     src/analysis/FEDynamic.cpp
+    src/analysis/DASampler.cpp
+    src/analysis/DARecorder.cpp
     src/analysis/FEBucklingAnalysis.cpp
     src/analysis/FEVibrationAnalysis.cpp
     src/analysis/ResponseSpectrumMethod.cpp

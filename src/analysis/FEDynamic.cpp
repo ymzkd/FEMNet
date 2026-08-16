@@ -4,99 +4,47 @@
 #include <algorithm>
 #include <cmath>
 
-void DASampler_MaxDisplacement::Sampling(DynamicAnalysis &da)
+// 時刻 t における値(線形補間)。データ区間外は 0。
+double TimeSeries::Value(double t) const
 {
-    bool updated = false;
-    std::vector<Displacement> disp = da.GetDisplacements();
+    if (IsEmpty())
+        return 0.0;
 
-    // 任意節点の変位が最大となるステップを記録
-    for (int i = 0; i < da.model->Nodes.size(); i++)
-    {
-        double d_length = disp[i].Translation().norm();
-        if (d_length > max_displacement)
-        {
-            max_displacement = d_length;
-            step = da.current_step;
-            updated = true;
-        }
-    }
+    int n = static_cast<int>(values.size());
+    double x = (t - t0) / dt;
 
-    if (updated)
-    {
-        velocity = da.GetVelocities();
-        displacement = disp;
-        acceleration = da.GetAccelerations();
-    }
+    // データ区間外は無載荷。ただし t = k*dt の除算には丸め誤差(インデックス単位で
+    // 1e-13 程度)が乗るため、区間端がわずかに外側へはみ出して荷重が消えることがある。
+    // 区間の判定にのみ許容差を設ける(補間位置 x そのものは補正しない)。
+    const double eps = 1e-12;
+    if (x < -eps || x > (n - 1) + eps)
+        return 0.0;
+
+    if (x <= 0.0)
+        return values[0];
+    if (x >= n - 1)
+        return values[n - 1];
+
+    int i = static_cast<int>(std::floor(x));
+    double s = x - i;
+    return values[i] * (1.0 - s) + values[i + 1] * s;
 }
 
-void DAEnergyRecorder::Initialize()
+// 時系列を持たない荷重が返す空の時系列
+const TimeSeries& DynamicLoad::time_series() const
 {
-    kinetic_energy.clear();
-    potential_energy.clear();
-    damping_energy.clear();
-    input_energy.clear();
-
-    kinetic_energy.push_back(0);
-    potential_energy.push_back(0);
-    damping_energy.push_back(0);
-    input_energy.push_back(0);
-}
-
-void DAEnergyRecorder::RecordKineticEnergy(DynamicAnalysis &da)
-{
-    double energy = 0.5 * da.current_disp.dot(da.matK_aa.selfadjointView<Eigen::Upper>() * da.current_disp);
-    kinetic_energy.push_back(energy);
-}
-
-void DAEnergyRecorder::RecordPotentialEnergy(DynamicAnalysis &da)
-{
-    double energy = 0.5 * da.current_vel.dot(da.matM_aa.selfadjointView<Eigen::Upper>() * da.current_vel);
-    potential_energy.push_back(energy);
-}
-
-void DAEnergyRecorder::RecordDampingEnergy(DynamicAnalysis &da)
-{
-    double energy = da.current_vel.dot(da.matC_aa.selfadjointView<Eigen::Upper>() * da.current_vel);
-    damping_energy.push_back(energy);
-}
-
-void DAEnergyRecorder::RecordInputEnergy(DynamicAnalysis &da)
-{
-    // Record は current_step 更新後に呼ばれる。既存実装に合わせ 1つ前のステップの
-    // 外力を参照する。入力エネルギーは現行の符号慣行に合わせ -F_ext·v を積算する
-    // (地震では F_ext=-M·ι·a_g なので (M·ι·a_g)·v となり従来と一致)。
-    Eigen::VectorXd f_reduced, f_fix;
-    da.ReducedLoadVector(da.current_step - 1, f_reduced, f_fix);
-    input_energy.push_back(-f_reduced.dot(da.current_vel));
-}
-
-void DAEnergyRecorder::Record(DynamicAnalysis &da)
-{
-    RecordKineticEnergy(da);
-    RecordPotentialEnergy(da);
-    RecordDampingEnergy(da);
-    RecordInputEnergy(da);
-}
-
-DynamicAnalysis::DynamicAnalysis(std::shared_ptr<FEModel> model, const DynamicAccelLoad& accel_load, std::shared_ptr<FEDynamicDampInitializer> damp)
-    : FEDeformOperator(model), accel_load(accel_load)
-{
-    // 後方互換: 地震入力DTO から地震用の時刻歴荷重を生成する
-    load = std::make_shared<SeismicAccelLoad>(accel_load);
-
-    if (damp)
-    {
-        damp_initializer = damp;
-    }
-    else
-    {
-        // デフォルトの減衰初期化子を用意
-        damp_initializer = std::make_shared<FEDynamicStiffDampInitializer>();
-    }
+    static const TimeSeries empty;
+    return empty;
 }
 
 DynamicAnalysis::DynamicAnalysis(std::shared_ptr<FEModel> model, std::shared_ptr<DynamicLoad> load, std::shared_ptr<FEDynamicDampInitializer> damp)
-    : FEDeformOperator(model), load(load)
+    : DynamicAnalysis(model, damp)
+{
+    AddLoad(load);
+}
+
+DynamicAnalysis::DynamicAnalysis(std::shared_ptr<FEModel> model, std::shared_ptr<FEDynamicDampInitializer> damp)
+    : FEDeformOperator(model)
 {
     if (damp)
     {
@@ -107,19 +55,82 @@ DynamicAnalysis::DynamicAnalysis(std::shared_ptr<FEModel> model, std::shared_ptr
         // デフォルトの減衰初期化子を用意
         damp_initializer = std::make_shared<FEDynamicStiffDampInitializer>();
     }
+
+    // 既定のエネルギーレコーダを登録(不要なら ClearRecorders で外せる)
+    // recorders.push_back(std::make_shared<DARecorder_KineticEnergy>());
+    // recorders.push_back(std::make_shared<DARecorder_PotentialEnergy>());
+    // recorders.push_back(std::make_shared<DARecorder_DampingEnergy>());
+    // recorders.push_back(std::make_shared<DARecorder_InputEnergy>());
+}
+
+void DynamicAnalysis::AddLoad(std::shared_ptr<DynamicLoad> load)
+{
+    if (load)
+        loads.push_back(load);
+}
+
+void DynamicAnalysis::AddRecorder(std::shared_ptr<DARecorder> recorder)
+{
+    if (recorder)
+        recorders.push_back(recorder);
+}
+
+void DynamicAnalysis::SetTimeGrid(double timestep, int steps)
+{
+    dt = timestep;
+    num_steps = steps;
+}
+
+void DynamicAnalysis::SetTimeGridByDuration(double timestep, double duration)
+{
+    dt = timestep;
+    if (timestep <= 0.0 || duration <= 0.0)
+    {
+        num_steps = 0;
+        return;
+    }
+    // 時間刻みは一定に保ち、継続時間を下回らないよう切り上げる
+    // (端数がある場合、最終時刻は継続時間をわずかに超える)。
+    // 除算誤差でステップが1つ余分に出ないよう微小トレランスを引く。
+    num_steps = static_cast<int>(std::ceil(duration / timestep - 1e-9));
+    if (num_steps < 1)
+        num_steps = 1;
+}
+
+bool DynamicAnalysis::SetTimeGridFromLoads()
+{
+    // dt = 各荷重の推奨刻みの最小値、継続時間 = 終端時刻の最大値
+    double min_dt = 0.0;
+    double max_end = 0.0;
+    for (const auto& ld : loads)
+    {
+        if (!ld) continue;
+        double d = ld->suggested_timestep();
+        if (d > 0.0 && (min_dt <= 0.0 || d < min_dt))
+            min_dt = d;
+        max_end = std::max(max_end, ld->end_time());
+    }
+
+    if (min_dt <= 0.0 || max_end <= 0.0)
+    {
+        // 定常荷重のみ等、荷重から時間グリッドを決められない
+        return false;
+    }
+
+    // 解析は常に t=0 から始まるため、開始時刻を持つ荷重(TimeSeries.t0 > 0)も
+    // 含めて終端時刻までを解析対象とする
+    SetTimeGridByDuration(min_dt, max_end);
+    return num_steps > 0;
 }
 
 // 地震荷重: 各節点の並進成分に -(m/g)·Direction·a_g を与える(回転成分は0)
-std::vector<NodeLoadData> SeismicAccelLoad::load_vector(DynamicAnalysis& analysis, int step, double /*t*/)
+std::vector<NodeLoadData> SeismicAccelLoad::load_vector(DynamicAnalysis& analysis, double t)
 {
     std::vector<NodeLoadData> out;
-    if (accel.Accels.empty())
+    if (accels_.IsEmpty())
         return out;
 
-    // 範囲外stepはクランプ(末尾ステップの参照や初期条件で使用)
-    size_t idx = (step < 0) ? 0
-        : std::min(static_cast<size_t>(step), accel.Accels.size() - 1);
-    Vector gacc = accel.Direction * accel.Accels[idx];
+    Vector gacc = direction_ * accels_.Value(t);
 
     double inv_g = 1.0 / analysis.model->GraityAccel;
     out.reserve(analysis.model->Nodes.size());
@@ -133,14 +144,12 @@ std::vector<NodeLoadData> SeismicAccelLoad::load_vector(DynamicAnalysis& analysi
 }
 
 // 節点時刻歴荷重: 空間分布 × 時刻係数
-std::vector<NodeLoadData> NodalDynamicLoad::load_vector(DynamicAnalysis& /*analysis*/, int step, double /*t*/)
+std::vector<NodeLoadData> NodalDynamicLoad::load_vector(DynamicAnalysis& /*analysis*/, double t)
 {
-    if (factors_.empty())
+    if (factors_.IsEmpty())
         return std::vector<NodeLoadData>();
 
-    size_t idx = (step < 0) ? 0
-        : std::min(static_cast<size_t>(step), factors_.size() - 1);
-    double s = factors_[idx];
+    double s = factors_.Value(t);
 
     std::vector<NodeLoadData> out = pattern_;
     for (NodeLoadData& nl : out)
@@ -149,18 +158,22 @@ std::vector<NodeLoadData> NodalDynamicLoad::load_vector(DynamicAnalysis& /*analy
     return out;
 }
 
-// 全体節点荷重ベクトルを縮約空間へ変換
-void DynamicAnalysis::ReducedLoadVector(int step, Eigen::VectorXd& f_reduced, Eigen::VectorXd& f_fix)
+// 時刻 t における全荷重の合計を縮約空間へ変換
+void DynamicAnalysis::ReducedLoadVector(double t, Eigen::VectorXd& f_reduced, Eigen::VectorXd& f_fix)
 {
-    // 全体DOFベクトルへ集約
+    // 全体DOFベクトルへ集約(登録済み荷重をすべて重ね合わせる)
     Eigen::VectorXd f_full = Eigen::VectorXd::Zero(model->Nodes.size() * NODE_DOF);
-    std::vector<NodeLoadData> node_loads = load->load_vector(*this, step, step * dt);
-    for (const NodeLoadData& nl : node_loads)
+    for (const auto& ld : loads)
     {
-        if (nl.id < 0) continue;
-        int pos = nl.id * NODE_DOF;
-        for (int k = 0; k < 6; k++)
-            f_full[pos + k] += nl.loads[k];
+        if (!ld) continue;
+        std::vector<NodeLoadData> node_loads = ld->load_vector(*this, t);
+        for (const NodeLoadData& nl : node_loads)
+        {
+            if (nl.id < 0) continue;
+            int pos = nl.id * NODE_DOF;
+            for (int k = 0; k < 6; k++)
+                f_full[pos + k] += ld->Factor * nl.loads[k];
+        }
     }
 
     // slave / free / fix へ分割
@@ -228,9 +241,16 @@ bool DynamicAnalysis::Initialize()
     linkTransMat = rs.linkTransMat;
     master_dof_num = rs.master_dof_num;
 
-    // 時間グリッドを荷重から取得(Analysisが所有)
-    dt = load->timestep();
-    num_steps = load->steps();
+    // 時間グリッドは解析が所有する。未指定の場合のみ荷重のヒントから決定する。
+    if (dt <= 0.0 || num_steps <= 0)
+    {
+        if (!SetTimeGridFromLoads())
+        {
+            std::cerr << "Dynamic analysis: time grid is not set and cannot be determined from the loads."
+                << std::endl;
+            return false;
+        }
+    }
 
     // 縮小空間のサイズ
     int reduced_size = rs.ReducedSize();
@@ -252,7 +272,7 @@ bool DynamicAnalysis::Initialize()
 
     // 初期加速度: 静止状態での M·a0 = f(0) を解く(縮約行列を使うため行列組立後に実行)
     Eigen::VectorXd f0_reduced, f0_fix;
-    ReducedLoadVector(0, f0_reduced, f0_fix);
+    ReducedLoadVector(0.0, f0_reduced, f0_fix);
     current_accel = ComputeInitialAcceleration(f0_reduced);
 
     // 因数分解しておく
@@ -262,7 +282,17 @@ bool DynamicAnalysis::Initialize()
     solver->compute(compute_mat);
 
     // Recorder初期化
-    energy_recorder.Initialize();
+    // RecordEnabled == false は「記録済み・記録しない」状態であり、Initialize() は
+    // 系の再構築とステップ0への巻き戻しのみを行う(計算済みの記録を保持する)。
+    // 記録し直す場合は RecordEnabled を true に戻してから Initialize() を呼ぶ。
+    if (RecordEnabled)
+    {
+        for (auto &recorder : recorders)
+        {
+            if (recorder)
+                recorder->Initialize(*this);
+        }
+    }
 
     return true;
 }
@@ -276,10 +306,10 @@ void DynamicAnalysis::ComputeStep()
         return;
     }
 
-    // Newmarkは t_{n+1} の釣り合いを解くため、外力も t_{n+1} の値を参照する
-    // (末尾ステップは load 側でクランプ)。全体節点荷重→縮約空間 f_reduced / f_fix。
+    // Newmarkは t_{n+1} の釣り合いを解くため、外力も t_{n+1} の値を参照する。
+    // 全体節点荷重→縮約空間 f_reduced / f_fix。
     Eigen::VectorXd f_reduced, f_fix;
-    ReducedLoadVector(current_step + 1, f_reduced, f_fix);
+    ReducedLoadVector(TimeAt(current_step + 1), f_reduced, f_fix);
 
     // 次ステップの変位、速度、加速度を取得
     Eigen::VectorXd post_accel = f_reduced
@@ -319,7 +349,11 @@ void DynamicAnalysis::ComputeStep()
             sampler->Sampling(*this);
         }
         // Recording
-        energy_recorder.Record(*this);
+        for (auto &recorder : recorders)
+        {
+            if (recorder)
+                recorder->Record(*this);
+        }
     }
 }
 
@@ -335,6 +369,16 @@ void DynamicAnalysis::ComputeSteps(int steps)
     // ステップ数分計算
     for (int i = current_step; i < steps; i++)
         ComputeStep();
+}
+
+void DynamicAnalysis::ComputeUntil(double t)
+{
+    if (dt <= 0.0)
+        return;
+
+    // 時刻 t を下回らない最小のステップまで進める
+    int target = static_cast<int>(std::ceil(t / dt - 1e-9));
+    ComputeSteps(std::min(target, num_steps));
 }
 
 bool DynamicAnalysis::SetDisplacements(std::vector<Displacement> disps)

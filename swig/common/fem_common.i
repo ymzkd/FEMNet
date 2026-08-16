@@ -7,7 +7,7 @@
 %include <std_shared_ptr.i>
 %include <std_string.i>
 
-// Note: Default constructors have been added to BeamPolyLoad, DynamicAccelLoad, Node, and Section
+// Note: Default constructors have been added to BeamPolyLoad, Node, and Section
 // so they can now be used in STL containers
 
 // Shared pointer declarations for base classes
@@ -74,13 +74,6 @@
 %ignore FEModel::AssembleMassMatrix;
 %ignore FEModel::AssembleGeometricStiffnessMatrix;
 %ignore FEModel::AssembleLoadVector;
-
-// IResponseSpectrum: expose damping members as methods instead of properties.
-// C# subclasses (e.g. DesignResponseSpectrumFunc) are serialized with MessagePack,
-// which walks all public properties including inherited ones; a generated
-// DampInitializer property (SWIG proxy type) would break serialization.
-%ignore IResponseSpectrum::DampInitializer;
-%ignore IResponseSpectrum::enable_damp_factor;
 
 // Ignore pure virtual methods that use Eigen types
 %ignore ElementBase::geometric_local_stiffness_matrix;
@@ -158,22 +151,6 @@ namespace std {
 // ===================================================================
 // Class extensions (AFTER all classes are fully defined)
 // ===================================================================
-
-// IResponseSpectrum extension - method access to damping members
-// (kept out of property wrapping, see %ignore above)
-%extend IResponseSpectrum {
-    void SetDampInitializer(std::shared_ptr<FEDynamicDampInitializer> initializer) {
-        $self->DampInitializer = initializer;
-    }
-
-    void SetDampFactorEnabled(bool enable) {
-        $self->enable_damp_factor = enable;
-    }
-
-    bool IsDampFactorEnabled() {
-        return $self->enable_damp_factor;
-    }
-};
 
 // Material extension (language independent)
 %extend Material {

@@ -383,7 +383,24 @@ double IResponseSpectrum::DampingCorrectionFactor(const double t)
     // 算定不能(t<=0のZPAや初期化前など、h<0)は補正なし。
     // これにより零周期応答(t=0)は減衰非依存となり、Fhが負に化けるのも防ぐ。
     if (h < 0.0) return 1.0;
-    return 1.5 / (1.0 + 10.0 * h);
+
+    // 基準減衰BaseDampingFactorのスペクトルをモード減衰hのスペクトルへ換算する。
+    // Fh = f1/f0 = (1+10h0)/(1+10h)。h0=5%なら従来のFh=1.5/(1+10h)と同値。
+    double f1 = 1.5 / (1.0 + 10.0 * h);
+
+    double f0 = 1.5 / (1.0 + 10.0 * this->BaseDampingFactor);
+    return f1 / f0;
+}
+
+double IResponseSpectrum::effective_damping_rate(const double t)
+{
+    // Fh補正を掛けない場合、スペクトル値は基準減衰のまま
+    if (!enable_damp_factor || DampInitializer == nullptr)
+        return BaseDampingFactor;
+
+    double h = DampInitializer->DampRateAtPeriod(t);
+    // 算定不能(h<=0)はDampingCorrectionFactorのフォールバックと同様に基準減衰扱い
+    return (h > 0.0) ? h : BaseDampingFactor;
 }
 
 double IResponseSpectrum::acceleration_factored(double t)

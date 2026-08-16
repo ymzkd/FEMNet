@@ -33,7 +33,7 @@ size_t ResponseSpectrumMethod::max_strain_energy_mode_index()
     double max_e = -1.0;
     for (size_t j = 0; j < part_facs.size(); j++)
     {
-        double sv = SpectrumFunction->Velocity(periods[j]);
+        double sv = SpectrumFunction->velocity_factored(periods[j]);
         double e = fabs(part_facs[j]) * sv; // ∝ sqrt(sE)
         if (e > max_e)
         {
@@ -166,16 +166,21 @@ std::vector<Displacement> ResponseSpectrumMethod::calculate_responseCQC(Response
             spectrums[i] = SpectrumFunction->acceleration_factored(periods[i]);
     }
 
+    // モードごとの実効減衰比(スペクトル値が実際に対応する減衰)。
+    // Fh補正無効時は全モードで基準減衰に一致し、相関係数は従来の等減衰式と同値になる。
+    std::vector<double> damps(mode_num);
+    for (size_t i = 0; i < mode_num; i++)
+        damps[i] = SpectrumFunction->effective_damping_rate(periods[i]);
+
     // correlation(j,k) と (Sa·β)_j (Sa·β)_k は対称なので上三角のみ走査。
     // 対角は1回、非対角は2回ぶん加算する。
     std::vector<Displacement> responses(N);
-    const double damp2 = damping_rate * damping_rate;
     for (size_t j = 0; j < mode_num; j++)
     {
         const auto& uj = mode_vectors[j];
         const double sb_j = spectrums[j] * part_facs[j];
 
-        // 対角 k == j : correlation = 1 ((6)式・(7)式とも χ=1 で 1)
+        // 対角 k == j : correlation = 1 (相対・絶対とも r=1, ζj=ζk で 1)
         {
             const double fac = sb_j * sb_j;
             for (size_t i = 0; i < N; i++)
@@ -188,27 +193,35 @@ std::vector<Displacement> ResponseSpectrumMethod::calculate_responseCQC(Response
         }
 
         // 非対角 k > j : 対称性を利用して × 2
+        // 相関係数はモード別減衰 ζj, ζk を考慮した一般形。ζj=ζk=ζ とおくと
+        // 従来の等減衰式(相対変位・速度用(6)式 / 絶対加速度用(7)式)に一致する。
         for (size_t k = j + 1; k < mode_num; k++)
         {
             const auto& uk = mode_vectors[k];
-            const double rjk = periods[k] / periods[j];
-            // (6)式・(7)式で共通の分母項
-            const double denom = pow(1.0 - rjk * rjk, 2.0) + 4.0 * damp2 * rjk * pow(1.0 + rjk, 2.0);
+            const double rjk = periods[k] / periods[j]; // r_jk = ω_j/ω_k = T_k/T_j
+            const double zj = damps[j];
+            const double zk = damps[k];
+            const double r2 = rjk * rjk;
+            // 一般形の共通分母項(ζj=ζk で従来の分母 (1-r²)²+4ζ²r(1+r)² に一致)
+            const double denom = (1.0 - r2) * (1.0 - r2)
+                               + 4.0 * zj * zk * rjk * (1.0 + r2)
+                               + 4.0 * (zj * zj + zk * zk) * r2;
 
             double correlation;
             if (vt == ResponseValueType::Acceleration)
             {
-                // 絶対加速度用：論文(7)式
-                const double num = 8.0 * damp2 * (1.0 + rjk) *
-                                   (1.0 - (1.0 - 4.0 * damp2) * rjk + rjk * rjk) * sqrt(rjk);
-                correlation = num / ((1.0 + 4.0 * damp2) * denom);
+                // 絶対加速度用(モード別減衰の一般形)
+                const double num = 8.0 * sqrt(zj * zk * rjk) *
+                                   (zj + zk * rjk * r2 + 4.0 * zj * zk * rjk * (zj + rjk * zk));
+                correlation = num /
+                    (sqrt((1.0 + 4.0 * zj * zj) * (1.0 + 4.0 * zk * zk)) * denom);
             }
             else
             {
-                // 相対変位・相対速度用：論文(6)式
-                correlation = 8.0 * damp2 * (1.0 + rjk) * pow(rjk, 1.5) / denom;
+                // 相対変位・相対速度用(モード別減衰の一般形)
+                correlation = 8.0 * sqrt(zj * zk) * (zk + rjk * zj) * rjk * sqrt(rjk) / denom;
             }
-            
+
             double irfac_j = 1.0;
             double irfac_k = 1.0;
             if (EnableRigidResponse)

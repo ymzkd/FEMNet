@@ -30,9 +30,19 @@ public:
     // 減衰の考慮
     std::shared_ptr<FEDynamicDampInitializer> DampInitializer = nullptr;
 
+    // このスペクトルが表現している減衰比(基準減衰)。告示・指針の設計スペクトルは5%。
+    // DampingCorrectionFactorの正規化基準であり、Fh補正無効時の実効減衰でもある。
+    double BaseDampingFactor = 0.05;
+
     // 減衰の影響係数計算
     bool enable_damp_factor = false;
     virtual double DampingCorrectionFactor(const double t);
+
+    // 周期tのスペクトル値が実際に対応する減衰比を返す。
+    //   Fh補正無効時: 基準減衰(BaseDampingFactor)
+    //   Fh補正有効時: DampInitializerのモード減衰(算定不能なら基準減衰にフォールバック)
+    // CQCの相関係数など、スペクトル値と整合した減衰比が必要な箇所はこれを参照する。
+    double effective_damping_rate(const double t);
 
     double acceleration_factored(double t);
     double velocity_factored(double t);

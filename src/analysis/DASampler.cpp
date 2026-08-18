@@ -3,6 +3,15 @@
 
 #include <cmath>
 
+// 記録時点の応答をまとめて保存する
+void DASampler::CaptureState(DynamicAnalysis &da)
+{
+    velocity = da.GetVelocities();
+    displacement = da.GetDisplacements();
+    acceleration = da.GetAccelerations();
+    react_force = da.GetReactForces();
+}
+
 void DASampler_MaxDisplacement::Sampling(DynamicAnalysis &da)
 {
     bool updated = false;
@@ -22,9 +31,7 @@ void DASampler_MaxDisplacement::Sampling(DynamicAnalysis &da)
 
     if (updated)
     {
-        velocity = da.GetVelocities();
-        displacement = disp;
-        acceleration = da.GetAccelerations();
+        CaptureState(da);
     }
 }
 
@@ -47,9 +54,7 @@ void DASampler_MaxVelocity::Sampling(DynamicAnalysis &da)
 
     if (updated)
     {
-        velocity = vel;
-        displacement = da.GetDisplacements();
-        acceleration = da.GetAccelerations();
+        CaptureState(da);
     }
 }
 
@@ -72,9 +77,7 @@ void DASampler_MaxAcceleration::Sampling(DynamicAnalysis &da)
 
     if (updated)
     {
-        velocity = da.GetVelocities();
-        displacement = da.GetDisplacements();
-        acceleration = acc;
+        CaptureState(da);
     }
 }
 
@@ -104,9 +107,7 @@ void DASampler_MaxDispDirection::Sampling(DynamicAnalysis &da)
 
     if (updated)
     {
-        velocity = da.GetVelocities();
-        displacement = disp;
-        acceleration = da.GetAccelerations();
+        CaptureState(da);
     }
 }
 
@@ -136,9 +137,7 @@ void DASampler_MaxVelocityDirection::Sampling(DynamicAnalysis &da)
 
     if (updated)
     {
-        velocity = vel;
-        displacement = da.GetDisplacements();
-        acceleration = da.GetAccelerations();
+        CaptureState(da);
     }
 }
 
@@ -168,9 +167,7 @@ void DASampler_MaxAccelDirection::Sampling(DynamicAnalysis &da)
 
     if (updated)
     {
-        velocity = da.GetVelocities();
-        displacement = da.GetDisplacements();
-        acceleration = acc;
+        CaptureState(da);
     }
 }
 
@@ -199,9 +196,7 @@ void DASampler_MaxBaseShear::Sampling(DynamicAnalysis &da)
     max_force = sum;
     step = da.current_step;
 
-    velocity = da.GetVelocities();
-    displacement = da.GetDisplacements();
-    acceleration = da.GetAccelerations();
+    CaptureState(da);
 }
 
 void DASampler_MaxBaseShearDirection::Sampling(DynamicAnalysis &da)
@@ -227,7 +222,5 @@ void DASampler_MaxBaseShearDirection::Sampling(DynamicAnalysis &da)
     max_force = sum;
     step = da.current_step;
 
-    velocity = da.GetVelocities();
-    displacement = da.GetDisplacements();
-    acceleration = da.GetAccelerations();
+    CaptureState(da);
 }

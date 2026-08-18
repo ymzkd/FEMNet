@@ -275,6 +275,9 @@ bool DynamicAnalysis::Initialize()
     ReducedLoadVector(0.0, f0_reduced, f0_fix);
     current_accel = ComputeInitialAcceleration(f0_reduced);
 
+    // ステップ0の反力も計算
+    UpdateReactForces(f0_fix);
+
     // 因数分解しておく
     Eigen::SparseMatrix<double> compute_mat;
     compute_mat = matM_aa + 0.5 * dt * matC_aa + beta * dt * dt * matK_aa;
@@ -295,6 +298,25 @@ bool DynamicAnalysis::Initialize()
     }
 
     return true;
+}
+
+void DynamicAnalysis::UpdateReactForces(const Eigen::VectorXd &f_fix)
+{
+    // 反力: R = K_ab^T·d + M_ab^T·a + C_ab^T·v - F_ext,b (F_ext,b = 外力の固定DOF成分)
+    Eigen::VectorXd rf = matK_ab.transpose() * current_disp + matM_ab.transpose() * current_accel +
+                         matC_ab.transpose() * current_vel - f_fix;
+    Eigen::VectorXd rf_full = Eigen::VectorXd::Zero(model->NodeNum() * 6);
+    for (size_t i = 0; i < fixed_indices.size(); i++)
+        rf_full(fixed_indices[i]) = rf(i);
+
+    current_react_force.clear();
+    for (size_t i = 0; i < model->Nodes.size(); i++)
+    {
+        if (!model->Nodes[i].Fix.IsAnyFix())
+            continue;
+        int pos = i * 6;
+        current_react_force.push_back(NodeLoad(i, rf_full[pos], rf_full[pos + 1], rf_full[pos + 2], rf_full[pos + 3], rf_full[pos + 4], rf_full[pos + 5]));
+    }
 }
 
 void DynamicAnalysis::ComputeStep()
@@ -325,21 +347,7 @@ void DynamicAnalysis::ComputeStep()
     current_vel = post_vel;
     current_disp = post_disp;
 
-    // 反力: R = K_ab^T·d + M_ab^T·a + C_ab^T·v - F_ext,b (F_ext,b = 外力の固定DOF成分)
-    Eigen::VectorXd rf = matK_ab.transpose() * current_disp + matM_ab.transpose() * current_accel +
-                         matC_ab.transpose() * current_vel - f_fix;
-    Eigen::VectorXd rf_full = Eigen::VectorXd::Zero(model->NodeNum() * 6);
-    for (size_t i = 0; i < fixed_indices.size(); i++)
-        rf_full(fixed_indices[i]) = rf(i);
-
-    current_react_force.clear();
-    for (size_t i = 0; i < model->Nodes.size(); i++)
-    {
-        if (!model->Nodes[i].Fix.IsAnyFix())
-            continue;
-        int pos = i * 6;
-        current_react_force.push_back(NodeLoad(i, rf_full[pos], rf_full[pos + 1], rf_full[pos + 2], rf_full[pos + 3], rf_full[pos + 4], rf_full[pos + 5]));
-    }
+    UpdateReactForces(f_fix);
 
     if (RecordEnabled)
     {

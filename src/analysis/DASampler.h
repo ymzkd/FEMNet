@@ -7,6 +7,7 @@
 #endif
 
 #include "Components.h"
+#include "LoadComponent.h"
 
 // 前方宣言
 class DynamicAnalysis;
@@ -25,11 +26,17 @@ public:
     int step;
     std::string Name;
     std::vector<Displacement> velocity, displacement, acceleration;
+    std::vector<NodeLoad> react_force;
 
     DASampler() : step(0), Name("") {}
     DASampler(std::string name) : step(0), Name(name) {}
 
     virtual void Sampling(DynamicAnalysis &analysis) = 0;
+
+    /// <summary>
+    /// 記録時点の応答(変位・速度・加速度・反力)を保存する
+    /// </summary>
+    void CaptureState(DynamicAnalysis &analysis);
 };
 
 class DASampler_MaxDisplacement : public DASampler

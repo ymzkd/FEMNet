@@ -178,6 +178,10 @@ private:
     // 静止状態からの初期加速度 a0 を M·a0 = f0 より求める(質量0のDOFは0)。
     Eigen::VectorXd ComputeInitialAcceleration(const Eigen::VectorXd& f0);
 
+    // 現在の状態量(current_disp/vel/accel)と固定DOFの外力成分から支点反力を求め、
+    // current_react_force を更新する。f_fix は現在ステップの時刻に対応するものを渡すこと。
+    void UpdateReactForces(const Eigen::VectorXd& f_fix);
+
 public:
     std::vector<std::shared_ptr<DynamicLoad>> loads;   // 実際に評価する時刻歴荷重(複数登録可)
     double dt = 0.0;                                   // 解析の時間刻み
@@ -256,6 +260,14 @@ public:
     bool SetDisplacements(std::vector<Displacement> disps);
     bool SetVelocities(std::vector<Displacement> vels);
     bool SetAccelerations(std::vector<Displacement> accs);
+
+    /// <summary>
+    /// 支点反力を外部から設定する(サンプラー記録時点への復元用)。
+    /// 反力は ComputeStep()/Initialize() で更新されるキャッシュであり、
+    /// SetDisplacements() 等の状態設定では更新されない。記録時点の状態へ戻す場合は
+    /// 状態量と併せてこのメソッドで反力も復元すること。
+    /// </summary>
+    void SetReactForces(const std::vector<NodeLoad> &forces) { current_react_force = forces; }
 
     std::vector<Displacement> GetDisplacements() override;
     std::vector<Displacement> GetVelocities() override;

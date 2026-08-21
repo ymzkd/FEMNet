@@ -6,6 +6,8 @@
 %include <std_list.i>
 %include <std_shared_ptr.i>
 %include <std_string.i>
+// 出力引数(double& 等)を各言語ネイティブの出力に変換するための %apply 用
+%include <typemaps.i>
 
 // Note: Default constructors have been added to BeamPolyLoad, Node, and Section
 // so they can now be used in STL containers
@@ -50,8 +52,31 @@
 %ignore NodeLoadData::My();
 %ignore NodeLoadData::Mz();
 
-// Ignore DOFFlags internal array (use accessor methods only)
+// DOFFlags も同様に非const版(bool&)を隠し、const版(値返し)のみを公開する。
+// 非const版が優先されると bool* の不透明ポインタになってしまう。
+// 値の書き換えは Set(index, value) を使う。
+%ignore DOFFlags::Ux();
+%ignore DOFFlags::Uy();
+%ignore DOFFlags::Uz();
+%ignore DOFFlags::Rx();
+%ignore DOFFlags::Ry();
+%ignore DOFFlags::Rz();
+
+// 生のC配列メンバは不透明ポインタ(double*, bool*)にしかならないため公開しない。
+// 値はアクセサ(Px()/Dx() 等)経由で取得する。
 %ignore DOFFlags::flags;
+%ignore Displacement::displace;
+%ignore NodeLoadData::loads;
+
+// NodeLoad のアクセサは double&/double* を返すため不透明ポインタになる。
+// 値返しの同名メソッドを %extend で差し替える(ファイル末尾の %extend NodeLoad 参照)。
+%ignore NodeLoad::loads;
+%ignore NodeLoad::Px();
+%ignore NodeLoad::Py();
+%ignore NodeLoad::Pz();
+%ignore NodeLoad::Mx();
+%ignore NodeLoad::My();
+%ignore NodeLoad::Mz();
 
 // Ignore Eigen types that cannot be wrapped
 %ignore Eigen::SparseMatrix;
@@ -108,6 +133,13 @@ namespace std {
     %template(VectorInt) std::vector<int>;
     %template(VectorDouble) std::vector<double>;
 
+    // Support::isdof_fixed() の戻り値(未定義だと bool[6] の不透明ポインタになる)
+    %template(ArrayBool6) std::array<bool, 6>;
+
+    // Vector(3次元ベクトル)のコンテナ。PlateLoad::load_vecs と
+    // PlaneElementBase::AreaForceToNodeLoadData() で使用する。
+    %template(VectorVector) std::vector<Vector>;
+
     // Classes with default constructors
     %template(VectorDisp) std::vector<Displacement>;
     %template(VectorMode) std::vector<std::vector<Displacement>>;
@@ -151,6 +183,17 @@ namespace std {
 // ===================================================================
 // Class extensions (AFTER all classes are fully defined)
 // ===================================================================
+
+// NodeLoad: double& を返す元のアクセサ(%ignore 済み)の代わりに
+// 値返しのアクセサを提供する。実体は data(NodeLoadData)の const アクセサ。
+%extend NodeLoad {
+    double Px() const { return $self->data.Px(); }
+    double Py() const { return $self->data.Py(); }
+    double Pz() const { return $self->data.Pz(); }
+    double Mx() const { return $self->data.Mx(); }
+    double My() const { return $self->data.My(); }
+    double Mz() const { return $self->data.Mz(); }
+};
 
 // Material extension (language independent)
 %extend Material {

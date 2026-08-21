@@ -16,16 +16,6 @@
     }
 }
 
-// ===================================================================
-// Python-specific typemap fixes for %shared_ptr(NodeLoad) compatibility
-// ===================================================================
-
-// Fix: NodeLoad::Px() etc. return double& which becomes
-// 'Swig Object of type double*' in Python. Convert to Python float.
-%typemap(out) double& {
-    $result = PyFloat_FromDouble(*$1);
-}
-
 // Include common definitions
 %include "fem_common.i"
 

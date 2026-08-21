@@ -22,6 +22,28 @@
 %ignore ShapeFunctionTriangle6(double xi, double eta);
 %ignore ShapeFunctionSerendipity8(double xi, double eta);
 
+// 節点参照の生配列メンバ(Node*[N])は Node** の不透明ポインタにしかならないため公開しない。
+// 節点へのアクセスは NodesList() または %extend の getNodes(index) を使う。
+%ignore BarElementBase::Nodes;
+%ignore TriPlaneElement::Nodes;
+%ignore QuadPlaneElement::Nodes;
+%ignore TriPlateElement::Nodes;
+%ignore QuadPlateElement::Nodes;
+
+// AssembleMatrix() は Eigen 型を直接やり取りする内部API。
+// 仮想関数ではないため基底クラスの %ignore が波及せず、クラスごとの指定が必要。
+%ignore BeamElement::AssembleMatrix;
+%ignore TrussElement::AssembleMatrix;
+%ignore TriPlaneElement::AssembleMatrix;
+%ignore QuadPlaneElement::AssembleMatrix;
+%ignore TriPlateElement::AssembleMatrix;
+%ignore QuadPlateElement::AssembleMatrix;
+
+// 幾何剛性行列(Eigen::MatrixXd)を返すため公開しない。
+// 座屈解析は Operator側(FEBucklingAnalysis)から利用する。
+%ignore TriPlateElement::GeometricStiffnessMatrix;
+%ignore QuadPlateElement::GeometricStiffnessMatrix;
+
 // Ignore Element methods that use Eigen matrices
 %ignore BeamElement::StiffnessMatrix();
 %ignore BeamElement::AssembleStiffMatrix(Eigen::SparseMatrix<double>& mat);
@@ -128,6 +150,8 @@
 
 // STL templates for Elements
 namespace std {
+    // ElementBase::NodesList() の戻り値(未定義だと不透明ポインタになる)
+    %template(VectorNodePtr) std::vector<Node*>;
     %template(VectorElement) std::vector<std::shared_ptr<ElementBase>>;
     %template(VectorElem) std::vector<ElementBase*>;
     %template(VectorBars) std::vector<BarElementBase*>;

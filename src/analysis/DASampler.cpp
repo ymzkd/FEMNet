@@ -3,6 +3,8 @@
 
 #include <cmath>
 
+#include "ResponseNaming.h"
+
 // 記録時点の応答をまとめて保存する
 void DASampler::CaptureState(DynamicAnalysis &da)
 {
@@ -12,154 +14,56 @@ void DASampler::CaptureState(DynamicAnalysis &da)
     react_force = da.GetReactForces();
 }
 
-void DASampler_MaxDisplacement::Sampling(DynamicAnalysis &da)
+DASampler_MaxResponse::DASampler_MaxResponse(ResponseValueType value_type)
+    : ValueType(value_type)
 {
-    bool updated = false;
-    std::vector<Displacement> disp = da.GetDisplacements();
-
-    // 任意節点の変位が最大となるステップを記録
-    for (int i = 0; i < da.model->Nodes.size(); i++)
-    {
-        double d_length = disp[i].Translation().norm();
-        if (d_length > max_displacement)
-        {
-            max_displacement = d_length;
-            step = da.current_step;
-            updated = true;
-        }
-    }
-
-    if (updated)
-    {
-        CaptureState(da);
-    }
+    Name = DefaultName();
 }
 
-void DASampler_MaxVelocity::Sampling(DynamicAnalysis &da)
+DASampler_MaxResponse::DASampler_MaxResponse(ResponseValueType value_type, Vector direction)
+    : ValueType(value_type), Direction(direction)
 {
-    bool updated = false;
-    std::vector<Displacement> vel = da.GetVelocities();
-
-    // 任意節点の速度が最大となるステップを記録
-    for (size_t i = 0; i < da.model->Nodes.size(); i++)
-    {
-        double v_length = vel[i].Translation().norm();
-        if (v_length > max_velocity)
-        {
-            max_velocity = v_length;
-            step = da.current_step;
-            updated = true;
-        }
-    }
-
-    if (updated)
-    {
-        CaptureState(da);
-    }
+    Name = DefaultName();
 }
 
-void DASampler_MaxAcceleration::Sampling(DynamicAnalysis &da)
+std::string DASampler_MaxResponse::DefaultName() const
 {
-    bool updated = false;
-    std::vector<Displacement> acc = da.GetAccelerations();
-
-    // 任意節点の加速度が最大となるステップを記録
-    for (size_t i = 0; i < da.model->Nodes.size(); i++)
-    {
-        double a_length = acc[i].Translation().norm();
-        if (a_length > max_acceleration)
-        {
-            max_acceleration = a_length;
-            step = da.current_step;
-            updated = true;
-        }
-    }
-
-    if (updated)
-    {
-        CaptureState(da);
-    }
+    return "Max" + ResponseValueTag(ValueType) + "." + ResponseDirectionTag(Direction);
 }
 
-void DASampler_MaxDispDirection::Sampling(DynamicAnalysis &da)
+void DASampler_MaxResponse::Sampling(DynamicAnalysis &da)
 {
-    // 方向が未設定(零ベクトル)の場合は評価できないためサンプリングしない
-    Vector dir = direction;
+    // 既定コンストラクタ + プロパティ設定で生成された場合に備え、初回に名称を補う
+    if (Name.empty())
+        Name = DefaultName();
+
+    // 評価対象の応答量を取得する
+    std::vector<Displacement> response;
+    switch (ValueType)
+    {
+    case ResponseValueType::Velocity:     response = da.GetVelocities();    break;
+    case ResponseValueType::Acceleration: response = da.GetAccelerations(); break;
+    default:                              response = da.GetDisplacements(); break;
+    }
+
+    // 方向が未設定(零ベクトル)なら大きさ、設定されていればその方向成分(絶対値)で評価する
+    Vector dir = Direction;
     double dir_norm = dir.norm();
-    if (dir_norm <= 0.0)
-        return;
-    Vector unit = Vector::multiply(dir, 1.0 / dir_norm);
+    bool directional = (dir_norm > 0.0);
+    Vector unit = directional ? Vector::multiply(dir, 1.0 / dir_norm) : Vector();
 
     bool updated = false;
-    std::vector<Displacement> disp = da.GetDisplacements();
 
-    // 任意節点の指定方向並進変位成分(絶対値)が最大となるステップを記録
+    // 任意節点の評価値が最大となるステップを記録
     for (size_t i = 0; i < da.model->Nodes.size(); i++)
     {
-        double d_dir = std::abs(Vector::multiply(disp[i].Translation(), unit));
-        if (d_dir > max_displacement)
+        Vector t = response[i].Translation();
+        double value = directional
+            ? std::abs(Vector::multiply(t, unit))
+            : t.norm();
+        if (value > MaxValue)
         {
-            max_displacement = d_dir;
-            step = da.current_step;
-            updated = true;
-        }
-    }
-
-    if (updated)
-    {
-        CaptureState(da);
-    }
-}
-
-void DASampler_MaxVelocityDirection::Sampling(DynamicAnalysis &da)
-{
-    // 方向が未設定(零ベクトル)の場合は評価できないためサンプリングしない
-    Vector dir = direction;
-    double dir_norm = dir.norm();
-    if (dir_norm <= 0.0)
-        return;
-    Vector unit = Vector::multiply(dir, 1.0 / dir_norm);
-
-    bool updated = false;
-    std::vector<Displacement> vel = da.GetVelocities();
-
-    // 任意節点の指定方向並進速度成分(絶対値)が最大となるステップを記録
-    for (size_t i = 0; i < da.model->Nodes.size(); i++)
-    {
-        double v_dir = std::abs(Vector::multiply(vel[i].Translation(), unit));
-        if (v_dir > max_velocity)
-        {
-            max_velocity = v_dir;
-            step = da.current_step;
-            updated = true;
-        }
-    }
-
-    if (updated)
-    {
-        CaptureState(da);
-    }
-}
-
-void DASampler_MaxAccelDirection::Sampling(DynamicAnalysis &da)
-{
-    // 方向が未設定(零ベクトル)の場合は評価できないためサンプリングしない
-    Vector dir = direction;
-    double dir_norm = dir.norm();
-    if (dir_norm <= 0.0)
-        return;
-    Vector unit = Vector::multiply(dir, 1.0 / dir_norm);
-
-    bool updated = false;
-    std::vector<Displacement> acc = da.GetAccelerations();
-
-    // 任意節点の指定方向並進加速度成分(絶対値)が最大となるステップを記録
-    for (size_t i = 0; i < da.model->Nodes.size(); i++)
-    {
-        double a_dir = std::abs(Vector::multiply(acc[i].Translation(), unit));
-        if (a_dir > max_accel)
-        {
-            max_accel = a_dir;
+            MaxValue = value;
             step = da.current_step;
             updated = true;
         }

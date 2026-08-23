@@ -16,6 +16,7 @@
 %shared_ptr(DARecorder_PotentialEnergy);
 %shared_ptr(DARecorder_DampingEnergy);
 %shared_ptr(DARecorder_InputEnergy);
+%shared_ptr(DARecorder_NodeResponse);
 %shared_ptr(FEDeformOperator);
 %shared_ptr(FEModeOperator);
 %shared_ptr(FELinearStaticOp);

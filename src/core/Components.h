@@ -308,6 +308,15 @@ struct Displacement {
 
 std::ostream& operator<<(std::ostream& os, const Displacement& m);
 
+// 応答量の種別。変位・速度・加速度のどれを対象とするかを指定する
+// (応答スペクトル法・時刻歴応答のレコーダなどで共用する)。
+enum class ResponseValueType
+{
+    Displacement,
+    Velocity,
+    Acceleration
+};
+
 struct Section
 {
 public:

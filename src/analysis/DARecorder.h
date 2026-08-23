@@ -6,6 +6,8 @@
 #include <string>
 #endif
 
+#include "Components.h"
+
 // 前方宣言
 class DynamicAnalysis;
 
@@ -83,6 +85,42 @@ public:
 
     void Initialize(DynamicAnalysis &da) override { DARecorder::Initialize(da); Values.push_back(0.0); }
     void Record(DynamicAnalysis &da) override;
+};
+
+/// <summary>
+/// 指定した節点の並進応答(変位・速度・加速度のいずれか)について、指定方向の成分を
+/// 記録する。値は符号付きで、方向ベクトルは内部で正規化して用いる。
+/// 節点番号や方向が無効な場合は 0 を記録し続け、他のレコーダと記録数を揃える。
+/// </summary>
+class DARecorder_NodeResponse : public DARecorder
+{
+public:
+    /// 着目節点の番号(model->Nodes のインデックス = Node::id)
+    int NodeId = -1;
+    /// 記録する方向(内部で正規化して用いる。零ベクトルは無効)
+    Vector Direction;
+    /// 記録する応答量の種別
+    ResponseValueType ValueType = ResponseValueType::Displacement;
+
+    DARecorder_NodeResponse() = default;
+    DARecorder_NodeResponse(int node_id, Vector direction,
+                            ResponseValueType value_type = ResponseValueType::Displacement);
+
+    /// 現在の設定から生成した既定の名称(例: NodeDisp.N12.X。Name 未設定時に Initialize で使う)
+    std::string DefaultName() const;
+    /// 現在の設定から生成した既定の説明(Description 未設定時に Initialize で使う)
+    std::string DefaultDescription() const;
+
+    /// ステップ0の応答値を記録してから記録を開始する
+    void Initialize(DynamicAnalysis &da) override;
+    void Record(DynamicAnalysis &da) override;
+
+private:
+    Vector unit_;        // 正規化済みの記録方向
+    bool valid_ = false; // 節点番号・方向が有効か
+
+    /// 現在ステップの記録値(無効な設定の場合は 0)
+    double CurrentValue(DynamicAnalysis &da);
 };
 
 #endif

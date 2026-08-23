@@ -41,13 +41,6 @@ enum ResponseSignType
     SIGN_STRAIN_ENERGY_MODE,
 };
 
-enum class ResponseValueType
-{
-    Displacement,
-    Velocity,
-    Acceleration
-};
-
 struct RigidResponseComposition{
 public:
     double f1, f2;

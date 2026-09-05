@@ -33,8 +33,28 @@ void FELinearStaticOp::Compute()
         rs.ReduceVector(residual_vec, f_input, f_fix);
 
         // Solve
+        // MKL Pardisoは剛性が全く付かない自由度(構造的にゼロの行)を含む行列を渡すと
+        // 戻り値を返さずにアクセス違反で落ちるため、分解前に対角を検査する。
+        // (トラスのみが接続する節点の回転、どの要素にも接続していない節点など)
+        Eigen::VectorXd kdiag = mii.diagonal();
+        for (Eigen::Index i = 0; i < kdiag.size(); i++)
+        {
+            if (kdiag(i) > 0.0)
+                continue;
+            throw std::runtime_error(
+                "FELinearStaticOp::Compute: the stiffness matrix has DOF(s) with no stiffness. "
+                "The model is unstable (e.g. a node connected only by truss elements, "
+                "or a node not attached to any element).");
+        }
+
+        // 分解に失敗した状態でsolve()を呼ぶと不正メモリアクセスでプロセスごと
+        // 落ちるため、必ず成否を確認してから解く。
         auto solver_static = createSolver();
-        solver_static->compute(mii);
+        if (!solver_static->compute(mii))
+            throw std::runtime_error(
+                "FELinearStaticOp::Compute: stiffness factorization failed. "
+                "The reduced stiffness matrix is singular or not positive definite "
+                "(reduced DOF = " + std::to_string(mii.rows()) + ").");
         Eigen::VectorXd d_result = solver_static->solve(f_input);
         Eigen::VectorXd r_fix = mij.transpose() * d_result - f_fix;
 

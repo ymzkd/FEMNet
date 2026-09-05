@@ -279,10 +279,31 @@ bool DynamicAnalysis::Initialize()
     UpdateReactForces(f0_fix);
 
     // 因数分解しておく
+    // 分解に失敗したままComputeStep()でsolve()を呼ぶと不正メモリアクセスで
+    // プロセスごと落ちるため、ここで成否を確認する。
     Eigen::SparseMatrix<double> compute_mat;
     compute_mat = matM_aa + 0.5 * dt * matC_aa + beta * dt * dt * matK_aa;
+
+    // MKL Pardisoは質量も剛性も付かない自由度(構造的にゼロの行)を含む行列を渡すと
+    // 戻り値を返さずにアクセス違反で落ちるため、分解前に対角を検査する。
+    Eigen::VectorXd sysdiag = compute_mat.diagonal();
+    for (Eigen::Index i = 0; i < sysdiag.size(); i++)
+    {
+        if (sysdiag(i) > 0.0)
+            continue;
+        throw std::runtime_error(
+            "DynamicAnalysis::Initialize: the system matrix has DOF(s) with neither mass "
+            "nor stiffness. The model is unstable (e.g. a node connected only by truss "
+            "elements, or a node not attached to any element).");
+    }
+
     solver = createSolver();
-    solver->compute(compute_mat);
+    if (!solver->compute(compute_mat))
+        throw std::runtime_error(
+            "DynamicAnalysis::Initialize: system matrix factorization failed. "
+            "The effective system matrix (M + dt/2*C + beta*dt^2*K) is singular "
+            "or not positive definite (reduced DOF = " +
+            std::to_string(compute_mat.rows()) + ").");
 
     // Recorder初期化
     // RecordEnabled == false は「記録済み・記録しない」状態であり、Initialize() は

@@ -1460,15 +1460,12 @@ void TestDampInitializers() {
     std::cout << "  zeta(w1): " << rayleigh_damp->alpha / (2 * w1) + rayleigh_damp->beta * w1 / 2
         << ", zeta(wj): " << rayleigh_damp->alpha / (2 * wj) + rayleigh_damp->beta * wj / 2 << std::endl;
 
-    // Case 4: レイリー(alpha, beta 直接指定; Case 3 と同値になるはず)
-    double alpha_direct = 2 * zeta * w1 * wj / (w1 + wj);
-    double beta_direct = 2 * zeta / (w1 + wj);
-    auto rayleigh_direct = std::make_shared<FEDynamicRayleighDampInitializer>(alpha_direct, beta_direct);
-    double peak_ray2 = RunDampedResonance(model_ptr, rayleigh_direct, T1, divnum,
-        steps_per_cycle, excite_cycles, free_cycles, hist);
-    std::cout << "[RayDirect] peak: " << peak_ray2
-        << ", alpha: " << alpha_direct << ", beta: " << beta_direct
-        << ", diff vs Case3: " << std::abs(peak_ray2 - peak_ray) << std::endl;
+    // 減衰比を指定した2モードでの理論値と一致するか(Rayleighの定義どおりか)
+    double alpha_expected = 2 * zeta * w1 * wj / (w1 + wj);
+    double beta_expected = 2 * zeta / (w1 + wj);
+    std::cout << "  expected alpha: " << alpha_expected << ", beta: " << beta_expected
+        << " (diff: " << std::abs(rayleigh_damp->alpha - alpha_expected)
+        << ", " << std::abs(rayleigh_damp->beta - beta_expected) << ")" << std::endl;
 
     // DampRateAtPeriod の検証
     double Tj = 2 * PI / wj;
@@ -1482,11 +1479,6 @@ void TestDampInitializers() {
     std::cout << "  [Rayleigh]  at T1: " << rayleigh_damp->DampRateAtPeriod(T1)
         << ", at Tj: " << rayleigh_damp->DampRateAtPeriod(Tj)
         << " (both expected " << zeta << ")" << std::endl;
-
-    // alpha, beta 直接指定はInitialize前でも算定可能
-    FEDynamicRayleighDampInitializer ray_pre(alpha_direct, beta_direct);
-    std::cout << "  [RayDirect pre-Init] at T1: " << ray_pre.DampRateAtPeriod(T1)
-        << " (expected " << zeta << ")" << std::endl;
 
     // Initialize前(w1未確定)は -1
     FEDynamicMassDampInitializer mass_pre(zeta);

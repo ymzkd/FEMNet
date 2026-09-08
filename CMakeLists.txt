@@ -333,3 +333,13 @@ target_include_directories(loadio_test PUBLIC ${FEMNET_INCLUDE_DIRS})
 configure_mkl_target(loadio_test)
 configure_cuda_target(loadio_test)
 
+# === DynamicAnalysis::Rewind test ===
+add_executable(rewind_test
+    tests/rewind_test.cpp
+    ${FEMNET_SOURCES}
+    $<$<BOOL:${CUDA_FOUND}>:${CUDA_SOLVER_SOURCES}>
+)
+target_include_directories(rewind_test PUBLIC ${FEMNET_INCLUDE_DIRS})
+configure_mkl_target(rewind_test)
+configure_cuda_target(rewind_test)
+

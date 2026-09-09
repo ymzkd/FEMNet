@@ -182,6 +182,11 @@ private:
     // current_react_force を更新する。f_fix は現在ステップの時刻に対応するものを渡すこと。
     void UpdateReactForces(const Eigen::VectorXd& f_fix);
 
+    // Initialize() と Rewind() の実体。rebuild_system が false のときは
+    // 組み立て済みの系(縮約情報・各マトリクス・因数分解)をそのまま使い、
+    // 状態量をステップ0へ戻す処理だけを行う。
+    bool InitializeInternal(bool rebuild_system);
+
 public:
     std::vector<std::shared_ptr<DynamicLoad>> loads;   // 実際に評価する時刻歴荷重(複数登録可)
     double dt = 0.0;                                   // 解析の時間刻み
@@ -234,7 +239,17 @@ public:
     /// 解析の終端時刻
     double EndTime() const { return TimeAt(num_steps); }
 
+    /// 系(縮約・質量/剛性/減衰マトリクス・因数分解)を組み立て、ステップ0の状態にする。
     bool Initialize();
+
+    /// <summary>
+    /// 組み立て済みの系をそのまま使い、ステップ0の状態へ戻す。
+    /// マトリクスの再組立・減衰の再算定(固有値解析)・因数分解を行わないため
+    /// Initialize() より速い。モデルを変更していない場合にのみ使うこと
+    /// (変更した場合は Initialize() を呼び直す)。
+    /// Initialize() 済みでない場合は何もせず false を返す。
+    /// </summary>
+    bool Rewind();
 
     void Clear()
     {
@@ -378,10 +393,6 @@ public:
     double damp_rate1 = 0.05, damp_rate2 = 0.05; // 対象モードの減衰比
     int mode1 = 1, mode2 = 2;                    // 対象モード次数(1始まり)
     double natural_angle_velocity1 = 0.0, natural_angle_velocity2 = 0.0; // 対象モードの自然角速度
-
-    // α, βを直接指定
-    FEDynamicRayleighDampInitializer(double alpha, double beta)
-        : alpha(alpha), beta(beta) {}
 
     // 2つのモードの減衰比を指定(Initialize時の固有値解析でα, βを算出)
     FEDynamicRayleighDampInitializer(double damp_rate1, double damp_rate2, int mode1, int mode2)

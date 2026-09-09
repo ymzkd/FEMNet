@@ -39,79 +39,27 @@ public:
     void CaptureState(DynamicAnalysis &analysis);
 };
 
-class DASampler_MaxDisplacement : public DASampler
+/// <summary>
+/// 全節点の並進応答(変位・速度・加速度)を評価し、着目量が最大となるステップを記録する。
+/// Direction が零ベクトルの場合は応答の大きさ |v| を、非零の場合はその方向成分の
+/// 絶対値 |v·n| を評価する(方向ベクトルは内部で正規化して用いる)。
+/// </summary>
+class DASampler_MaxResponse : public DASampler
 {
 public:
-    double max_displacement = 0.0;
+    /// 評価する応答量の種別
+    ResponseValueType ValueType = ResponseValueType::Displacement;
+    /// 評価方向(零ベクトル = 大きさで評価)
+    Vector Direction;
+    /// 記録時点の評価値(最大値)
+    double MaxValue = 0.0;
 
-    DASampler_MaxDisplacement() : DASampler("MaxDisplacement") {}
+    DASampler_MaxResponse() = default;
+    explicit DASampler_MaxResponse(ResponseValueType value_type);
+    DASampler_MaxResponse(ResponseValueType value_type, Vector direction);
 
-    void Sampling(DynamicAnalysis &da) override;
-};
-
-class DASampler_MaxVelocity : public DASampler
-{
-public:
-    double max_velocity = 0.0;
-
-    DASampler_MaxVelocity() : DASampler("MaxVelocity") {}
-
-    void Sampling(DynamicAnalysis &da) override;
-};
-
-class DASampler_MaxAcceleration : public DASampler
-{
-public:
-    double max_acceleration = 0.0;
-
-    DASampler_MaxAcceleration() : DASampler("MaxAcceleration") {}
-
-    void Sampling(DynamicAnalysis &da) override;
-};
-
-class DASampler_MaxDispDirection : public DASampler
-{
-public:
-
-    double max_displacement = 0.0;
-    Vector direction;
-
-    DASampler_MaxDispDirection() : DASampler("MaxDispDirection") {}
-    DASampler_MaxDispDirection(Vector direction) : DASampler("MaxDispDirection")
-    {
-        this->direction = direction;
-    }
-
-    void Sampling(DynamicAnalysis &da) override;
-};
-
-class DASampler_MaxVelocityDirection : public DASampler
-{
-public:
-
-    double max_velocity = 0.0;
-    Vector direction;
-
-    DASampler_MaxVelocityDirection() : DASampler("MaxVelocityDirection"){}
-    DASampler_MaxVelocityDirection(Vector direction) : DASampler("MaxVelocityDirection")
-    {
-        this->direction = direction;
-    }
-
-    void Sampling(DynamicAnalysis &da) override;
-};
-
-class DASampler_MaxAccelDirection : public DASampler
-{
-public:
-    double max_accel = 0.0;
-    Vector direction;
-
-    DASampler_MaxAccelDirection() : DASampler("MaxAccelDirection"){}
-    DASampler_MaxAccelDirection(Vector direction) : DASampler("MaxAccelDirection")
-    {
-        this->direction = direction;
-    }
+    /// 現在の設定から生成した既定の名称(例: MaxDisp.Abs / MaxVel.X / MaxAccel.Dir)
+    std::string DefaultName() const;
 
     void Sampling(DynamicAnalysis &da) override;
 };

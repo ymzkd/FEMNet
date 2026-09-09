@@ -230,44 +230,71 @@ Eigen::VectorXd DynamicAnalysis::ComputeInitialAcceleration(const Eigen::VectorX
 
 bool DynamicAnalysis::Initialize()
 {
+    return InitializeInternal(true);
+}
+
+bool DynamicAnalysis::Rewind()
+{
+    // 組み立て済みの系が無ければ巻き戻す対象が無い
+    if (!solver || current_disp.size() == 0)
+    {
+        std::cerr << "DynamicAnalysis::Rewind: the system is not initialized yet. "
+            "Call Initialize() first." << std::endl;
+        return false;
+    }
+    return InitializeInternal(false);
+}
+
+bool DynamicAnalysis::InitializeInternal(bool rebuild_system)
+{
     // 値を初期化
     current_step = 0;
 
-    // 縮約系の構築（RigidLinkを考慮）
-    ReducedSystem rs(*model);
-    slave_indices = rs.slave_indices;
-    free_indices = rs.free_indices;
-    fixed_indices = rs.fixed_indices;
-    linkTransMat = rs.linkTransMat;
-    master_dof_num = rs.master_dof_num;
-
-    // 時間グリッドは解析が所有する。未指定の場合のみ荷重のヒントから決定する。
-    if (dt <= 0.0 || num_steps <= 0)
+    if (rebuild_system)
     {
-        if (!SetTimeGridFromLoads())
+        // 縮約系の構築（RigidLinkを考慮）
+        ReducedSystem rs(*model);
+        slave_indices = rs.slave_indices;
+        free_indices = rs.free_indices;
+        fixed_indices = rs.fixed_indices;
+        linkTransMat = rs.linkTransMat;
+        master_dof_num = rs.master_dof_num;
+
+        // 時間グリッドは解析が所有する。未指定の場合のみ荷重のヒントから決定する。
+        if (dt <= 0.0 || num_steps <= 0)
         {
-            std::cerr << "Dynamic analysis: time grid is not set and cannot be determined from the loads."
-                << std::endl;
+            if (!SetTimeGridFromLoads())
+            {
+                std::cerr << "Dynamic analysis: time grid is not set and cannot be determined from the loads."
+                    << std::endl;
+                return false;
+            }
+        }
+
+        // 縮小空間のサイズ
+        int reduced_size = rs.ReducedSize();
+        current_disp = Eigen::VectorXd::Zero(reduced_size);
+        current_vel = Eigen::VectorXd::Zero(reduced_size);
+        current_accel = Eigen::VectorXd::Zero(reduced_size);
+
+        // マトリクスの組み立てと縮約
+        rs.Reduce(model->AssembleStiffnessMatrix(), matK_aa, &matK_ab, &matK_bb);
+        rs.Reduce(model->AssembleMassMatrix(), matM_aa, &matM_ab, &matM_bb);
+
+        // 減衰マトリクスの組み立て
+        bool damp_init = damp_initializer->Initialize(this);
+        if (!damp_init)
+        {
+            std::cerr << "Failed to initialize damping matrix." << std::endl;
             return false;
         }
     }
-
-    // 縮小空間のサイズ
-    int reduced_size = rs.ReducedSize();
-    current_disp = Eigen::VectorXd::Zero(reduced_size);
-    current_vel = Eigen::VectorXd::Zero(reduced_size);
-    current_accel = Eigen::VectorXd::Zero(reduced_size);
-
-    // マトリクスの組み立てと縮約
-    rs.Reduce(model->AssembleStiffnessMatrix(), matK_aa, &matK_ab, &matK_bb);
-    rs.Reduce(model->AssembleMassMatrix(), matM_aa, &matM_ab, &matM_bb);
-
-    // 減衰マトリクスの組み立て
-    bool damp_init = damp_initializer->Initialize(this);
-    if (!damp_init)
+    else
     {
-        std::cerr << "Failed to initialize damping matrix." << std::endl;
-        return false;
+        // 系はそのまま使い、状態量だけを静止状態へ戻す
+        current_disp.setZero();
+        current_vel.setZero();
+        current_accel.setZero();
     }
 
     // 初期加速度: 静止状態での M·a0 = f(0) を解く(縮約行列を使うため行列組立後に実行)
@@ -278,11 +305,35 @@ bool DynamicAnalysis::Initialize()
     // ステップ0の反力も計算
     UpdateReactForces(f0_fix);
 
-    // 因数分解しておく
-    Eigen::SparseMatrix<double> compute_mat;
-    compute_mat = matM_aa + 0.5 * dt * matC_aa + beta * dt * dt * matK_aa;
-    solver = createSolver();
-    solver->compute(compute_mat);
+    if (rebuild_system)
+    {
+        // 因数分解しておく
+        // 分解に失敗したままComputeStep()でsolve()を呼ぶと不正メモリアクセスで
+        // プロセスごと落ちるため、ここで成否を確認する。
+        Eigen::SparseMatrix<double> compute_mat;
+        compute_mat = matM_aa + 0.5 * dt * matC_aa + beta * dt * dt * matK_aa;
+
+        // MKL Pardisoは質量も剛性も付かない自由度(構造的にゼロの行)を含む行列を渡すと
+        // 戻り値を返さずにアクセス違反で落ちるため、分解前に対角を検査する。
+        Eigen::VectorXd sysdiag = compute_mat.diagonal();
+        for (Eigen::Index i = 0; i < sysdiag.size(); i++)
+        {
+            if (sysdiag(i) > 0.0)
+                continue;
+            throw std::runtime_error(
+                "DynamicAnalysis::Initialize: the system matrix has DOF(s) with neither mass "
+                "nor stiffness. The model is unstable (e.g. a node connected only by truss "
+                "elements, or a node not attached to any element).");
+        }
+
+        solver = createSolver();
+        if (!solver->compute(compute_mat))
+            throw std::runtime_error(
+                "DynamicAnalysis::Initialize: system matrix factorization failed. "
+                "The effective system matrix (M + dt/2*C + beta*dt^2*K) is singular "
+                "or not positive definite (reduced DOF = " +
+                std::to_string(compute_mat.rows()) + ").");
+    }
 
     // Recorder初期化
     // RecordEnabled == false は「記録済み・記録しない」状態であり、Initialize() は

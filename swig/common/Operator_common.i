@@ -2,12 +2,7 @@
 
 // Analysis Pointer definitions
 %shared_ptr(DASampler);
-%shared_ptr(DASampler_MaxDisplacement);
-%shared_ptr(DASampler_MaxVelocity);
-%shared_ptr(DASampler_MaxAcceleration);
-%shared_ptr(DASampler_MaxDispDirection);
-%shared_ptr(DASampler_MaxVelocityDirection);
-%shared_ptr(DASampler_MaxAccelDirection);
+%shared_ptr(DASampler_MaxResponse);
 %shared_ptr(DASampler_MaxBaseShear);
 %shared_ptr(DASampler_MaxBaseShearDirection);
 // レコーダ(DynamicAnalysis が複数保持するため shared_ptr で公開)
@@ -16,6 +11,7 @@
 %shared_ptr(DARecorder_PotentialEnergy);
 %shared_ptr(DARecorder_DampingEnergy);
 %shared_ptr(DARecorder_InputEnergy);
+%shared_ptr(DARecorder_NodeResponse);
 %shared_ptr(FEDeformOperator);
 %shared_ptr(FEModeOperator);
 %shared_ptr(FELinearStaticOp);

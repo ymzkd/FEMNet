@@ -1,6 +1,20 @@
 // fem_csharp.i - C#-specific SWIG interface file
 %module(directors="1") FEMNet
 
+// Exception handling: convert C++ exceptions to C# exceptions
+// Without this, a C++ exception escaping a wrapper function terminates the
+// host process (Rhino) instead of surfacing as a catchable .NET exception.
+%include <exception.i>
+%exception {
+    try {
+        $action
+    } catch (const std::exception& e) {
+        SWIG_exception(SWIG_RuntimeError, e.what());
+    } catch (...) {
+        SWIG_exception(SWIG_RuntimeError, "Unknown exception");
+    }
+}
+
 // C#-specific typemaps - MUST be defined BEFORE class definitions
 // (i.e., before %include "fem_common.i")
 

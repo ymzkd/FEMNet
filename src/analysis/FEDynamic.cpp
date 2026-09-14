@@ -55,12 +55,6 @@ DynamicAnalysis::DynamicAnalysis(std::shared_ptr<FEModel> model, std::shared_ptr
         // デフォルトの減衰初期化子を用意
         damp_initializer = std::make_shared<FEDynamicStiffDampInitializer>();
     }
-
-    // 既定のエネルギーレコーダを登録(不要なら ClearRecorders で外せる)
-    // recorders.push_back(std::make_shared<DARecorder_KineticEnergy>());
-    // recorders.push_back(std::make_shared<DARecorder_PotentialEnergy>());
-    // recorders.push_back(std::make_shared<DARecorder_DampingEnergy>());
-    // recorders.push_back(std::make_shared<DARecorder_InputEnergy>());
 }
 
 void DynamicAnalysis::AddLoad(std::shared_ptr<DynamicLoad> load)

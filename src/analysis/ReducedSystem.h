@@ -7,10 +7,24 @@
 #include "Model.h"
 #include "SparseMatrixUtils.h"
 
+// 回転自由度に剛性が「付いていない」とみなすしきい値(最大対角成分に対する比)。
+// 剛性行列の対角成分がこの値以下の回転自由度は、剛性のない死んだ自由度として
+// 自動的に拘束する(トラスのみが接続する節点の回転、板要素の面内回転など)。
+//   - 絶対値ではなく最大対角成分との比で判定する(単位系に依存しないため)
+//   - 丸め誤差程度の剛性しか付かない自由度まで拾うための余裕。厳密にゼロのみを
+//     対象にしたい場合は 0.0 にする
+//   - ごく小さい実剛性を持つ自由度まで拘束してしまう場合は小さくする
+static constexpr double kDeadRotationDiagRelTol = 1e-12;
+
 // RigidLink縮約系のヘルパー(SWIG非公開・内部実装専用)。
 // 全体自由度を slave(剛体リンク従属) / free / fixed に分割し、
 // 全体対称行列(上三角格納)や荷重ベクトルを縮約空間(master+free)へ縮小する。
 // 各解析Operatorで重複していた縮約処理を集約したもの。
+//
+// 自由度の分類(優先順位): slave > fixed > free
+//   slave: 剛体リンクの従属自由度(マスタに従うため、拘束指定があっても従属が優先)
+//   fixed: ユーザーが Fix を指定した自由度 + 剛性が付かない回転自由度(自動拘束)
+//   free : 残り(ばね支持の自由度もここに入り、剛性行列側でばね剛性を受け持つ)
 class ReducedSystem
 {
 public:
@@ -20,14 +34,58 @@ public:
     Eigen::SparseMatrix<double> linkTransMat; // 剛体リンク変換行列 T
     int master_dof_num = 0;
 
-    explicit ReducedSystem(FEModel &model)
+    // stiffness: 組立済みの全体剛性マトリクス(上三角格納)。
+    // 剛性が付かない回転自由度の自動拘束判定に用いる。
+    ReducedSystem(FEModel &model, const Eigen::SparseMatrix<double> &stiffness)
         : slave_indices(model.RigidLinkData->SlaveDOFIndices()),
-          free_indices(model.FreeIndices(true)),
-          fixed_indices(model.FixIndices()),
           linkTransMat(model.RigidLinkData->TransformationMatrix().sparseView(1e-10))
     {
         master_dof_num = (int)linkTransMat.cols();
+        Classify(model, stiffness);
     }
+
+private:
+    // 全体自由度を slave / fixed / free に分類する。
+    // fixed と free は昇順で構築する(splitMatrix3x3 の残りグループ、および
+    // splitMatrixWithResize の自由側が昇順であることと整合させるため)。
+    void Classify(FEModel &model, const Eigen::SparseMatrix<double> &stiffness)
+    {
+        const int dof_num = model.DOFNum();
+        std::vector<bool> is_slave(dof_num, false);
+        for (const int idx : slave_indices)
+            if (idx >= 0 && idx < dof_num)
+                is_slave[idx] = true;
+
+        // 剛性が付かない回転自由度のしきい値(全体最大の対角成分に対する比)
+        const Eigen::VectorXd kdiag = stiffness.diagonal();
+        const double diag_max = (kdiag.size() > 0) ? kdiag.maxCoeff() : 0.0;
+        const double dead_tol = kDeadRotationDiagRelTol * ((diag_max > 0.0) ? diag_max : 0.0);
+
+        for (int i = 0; i < dof_num; i++)
+        {
+            if (is_slave[i])
+                continue;
+
+            const Support &sup = model.Nodes[i / NODE_DOF].Fix;
+            const ConstraintType type = sup.BoundaryTypes[i % NODE_DOF];
+
+            bool fixed = (type == ConstraintType::Fix);
+            if (!fixed && type == ConstraintType::Free && (i % NODE_DOF) >= 3)
+            {
+                // 回転自由度で剛性が付かないものは自動拘束する。
+                // (並進自由度は本当に不安定なモデルなので各解析側で例外にする)
+                if (i < kdiag.size() && kdiag(i) <= dead_tol)
+                    fixed = true;
+            }
+
+            if (fixed)
+                fixed_indices.push_back(i);
+            else
+                free_indices.push_back(i);
+        }
+    }
+
+public:
 
     // 縮約空間(master+free)の自由度数
     int ReducedSize() const { return master_dof_num + (int)free_indices.size(); }

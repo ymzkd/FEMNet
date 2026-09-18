@@ -11,13 +11,13 @@ int FEBucklingAnalysis::SolveBuckling()
 {
     int computed_num = mode_num;
 
-    // 縮約系の構築（RigidLinkを考慮）
-    ReducedSystem rs(*model);
-
     // 剛性行列の組み立て
     Eigen::SparseMatrix<double> k_full = model->AssembleStiffnessMatrix();
     if (InitailDeformOp != nullptr)
         k_full += model->AssembleGeometricStiffnessMatrix(InitailDeformOp->GetDisplacements());
+
+    // 縮約系の構築（RigidLinkを考慮。剛性行列は自由度の分類にも用いる）
+    ReducedSystem rs(*model, k_full);
 
     // 幾何剛性行列の組み立て
     Eigen::SparseMatrix<double> kg_full =

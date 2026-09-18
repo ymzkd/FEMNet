@@ -94,7 +94,7 @@ namespace FemNetTest
             // 支点
             bool node0Fixed = true;
             for (int i = 0; i < 6; i++)
-                node0Fixed = node0Fixed && m2.GetNode(0).Fix.Get(i);
+                node0Fixed = node0Fixed && m2.GetNode(0).Fix.BoundaryTypes[i] == ConstraintType.Fix;
             Check(node0Fixed, "node0 完全固定の往復");
 
             // 座標

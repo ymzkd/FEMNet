@@ -11,9 +11,12 @@
 //     材料定数(Young/Poisson/dense)をインライン保存する。
 //
 // フォーマット(v1, 空白・改行非依存のトークン列):
-//   FEMNET_MODEL_TEXT_V2
+//   FEMNET_MODEL_TEXT_V3
 //   GRAVITY <g>
-//   NODES <count>      ... <idx> <x> <y> <z> <fix0..5> <lock0..5>
+//   NODES <count>      ... <idx> <x> <y> <z> <btype0..5> <spring0..5>
+//     btype は ConstraintType (0=Free, 1=Fix, 2=Spring)、spring は各自由度のばね定数。
+//     V2 は <fix0..5> <lock0..5> (0/1) で、fix をそのまま btype として読み、lock は無視する
+//     (剛性の付かない回転自由度の拘束は解析側が剛性行列から判定するため)。
 //   MATERIALS <count>  ... <idx> <Young> <Poisson> <dense>
 //   SECTIONS <count>   ... <idx> <A> <Iy> <Iz> <Iyz> <K>
 //   ELEMENTS <count>
@@ -22,7 +25,7 @@
 //     面・板: <eid> <Kind> <nodeIdx...> <Young> <Poisson> <dense>
 //             <tplane> <tplate> <tweight> <beta>
 //   RIGIDLINKS <count>
-//     <flag0..5> <mx> <my> <mz> <mfix0..5> <mlock0..5> <slaveCount> <slaveIdx...>
+//     <flag0..5> <mx> <my> <mz> <mbtype0..5> <mspring0..5> <slaveCount> <slaveIdx...>
 //     マスタは仮想節点(剛床の重心など)を含むため、座標＋拘束(fix/lock)を実体で常にインライン保持。
 //   END
 //
@@ -41,7 +44,17 @@
 
 namespace {
 
-const char *kMagic = "FEMNET_MODEL_TEXT_V2";
+const char *kMagic = "FEMNET_MODEL_TEXT_V3";
+const char *kMagicV2 = "FEMNET_MODEL_TEXT_V2"; // 旧形式(読み込みのみ対応)
+
+// 支持条件の書き出し/読み込み(節点・剛体リンクのマスタ節点で共通)
+void WriteSupport(std::ostream &os, const Support &sup)
+{
+    for (int i = 0; i < 6; i++)
+        os << " " << static_cast<int>(sup.BoundaryTypes[i]);
+    for (int i = 0; i < 6; i++)
+        os << " " << sup.Springs[i];
+}
 
 // ElementType -> シリアライズ用タグ名
 std::string KindName(ElementType t)
@@ -84,6 +97,23 @@ T ReadToken(std::istream &is, const char *what)
     return v;
 }
 
+// legacy_v2: V2 形式(<fix0..5> <lock0..5>)として読む。lock は読み捨てる。
+void ReadSupport(std::istream &is, Support &sup, bool legacy_v2)
+{
+    for (int i = 0; i < 6; i++)
+    {
+        int t = ReadToken<int>(is, "Support boundary type");
+        sup.BoundaryTypes[i] = static_cast<ConstraintType>(t);
+    }
+    for (int i = 0; i < 6; i++)
+    {
+        if (legacy_v2)
+            ReadToken<int>(is, "Support lock (V2, 無視)");
+        else
+            sup.Springs[i] = ReadToken<double>(is, "Support spring");
+    }
+}
+
 // 期待するキーワードを読み、一致しなければ例外。
 void ExpectKeyword(std::istream &is, const char *keyword)
 {
@@ -118,10 +148,7 @@ void FEModel::Save(const std::string &path)
         const Node &n = Nodes[i];
         ofs << i << " "
             << n.Location.x << " " << n.Location.y << " " << n.Location.z;
-        for (int j = 0; j < 6; j++)
-            ofs << " " << (n.Fix.flags[j] ? 1 : 0);
-        for (int j = 0; j < 6; j++)
-            ofs << " " << (n.Fix.lockflags.flags[j] ? 1 : 0);
+        WriteSupport(ofs, n.Fix);
         ofs << "\n";
     }
 
@@ -199,10 +226,7 @@ void FEModel::Save(const std::string &path)
         // マスタ節点: 実体(値)で保持しているため、座標＋拘束(fix/lock)を常にインライン出力。
         const Node &m = link.Master;
         ofs << m.Location.x << " " << m.Location.y << " " << m.Location.z;
-        for (int j = 0; j < 6; j++)
-            ofs << " " << (m.Fix.flags[j] ? 1 : 0);
-        for (int j = 0; j < 6; j++)
-            ofs << " " << (m.Fix.lockflags.flags[j] ? 1 : 0);
+        WriteSupport(ofs, m.Fix);
 
         ofs << " " << link.Slaves.size();
         for (const Node &slave : link.Slaves)
@@ -223,7 +247,8 @@ void FEModel::Load(const std::string &path)
         throw std::runtime_error("ModelIO: ファイルを開けません: " + path);
 
     std::string magic = ReadToken<std::string>(ifs, "magic");
-    if (magic != kMagic)
+    const bool legacy_v2 = (magic == kMagicV2);
+    if (magic != kMagic && !legacy_v2)
         throw std::runtime_error("ModelIO: フォーマット識別子が一致しません: " + magic);
 
     // 既存内容をクリア
@@ -250,10 +275,7 @@ void FEModel::Load(const std::string &path)
         double y = ReadToken<double>(ifs, "Node y");
         double z = ReadToken<double>(ifs, "Node z");
         Node n(idx, x, y, z); // id = 添字に正規化
-        for (int i = 0; i < 6; i++)
-            n.Fix.flags[i] = (ReadToken<int>(ifs, "Node fix") != 0);
-        for (int i = 0; i < 6; i++)
-            n.Fix.lockflags.flags[i] = (ReadToken<int>(ifs, "Node lock") != 0);
+        ReadSupport(ifs, n.Fix, legacy_v2);
         Nodes[idx] = n;
     }
 
@@ -405,10 +427,7 @@ void FEModel::Load(const std::string &path)
         double my = ReadToken<double>(ifs, "RigidLink master y");
         double mz = ReadToken<double>(ifs, "RigidLink master z");
         Node m(-1, mx, my, mz);
-        for (int i = 0; i < 6; i++)
-            m.Fix.flags[i] = (ReadToken<int>(ifs, "RigidLink master fix") != 0);
-        for (int i = 0; i < 6; i++)
-            m.Fix.lockflags.flags[i] = (ReadToken<int>(ifs, "RigidLink master lock") != 0);
+        ReadSupport(ifs, m.Fix, legacy_v2);
         link.Master = m;
 
         int slave_count = ReadToken<int>(ifs, "RigidLink slave 数");

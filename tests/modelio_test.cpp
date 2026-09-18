@@ -52,11 +52,12 @@ FEModel BuildSampleModel()
         m.Nodes.push_back(Node(i, coords[i][0], coords[i][1], coords[i][2]));
 
     // 支点: node0 完全固定
-    for (int i = 0; i < 6; i++)
-        m.Nodes[0].Fix.flags[i] = true;
-    // node1 に lockflags のパターンを設定(往復確認用)
-    m.Nodes[1].Fix.lockflags.flags[3] = true;
-    m.Nodes[1].Fix.lockflags.flags[5] = true;
+    m.Nodes[0].Fix.FixAll();
+    // node1 にばね支持のパターンを設定(往復確認用)
+    m.Nodes[1].Fix.BoundaryTypes[2] = ConstraintType::Spring;
+    m.Nodes[1].Fix.Springs[2] = 1234.5;
+    m.Nodes[1].Fix.BoundaryTypes[4] = ConstraintType::Spring;
+    m.Nodes[1].Fix.Springs[4] = 6.78e5;
 
     // --- Materials ---
     Material mat0(205000.0, 0.3, 7.85e-9);
@@ -141,11 +142,14 @@ int main()
     // 支点
     bool node0_fixed = true;
     for (int i = 0; i < 6; i++)
-        node0_fixed = node0_fixed && m2.Nodes[0].Fix.flags[i];
+        node0_fixed = node0_fixed && (m2.Nodes[0].Fix.BoundaryTypes[i] == ConstraintType::Fix);
     Check(node0_fixed, "node0 完全固定の往復");
-    Check(m2.Nodes[1].Fix.lockflags.flags[3] && m2.Nodes[1].Fix.lockflags.flags[5] &&
-              !m2.Nodes[1].Fix.lockflags.flags[0],
-          "node1 lockflags の往復");
+    Check(m2.Nodes[1].Fix.BoundaryTypes[2] == ConstraintType::Spring &&
+              m2.Nodes[1].Fix.BoundaryTypes[4] == ConstraintType::Spring &&
+              m2.Nodes[1].Fix.BoundaryTypes[0] == ConstraintType::Free &&
+              std::abs(m2.Nodes[1].Fix.Springs[2] - 1234.5) < 1e-9 &&
+              std::abs(m2.Nodes[1].Fix.Springs[4] - 6.78e5) < 1e-9,
+          "node1 ばね支持の往復");
 
     // 座標
     Check(std::abs(m2.Nodes[10].Location.x - 1000.0) < 1e-9 &&

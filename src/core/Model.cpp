@@ -71,8 +71,6 @@ void FEModel::add_element(BeamElement data)
     std::shared_ptr<BeamElement> ptr = std::make_shared<BeamElement>(data);
     Elements.push_back(ptr);
     
-    Nodes[data.Nodes[0]->id].Fix.UnlockAllRot();
-    Nodes[data.Nodes[1]->id].Fix.UnlockAllRot();
 }
 
 void FEModel::add_element(ComplexBeamElement data)
@@ -80,8 +78,6 @@ void FEModel::add_element(ComplexBeamElement data)
     std::shared_ptr<ComplexBeamElement> ptr = std::make_shared<ComplexBeamElement>(data);
     Elements.push_back(ptr);
 
-    Nodes[data.Nodes[0]->id].Fix.UnlockAllRot();
-    Nodes[data.Nodes[1]->id].Fix.UnlockAllRot();
 }
 
 void FEModel::add_element(TrussElement data)
@@ -107,9 +103,6 @@ void FEModel::add_element(TriPlateElement data)
     std::shared_ptr<TriPlateElement> ptr = std::make_shared<TriPlateElement>(data);
     Elements.push_back(ptr);
 
-    Nodes[ptr->Nodes[0]->id].Fix.UnlockAllRot();
-    Nodes[ptr->Nodes[1]->id].Fix.UnlockAllRot();
-    Nodes[ptr->Nodes[2]->id].Fix.UnlockAllRot();
 }
 
 void FEModel::add_element(QuadPlaneElement data)
@@ -123,10 +116,6 @@ void FEModel::add_element(QuadPlateElement data)
     std::shared_ptr<QuadPlateElement> ptr = std::make_shared<QuadPlateElement>(data);
     Elements.push_back(ptr);
 
-    Nodes[ptr->Nodes[0]->id].Fix.UnlockAllRot();
-    Nodes[ptr->Nodes[1]->id].Fix.UnlockAllRot();
-    Nodes[ptr->Nodes[2]->id].Fix.UnlockAllRot();
-    Nodes[ptr->Nodes[3]->id].Fix.UnlockAllRot();
 }
 
 void FEModel::add_truss_element(int id, int n1_id, int n2_id, int sec_id, int mat_id)
@@ -150,8 +139,6 @@ void FEModel::add_beam_element(int id, int n1_id, int n2_id, int sec_id, int mat
     std::shared_ptr<BeamElement> ptr = std::make_shared<BeamElement>(id, n1, n2, sec, mat, beta);
     Elements.push_back(ptr);
 
-    Nodes[ptr->Nodes[0]->id].Fix.UnlockAllRot();
-    Nodes[ptr->Nodes[1]->id].Fix.UnlockAllRot();
 }
 
 void FEModel::add_tri_plate_element(int id, int n1_id, int n2_id, int n3_id, double thickness, int mat_id)
@@ -164,9 +151,6 @@ void FEModel::add_tri_plate_element(int id, int n1_id, int n2_id, int n3_id, dou
     std::shared_ptr<TriPlateElement> ptr = std::make_shared<TriPlateElement>(id, n1, n2, n3, thickness, mat);
     Elements.push_back(ptr);
 
-    Nodes[ptr->Nodes[0]->id].Fix.UnlockAllRot();
-    Nodes[ptr->Nodes[1]->id].Fix.UnlockAllRot();
-    Nodes[ptr->Nodes[2]->id].Fix.UnlockAllRot();
 
 }
 
@@ -182,10 +166,6 @@ void FEModel::add_quad_plate_element(int id, int n1_id, int n2_id, int n3_id, in
         std::make_shared<QuadPlateElement>(id, n1, n2, n3, n4, thickness, mat);
     Elements.push_back(ptr);
 
-    Nodes[ptr->Nodes[0]->id].Fix.UnlockAllRot();
-    Nodes[ptr->Nodes[1]->id].Fix.UnlockAllRot();
-    Nodes[ptr->Nodes[2]->id].Fix.UnlockAllRot();
-    Nodes[ptr->Nodes[3]->id].Fix.UnlockAllRot();
 }
 
 BarElementBase* FEModel::GetBarElement(int id)

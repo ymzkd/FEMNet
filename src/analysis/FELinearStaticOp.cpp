@@ -15,12 +15,13 @@ void FELinearStaticOp::Compute()
     Eigen::VectorXd residual_vec = force_vec;
     Eigen::VectorXd disp_vec = Eigen::VectorXd::Zero(full_size);
 
-    ReducedSystem rs(m);
-
     // 状態依存要素の状態を初期化 (規定剛性で機能する状態へ)
     m_states.Clear();
 
     Eigen::SparseMatrix<double> full_stiffmat = m.AssembleStiffnessMatrix(&m_states);
+
+    // 自由度の分類は剛性行列を用いるため、組立後に構築する
+    ReducedSystem rs(m, full_stiffmat);
 
     int iter_result = -max_iter;
     for (int iter = 0; iter < max_iter; iter++)
@@ -59,16 +60,22 @@ void FELinearStaticOp::Compute()
         Eigen::VectorXd r_fix = mij.transpose() * d_result - f_fix;
 
         // 反力データ整理
+        // 出力するのはユーザーが支点指定した自由度のみ。剛性が付かないために
+        // 自動拘束された回転自由度は支点ではないため反力に含めない。
         Eigen::VectorXd r = Eigen::VectorXd::Zero(full_size);
         for (size_t i = 0; i < rs.fixed_indices.size(); i++)
             r(rs.fixed_indices[i]) = r_fix(i);
         react_force.clear();
         for (size_t i = 0; i < m.Nodes.size(); i++)
         {
-            if (!m.Nodes[i].Fix.IsAnyFix())
+            const Support &sup = m.Nodes[i].Fix;
+            if (!sup.IsSupported())
                 continue;
             int pos = i * 6;
-            react_force.push_back(NodeLoad(i, r[pos], r[pos + 1], r[pos + 2], r[pos + 3], r[pos + 4], r[pos + 5]));
+            double v[6];
+            for (int k = 0; k < 6; k++)
+                v[k] = (sup.BoundaryTypes[k] != ConstraintType::Free) ? r[pos + k] : 0.0;
+            react_force.push_back(NodeLoad(i, v[0], v[1], v[2], v[3], v[4], v[5]));
         }
 
         // 変形データ整理

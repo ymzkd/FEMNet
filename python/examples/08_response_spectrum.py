@@ -24,6 +24,10 @@ import sys
 sys.path.insert(0, '..')
 
 from femnet import *
+
+# 支持条件の指定(ConstraintType: Free / Fix / Spring)
+FREE = ConstraintType_Free
+FIX = ConstraintType_Fix
 import math
 
 print("=" * 60)
@@ -130,7 +134,7 @@ for i in range(n_nodes_per_level, model.NodeNum()):
     node = model.GetNode(i)
     # Fix: Uz, Rx, Ry (out-of-plane)
     # Free: Ux, Uy, Rz (in-plane for frame)
-    node.Fix = Support(False, False, True, True, True, False)
+    node.Fix = Support(FREE, FREE, FIX, FIX, FIX, FREE)
 
 print(f"   Total DOF: {model.DOFNum()}")
 print(f"   Free DOF: {model.FreeDOFNum()}")

@@ -20,6 +20,10 @@ import sys
 sys.path.insert(0, '..')
 
 from femnet import *
+
+# 支持条件の指定(ConstraintType: Free / Fix / Spring)
+FREE = ConstraintType_Free
+FIX = ConstraintType_Fix
 import math
 
 print("=" * 60)
@@ -60,7 +64,7 @@ for i in range(1, model.NodeNum()):
     node = model.GetNode(i)
     # Free: Uy only (bending displacement)
     # Fixed: All others (Ux, Uz, Rx, Ry, Rz)
-    node.Fix = Support(True, False, True, True, True, True)
+    node.Fix = Support(FIX, FREE, FIX, FIX, FIX, FIX)
 
 print(f"   Total DOF: {model.DOFNum()}")
 print(f"   Free DOF: {model.FreeDOFNum()}")

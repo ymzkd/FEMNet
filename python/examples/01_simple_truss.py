@@ -25,6 +25,10 @@ sys.path.insert(0, '..')
 
 from femnet import *
 
+# 支持条件の指定(ConstraintType: Free / Fix / Spring)
+FREE = ConstraintType_Free
+FIX = ConstraintType_Fix
+
 print("=" * 60)
 print("FEMNet Example 01: Simple Truss Structure")
 print("=" * 60)
@@ -61,12 +65,12 @@ print("\n2. Setting boundary conditions...")
 # Support nodes: Fix all translations (Ux, Uy, Uz)
 # The Support constructor takes: (Ux, Uy, Uz, Rx, Ry, Rz)
 # Rx, Ry, Rz are locked by default, but we explicitly set them for clarity
-model.GetNode(0).Fix = Support(True, True, True, True, True, True)  # Node 0: Fixed support
-model.GetNode(1).Fix = Support(True, True, True, True, True, True)  # Node 1: Fixed support
+model.GetNode(0).Fix = Support(FIX, FIX, FIX, FIX, FIX, FIX)  # Node 0: Fixed support
+model.GetNode(1).Fix = Support(FIX, FIX, FIX, FIX, FIX, FIX)  # Node 1: Fixed support
 
 # Free node (node 2): Only fix out-of-plane (Uz) and rotations
 # Ux, Uy are free for displacement
-model.GetNode(2).Fix = Support(False, False, True, True, True, True)
+model.GetNode(2).Fix = Support(FREE, FREE, FIX, FIX, FIX, FIX)
 
 print(f"   Total DOF: {model.DOFNum()}")
 print(f"   Free DOF: {model.FreeDOFNum()}")

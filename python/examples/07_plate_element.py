@@ -31,6 +31,10 @@ import sys
 sys.path.insert(0, '..')
 
 from femnet import *
+
+# 支持条件の指定(ConstraintType: Free / Fix / Spring)
+FREE = ConstraintType_Free
+FIX = ConstraintType_Fix
 import math
 
 print("=" * 60)
@@ -90,20 +94,20 @@ for i in range(model.NodeNum()):
     if on_boundary:
         if abs(x) < 1e-6 and abs(y) < 1e-6:
             # Bottom left corner: Pin (Ux, Uy, Uz fixed)
-            node.Fix = Support(True, True, True, False, False, True)
+            node.Fix = Support(FIX, FIX, FIX, FREE, FREE, FIX)
         elif abs(x - a) < 1e-6 and abs(y) < 1e-6:
             # Bottom right corner: Roller in X (Uy, Uz fixed)
-            node.Fix = Support(False, True, True, False, False, True)
+            node.Fix = Support(FREE, FIX, FIX, FREE, FREE, FIX)
         else:
             # Other boundary nodes: Simply supported (Uz fixed)
             # Ux, Uy free for membrane behavior
             # Rx, Ry free for rotation
             # Rz fixed (drilling rotation)
-            node.Fix = Support(False, False, True, False, False, True)
+            node.Fix = Support(FREE, FREE, FIX, FREE, FREE, FIX)
     else:
         # Interior nodes: Only fix drilling rotation (Rz)
         # Ux, Uy, Uz, Rx, Ry are free
-        node.Fix = Support(False, False, False, False, False, True)
+        node.Fix = Support(FREE, FREE, FREE, FREE, FREE, FIX)
 
 print(f"   Total DOF: {model.DOFNum()}")
 print(f"   Free DOF: {model.FreeDOFNum()}")

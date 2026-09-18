@@ -516,14 +516,15 @@ std::vector<NodeLoad> ResponseSpectrumMethod::calculate_react_forces(const std::
     std::vector<NodeLoad> reacts;
     for (size_t i = 0; i < N; i++)
     {
-        if (!model->Nodes[i].Fix.IsAnyFix())
+        const Support &sup = model->Nodes[i].Fix;
+        if (!sup.IsSupported())
             continue;
 
-        // 静的解析(FELinearStaticOp)と同様、固定自由度の成分のみ反力として報告する
-        auto fixed = model->Nodes[i].Fix.isdof_fixed();
+        // 静的解析(FELinearStaticOp)と同様、ユーザーが支点指定した自由度の成分のみ
+        // 反力として報告する(剛性が付かないために自動拘束された回転は支点ではない)
         double v[6];
         for (int k = 0; k < 6; k++)
-            v[k] = fixed[k] ? r[i * 6 + k] : 0.0;
+            v[k] = (sup.BoundaryTypes[k] != ConstraintType::Free) ? r[i * 6 + k] : 0.0;
         reacts.push_back(NodeLoad(i, v[0], v[1], v[2], v[3], v[4], v[5]));
     }
     return reacts;

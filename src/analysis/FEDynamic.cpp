@@ -246,8 +246,9 @@ bool DynamicAnalysis::InitializeInternal(bool rebuild_system)
 
     if (rebuild_system)
     {
-        // 縮約系の構築（RigidLinkを考慮）
-        ReducedSystem rs(*model);
+        // 縮約系の構築（RigidLinkを考慮。剛性行列は自由度の分類にも用いる）
+        Eigen::SparseMatrix<double> k_full = model->AssembleStiffnessMatrix();
+        ReducedSystem rs(*model, k_full);
         slave_indices = rs.slave_indices;
         free_indices = rs.free_indices;
         fixed_indices = rs.fixed_indices;
@@ -272,7 +273,7 @@ bool DynamicAnalysis::InitializeInternal(bool rebuild_system)
         current_accel = Eigen::VectorXd::Zero(reduced_size);
 
         // マトリクスの組み立てと縮約
-        rs.Reduce(model->AssembleStiffnessMatrix(), matK_aa, &matK_ab, &matK_bb);
+        rs.Reduce(k_full, matK_aa, &matK_ab, &matK_bb);
         rs.Reduce(model->AssembleMassMatrix(), matM_aa, &matM_ab, &matM_bb);
 
         // 減衰マトリクスの組み立て
@@ -354,13 +355,18 @@ void DynamicAnalysis::UpdateReactForces(const Eigen::VectorXd &f_fix)
     for (size_t i = 0; i < fixed_indices.size(); i++)
         rf_full(fixed_indices[i]) = rf(i);
 
+    // 出力するのはユーザーが支点指定した自由度のみ(自動拘束された回転は支点ではない)
     current_react_force.clear();
     for (size_t i = 0; i < model->Nodes.size(); i++)
     {
-        if (!model->Nodes[i].Fix.IsAnyFix())
+        const Support &sup = model->Nodes[i].Fix;
+        if (!sup.IsSupported())
             continue;
         int pos = i * 6;
-        current_react_force.push_back(NodeLoad(i, rf_full[pos], rf_full[pos + 1], rf_full[pos + 2], rf_full[pos + 3], rf_full[pos + 4], rf_full[pos + 5]));
+        double v[6];
+        for (int k = 0; k < 6; k++)
+            v[k] = (sup.BoundaryTypes[k] != ConstraintType::Free) ? rf_full[pos + k] : 0.0;
+        current_react_force.push_back(NodeLoad(i, v[0], v[1], v[2], v[3], v[4], v[5]));
     }
 }
 

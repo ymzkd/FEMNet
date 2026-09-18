@@ -26,6 +26,10 @@ import sys
 sys.path.insert(0, '..')
 
 from femnet import *
+
+# 支持条件の指定(ConstraintType: Free / Fix / Spring)
+FREE = ConstraintType_Free
+FIX = ConstraintType_Fix
 import math
 
 print("=" * 60)
@@ -81,14 +85,14 @@ for i in range(model.NodeNum()):
     if abs(y) < 1e-6:  # Bottom edge (y = 0)
         if abs(x) < 1e-6:  # Bottom left corner
             # Fix Ux, Uy, Uz, Rx, Ry, Rz (pinned support - prevents rigid body motion)
-            node.Fix = Support(True, True, True, True, True, True)
+            node.Fix = Support(FIX, FIX, FIX, FIX, FIX, FIX)
         else:
             # All other bottom nodes: Fix Uy (roller supports)
             # This constrains the bottom edge to remain on the x-axis
-            node.Fix = Support(False, True, True, True, True, True)
+            node.Fix = Support(FREE, FIX, FIX, FIX, FIX, FIX)
     else:
         # Interior and top nodes: Free in Ux, Uy
-        node.Fix = Support(False, False, True, True, True, True)
+        node.Fix = Support(FREE, FREE, FIX, FIX, FIX, FIX)
 
 print(f"   Total DOF: {model.DOFNum()}")
 print(f"   Free DOF: {model.FreeDOFNum()}")

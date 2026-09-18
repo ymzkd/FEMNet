@@ -89,14 +89,6 @@ public:
 
 class FEModel
 {
-private:
-    /// <summary>
-    /// 集中質量マトリクスの対象でない(並進以外の回転自由度等)または固定自由度の
-    /// 全体自由度におけるインデックスを格納した配列を返す関数
-    /// </summary>
-    /// <returns></returns>
-    std::vector<int> UnLumpedFixIndices();
-
 public:
     // === 行列・ベクトル組立サービス(解析Operator向け, SWIG非公開) ===
     // FEModelは構造データの保持と組立のみを担い、解析(ソルバー)は
@@ -122,9 +114,11 @@ public:
 
     /// <summary>
     /// 非拘束自由度の全自由度におけるインデックスを格納した配列を返す関数
+    /// (ユーザー指定の支持条件のみで判定する。剛性が付かない回転自由度の
+    ///  自動拘束は解析側の ReducedSystem が剛性行列から判定する)
     /// </summary>
     std::vector<int> FreeIndices(bool rigid_link = false);
-    
+
 
     /// <summary>
     /// 剛体連結されている自由度の全自由度におけるインデックスを格納した配列を返す関数

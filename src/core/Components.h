@@ -4,6 +4,7 @@
 #ifndef SWIG
 #include<iostream>
 #include <cmath>
+#include <array>
 #include <vector>
 #include <numeric>
 #include <algorithm>
@@ -332,24 +333,35 @@ public:
         : A(A), Iy(Iy), Iz(Iz), K(K){};
 };
 
-// True if Fixed
-class Support : public DOFFlags {
+enum class ConstraintType
+{
+    Free = 0,
+    Fix = 1,
+    Spring = 2
+};
+
+// 節点の支持条件。自由度ごとに Free / Fix / Spring を指定する。
+//
+// 設計方針:
+//   - 保持するのは「ユーザーが指定した支持条件」のみ。回転剛性を持つ要素が
+//     取り付かない自由度の自動拘束は、解析側(ReducedSystem)が剛性行列から判定する。
+//   - BoundaryTypes が正であり、Springs[i] は BoundaryTypes[i] == Spring の
+//     自由度でのみ参照する(Free/Fix の自由度の値は無視する)。
+//   - 値の妥当性(負のばね定数など)はここでは検査しない。入力側の責務とする。
+class Support {
 public:
-    static const bool Fix = true;
-    static const bool Free = false;
-    static const bool Unlock = false;
-    static const bool Lock = true;
+    std::array<ConstraintType, 6> BoundaryTypes{}; // 既定は全 Free
+    std::array<double, 6> Springs{};               // 各自由度のばね定数(全体座標系)
 
-    DOFFlags lockflags;
-    Support() : DOFFlags(Free, Free, Free, Free, Free, Free), lockflags() {}
-    Support(bool ux, bool uy, bool uz, bool rx, bool ry, bool rz);
+    Support() = default;
+    Support(ConstraintType ux, ConstraintType uy, ConstraintType uz,
+            ConstraintType rx, ConstraintType ry, ConstraintType rz);
 
-    // Ux(), Uy() 等は DOFFlags から継承されるため定義不要
-
-    std::array<bool, 6> isdof_fixed() {
-        std::array<bool, 6> fixed;
+    // 固定されている自由度(ばねは剛性を持つ自由自由度なので false)
+    std::array<bool, 6> isdof_fixed() const {
+        std::array<bool, 6> fixed{};
         for (int i = 0; i < 6; i++)
-            fixed[i] = flags[i] || lockflags.flags[i];
+            fixed[i] = (BoundaryTypes[i] == ConstraintType::Fix);
         return fixed;
     }
 
@@ -357,17 +369,22 @@ public:
     void PinFix();
     void ReleaseAll();
 
-    void UnlockAllRot() {
-        lockflags.Rx() = Unlock;
-        lockflags.Ry() = Unlock;
-        lockflags.Rz() = Unlock;
+    bool IsAnyFix() const {
+        for (const ConstraintType t : BoundaryTypes)
+            if (t == ConstraintType::Fix) return true;
+        return false;
     }
 
-    bool IsAnyFix() {
-        auto fixed = isdof_fixed();
-        for (bool f : fixed) {
-            if (f) return true;
-        }
+    bool HasSpring() const {
+        for (const ConstraintType t : BoundaryTypes)
+            if (t == ConstraintType::Spring) return true;
+        return false;
+    }
+
+    // 支点として何らかの指定がある(反力の出力対象となる)か
+    bool IsSupported() const {
+        for (const ConstraintType t : BoundaryTypes)
+            if (t != ConstraintType::Free) return true;
         return false;
     }
 };

@@ -201,6 +201,7 @@ set(FEMNET_SOURCES
     src/Elements/QuadPlateElement.cpp
     src/analysis/SeismicModule.cpp
     src/analysis/FEAnalysis.cpp
+    src/analysis/ReducedSystem.cpp
     src/analysis/FELinearStaticOp.cpp
     src/analysis/FEDynamic.cpp
     src/analysis/DASampler.cpp

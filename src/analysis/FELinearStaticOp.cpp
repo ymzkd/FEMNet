@@ -59,12 +59,22 @@ void FELinearStaticOp::Compute()
         Eigen::VectorXd d_result = solver_static->solve(f_input);
         Eigen::VectorXd r_fix = mij.transpose() * d_result - f_fix;
 
-        // 反力データ整理
+        // 変形データ整理
+        disp_vec += rs.ExpandVector(d_result, full_size);
+        displace.clear();
+        for (size_t i = 0; i < m.Nodes.size(); i++)
+        {
+            int pos = i * 6;
+            displace.push_back(Displacement(disp_vec[pos], disp_vec[pos + 1], disp_vec[pos + 2], disp_vec[pos + 3], disp_vec[pos + 4], disp_vec[pos + 5]));
+        }
+
+        // 反力データ整理(ばね反力は全体変位から求めるため変形の整理後に行う)
         // 出力するのはユーザーが支点指定した自由度のみ。剛性が付かないために
         // 自動拘束された回転自由度は支点ではないため反力に含めない。
         Eigen::VectorXd r = Eigen::VectorXd::Zero(full_size);
         for (size_t i = 0; i < rs.fixed_indices.size(); i++)
             r(rs.fixed_indices[i]) = r_fix(i);
+        m.ApplySpringReactions(disp_vec, r);
         react_force.clear();
         for (size_t i = 0; i < m.Nodes.size(); i++)
         {
@@ -76,15 +86,6 @@ void FELinearStaticOp::Compute()
             for (int k = 0; k < 6; k++)
                 v[k] = (sup.BoundaryTypes[k] != ConstraintType::Free) ? r[pos + k] : 0.0;
             react_force.push_back(NodeLoad(i, v[0], v[1], v[2], v[3], v[4], v[5]));
-        }
-
-        // 変形データ整理
-        disp_vec += rs.ExpandVector(d_result, full_size);
-        displace.clear();
-        for (size_t i = 0; i < m.Nodes.size(); i++)
-        {
-            int pos = i * 6;
-            displace.push_back(Displacement(disp_vec[pos], disp_vec[pos + 1], disp_vec[pos + 2], disp_vec[pos + 3], disp_vec[pos + 4], disp_vec[pos + 5]));
         }
 
         // 判定と更新

@@ -18,6 +18,8 @@
 
 // 前方宣言
 class DynamicAnalysis;
+// 自由度の分類・縮約系ヘルパー(内部実装専用。SWIGには公開しない)
+class ReducedSystem;
 
 /// <summary>
 /// 等間隔サンプリングされた離散時系列データ。時刻 t に対する値を線形補間で返す。
@@ -152,10 +154,9 @@ private:
     Eigen::SparseMatrix<double> matM_aa, matM_ab, matM_bb;
     Eigen::SparseMatrix<double> matK_aa, matK_ab, matK_bb;
     Eigen::SparseMatrix<double> matC_aa, matC_ab, matC_bb;
-    std::vector<int> free_indices, fixed_indices;
-    std::vector<int> slave_indices;           // RigidLink: スレーブDOFインデックス
-    Eigen::SparseMatrix<double> linkTransMat; // RigidLink: 変換行列
-    int master_dof_num = 0;                   // RigidLink: マスターDOF数
+    // 自由度の分類(slave/free/fixed)と剛体リンク変換。Initialize() で構築し、
+    // ステップを進める間も保持する。未初期化・Clear() 後は nullptr。
+    std::unique_ptr<ReducedSystem> reduced;
 
     Eigen::VectorXd current_disp, current_vel, current_accel;
     std::vector<NodeLoad> current_react_force;
@@ -171,7 +172,7 @@ private:
     friend class SeismicAccelLoad;
 
     // 時刻 t における全荷重の合計を縮約空間へ変換する。
-    //   f_reduced: [T^T·f_slave ; f_free]  (RHS用, サイズ master_dof_num + free)
+    //   f_reduced: [T^T·f_slave ; f_free]  (RHS用, サイズ master + free)
     //   f_fix    : 固定DOF成分            (反力用, サイズ fixed)
     void ReducedLoadVector(double t, Eigen::VectorXd& f_reduced, Eigen::VectorXd& f_fix);
 
@@ -214,6 +215,10 @@ public:
     DynamicAnalysis(std::shared_ptr<FEModel> model,
                     std::shared_ptr<FEDynamicDampInitializer> damp = nullptr);
 
+    // ReducedSystem を不完全型のまま unique_ptr で保持するため、
+    // デストラクタは実装側(FEDynamic.cpp)で定義する。
+    ~DynamicAnalysis();
+
     /// 時刻歴荷重を追加する(同時に作用する荷重を重ね合わせる)
     void AddLoad(std::shared_ptr<DynamicLoad> load);
     /// 登録済みの時刻歴荷重をすべて削除する
@@ -251,17 +256,7 @@ public:
     /// </summary>
     bool Rewind();
 
-    void Clear()
-    {
-        current_step = 0;
-        solver.reset();
-        matM_aa.resize(0, 0);
-        matK_aa.resize(0, 0);
-        matC_aa.resize(0, 0);
-        linkTransMat.resize(0, 0);
-        master_dof_num = 0;
-        slave_indices.clear();
-    }
+    void Clear();
 
     // Newmarkのβ法による動的解析
     void ComputeStep();

@@ -513,6 +513,10 @@ std::vector<NodeLoad> ResponseSpectrumMethod::calculate_react_forces(const std::
     // AssembleStiffnessMatrix()は上三角格納
     Eigen::VectorXd r = model->AssembleStiffnessMatrix().selfadjointView<Eigen::Upper>() * u;
 
+    // ばね支持の自由度では K・u が「構造の内力 + ばね反力」になり反力として使えない。
+    // ばね反力 R = -k・u で上書きする。
+    model->ApplySpringReactions(u, r);
+
     std::vector<NodeLoad> reacts;
     for (size_t i = 0; i < N; i++)
     {

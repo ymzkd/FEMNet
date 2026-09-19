@@ -247,11 +247,47 @@ Eigen::SparseMatrix<double> FEModel::AssembleStiffnessMatrix(const ElementStates
         eh->GetStiffnessTriplets(tripletList);
     }
 
+    // ばね支持: 指定自由度の対角にばね定数を加算する。
+    // 地面側の自由度は変位0で消去済みのため、全体自由度は増えない。
+    for (size_t i = 0; i < Nodes.size(); i++)
+    {
+        const Support &sup = Nodes[i].Fix;
+        if (!sup.HasSpring())
+            continue;
+        for (int k = 0; k < 6; k++)
+        {
+            if (sup.BoundaryTypes[k] != ConstraintType::Spring)
+                continue;
+            int idx = (int)i * 6 + k;
+            tripletList.emplace_back(idx, idx, sup.Springs[k]);
+        }
+    }
+
     // Tripletから疎行列を一括構築
     Eigen::SparseMatrix<double> mat(mat_size, mat_size);
     mat.setFromTriplets(tripletList.begin(), tripletList.end());
 
     return mat;
+}
+
+void FEModel::ApplySpringReactions(const Eigen::VectorXd &u_full, Eigen::VectorXd &r_full) const
+{
+    // つり合い K_s・u + k・u = f より、ばねが構造へ及ぼす力は R = -k・u。
+    // (減衰力は含めない。剛性比例減衰ではばねにも減衰が付くが、反力は弾性分のみ報告する)
+    for (size_t i = 0; i < Nodes.size(); i++)
+    {
+        const Support &sup = Nodes[i].Fix;
+        if (!sup.HasSpring())
+            continue;
+        for (int k = 0; k < 6; k++)
+        {
+            if (sup.BoundaryTypes[k] != ConstraintType::Spring)
+                continue;
+            int idx = (int)i * 6 + k;
+            if (idx < u_full.size() && idx < r_full.size())
+                r_full(idx) = -sup.Springs[k] * u_full(idx);
+        }
+    }
 }
 
 Eigen::SparseMatrix<double> FEModel::AssembleMassMatrix()

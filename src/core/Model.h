@@ -95,8 +95,14 @@ public:
     // 各解析Operator(FELinearStaticOp, FEVibrationAnalysis等)が実装する。
 
 	// 剛性マトリクスの組み立て(上三角格納)
+	// ばね支持(ConstraintType::Spring)の自由度は対角にばね定数を加算する。
 	// states: 状態依存要素の状態(nullptrなら全要素を規定剛性で組立)
     Eigen::SparseMatrix<double> AssembleStiffnessMatrix(const ElementStates *states = nullptr);
+
+    // ばね支持の反力 R = -k・u を全体反力ベクトルへ書き込む(該当自由度のみ上書き)。
+    // ばね支持の自由度は拘束されず解く側に入るため、固定自由度の反力
+    // (R = K_ab^T・d - f_b)には現れない。解析後にこの関数で補う。
+    void ApplySpringReactions(const Eigen::VectorXd &u_full, Eigen::VectorXd &r_full) const;
 
     // 荷重リストから全体節点荷重ベクトルを組み立てる(InertialForceは要素質量から展開)
     Eigen::VectorXd AssembleLoadVector(const std::vector<std::shared_ptr<LoadBase>> &loads);

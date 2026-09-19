@@ -57,6 +57,20 @@ DynamicAnalysis::DynamicAnalysis(std::shared_ptr<FEModel> model, std::shared_ptr
     }
 }
 
+// ReducedSystem を不完全型のまま unique_ptr で保持しているため、
+// デストラクタの実体はこの翻訳単位(ReducedSystem.h を読む側)で定義する。
+DynamicAnalysis::~DynamicAnalysis() = default;
+
+void DynamicAnalysis::Clear()
+{
+    current_step = 0;
+    solver.reset();
+    matM_aa.resize(0, 0);
+    matK_aa.resize(0, 0);
+    matC_aa.resize(0, 0);
+    reduced.reset();
+}
+
 void DynamicAnalysis::AddLoad(std::shared_ptr<DynamicLoad> load)
 {
     if (load)
@@ -170,30 +184,8 @@ void DynamicAnalysis::ReducedLoadVector(double t, Eigen::VectorXd& f_reduced, Ei
         }
     }
 
-    // slave / free / fix へ分割
-    Eigen::VectorXd f_slave(slave_indices.size());
-    Eigen::VectorXd f_free(free_indices.size());
-    for (size_t i = 0; i < slave_indices.size(); i++)
-        f_slave(i) = f_full(slave_indices[i]);
-    for (size_t i = 0; i < free_indices.size(); i++)
-        f_free(i) = f_full(free_indices[i]);
-
-    // RigidLink変換で縮約(master成分 = T^T·f_slave)
-    if (master_dof_num > 0)
-    {
-        Eigen::VectorXd f_master = linkTransMat.transpose() * f_slave;
-        f_reduced.resize(master_dof_num + free_indices.size());
-        f_reduced << f_master, f_free;
-    }
-    else
-    {
-        f_reduced = f_free;
-    }
-
-    // 固定DOF成分(反力計算に使用)
-    f_fix.resize(fixed_indices.size());
-    for (size_t i = 0; i < fixed_indices.size(); i++)
-        f_fix(i) = f_full(fixed_indices[i]);
+    // slave / free / fix へ分割(縮約系が保持する分類を使う)
+    reduced->ReduceVector(f_full, f_reduced, f_fix);
 }
 
 // 静止状態(d=0,v=0)からの初期加速度 M·a0 = f0 を解く。
@@ -201,22 +193,22 @@ void DynamicAnalysis::ReducedLoadVector(double t, Eigen::VectorXd& f_reduced, Ei
 // master ブロック(T^T·M11·T)は剛体回転慣性を含むためPD、質量0の自由DOFは a0=0。
 Eigen::VectorXd DynamicAnalysis::ComputeInitialAcceleration(const Eigen::VectorXd& f0)
 {
-    int reduced_size = master_dof_num + static_cast<int>(free_indices.size());
+    int reduced_size = reduced->master_dof_num + static_cast<int>(reduced->free_indices.size());
     Eigen::VectorXd a0 = Eigen::VectorXd::Zero(reduced_size);
 
-    if (master_dof_num > 0)
+    if (reduced->master_dof_num > 0)
     {
-        Eigen::SparseMatrix<double> Mmm = matM_aa.block(0, 0, master_dof_num, master_dof_num);
+        Eigen::SparseMatrix<double> Mmm = matM_aa.block(0, 0, reduced->master_dof_num, reduced->master_dof_num);
         Eigen::SimplicialLDLT<Eigen::SparseMatrix<double>, Eigen::Upper> ldlt;
         ldlt.compute(Mmm);
         if (ldlt.info() == Eigen::Success)
-            a0.head(master_dof_num) = ldlt.solve(f0.head(master_dof_num));
+            a0.head(reduced->master_dof_num) = ldlt.solve(f0.head(reduced->master_dof_num));
     }
 
-    for (size_t i = 0; i < free_indices.size(); i++)
+    for (size_t i = 0; i < reduced->free_indices.size(); i++)
     {
-        double mi = matM_aa.coeff(master_dof_num + static_cast<int>(i), master_dof_num + static_cast<int>(i));
-        a0(master_dof_num + i) = (mi > 0.0) ? f0(master_dof_num + i) / mi : 0.0;
+        double mi = matM_aa.coeff(reduced->master_dof_num + static_cast<int>(i), reduced->master_dof_num + static_cast<int>(i));
+        a0(reduced->master_dof_num + i) = (mi > 0.0) ? f0(reduced->master_dof_num + i) / mi : 0.0;
     }
 
     return a0;
@@ -248,12 +240,7 @@ bool DynamicAnalysis::InitializeInternal(bool rebuild_system)
     {
         // 縮約系の構築（RigidLinkを考慮。剛性行列は自由度の分類にも用いる）
         Eigen::SparseMatrix<double> k_full = model->AssembleStiffnessMatrix();
-        ReducedSystem rs(*model, k_full);
-        slave_indices = rs.slave_indices;
-        free_indices = rs.free_indices;
-        fixed_indices = rs.fixed_indices;
-        linkTransMat = rs.linkTransMat;
-        master_dof_num = rs.master_dof_num;
+        reduced = std::make_unique<ReducedSystem>(*model, k_full);
 
         // 時間グリッドは解析が所有する。未指定の場合のみ荷重のヒントから決定する。
         if (dt <= 0.0 || num_steps <= 0)
@@ -267,14 +254,14 @@ bool DynamicAnalysis::InitializeInternal(bool rebuild_system)
         }
 
         // 縮小空間のサイズ
-        int reduced_size = rs.ReducedSize();
+        int reduced_size = reduced->ReducedSize();
         current_disp = Eigen::VectorXd::Zero(reduced_size);
         current_vel = Eigen::VectorXd::Zero(reduced_size);
         current_accel = Eigen::VectorXd::Zero(reduced_size);
 
         // マトリクスの組み立てと縮約
-        rs.Reduce(k_full, matK_aa, &matK_ab, &matK_bb);
-        rs.Reduce(model->AssembleMassMatrix(), matM_aa, &matM_ab, &matM_bb);
+        reduced->Reduce(k_full, matK_aa, &matK_ab, &matK_bb);
+        reduced->Reduce(model->AssembleMassMatrix(), matM_aa, &matM_ab, &matM_bb);
 
         // 減衰マトリクスの組み立て
         bool damp_init = damp_initializer->Initialize(this);
@@ -352,8 +339,13 @@ void DynamicAnalysis::UpdateReactForces(const Eigen::VectorXd &f_fix)
     Eigen::VectorXd rf = matK_ab.transpose() * current_disp + matM_ab.transpose() * current_accel +
                          matC_ab.transpose() * current_vel - f_fix;
     Eigen::VectorXd rf_full = Eigen::VectorXd::Zero(model->NodeNum() * 6);
-    for (size_t i = 0; i < fixed_indices.size(); i++)
-        rf_full(fixed_indices[i]) = rf(i);
+    for (size_t i = 0; i < reduced->fixed_indices.size(); i++)
+        rf_full(reduced->fixed_indices[i]) = rf(i);
+
+    // ばね支持の反力 R = -k・u (ばね自由度は解く側にあるため上式には現れない)
+    model->ApplySpringReactions(
+        reduced->ExpandVector(current_disp, static_cast<int>(model->Nodes.size() * NODE_DOF)),
+        rf_full);
 
     // 出力するのはユーザーが支点指定した自由度のみ(自動拘束された回転は支点ではない)
     current_react_force.clear();
@@ -442,36 +434,40 @@ void DynamicAnalysis::ComputeUntil(double t)
 
 bool DynamicAnalysis::SetDisplacements(std::vector<Displacement> disps)
 {
-    // free DOF の復元（master_dof_num 分のオフセット付き）
-    for (size_t i = 0; i < free_indices.size(); i++)
+    // 縮約系が未構築(Initialize前・Clear後)では状態を復元できない
+    if (!reduced)
+        return false;
+
+    // free DOF の復元（master DOF 分のオフセット付き）
+    for (size_t i = 0; i < reduced->free_indices.size(); i++)
     {
-        size_t idx = free_indices[i];
+        size_t idx = reduced->free_indices[i];
         size_t pos = idx % NODE_DOF;
         size_t node_id = idx / NODE_DOF;
 
         if (node_id >= disps.size())
             return false;
 
-        current_disp(master_dof_num + i) = disps[node_id].displace[pos];
+        current_disp(reduced->master_dof_num + i) = disps[node_id].displace[pos];
     }
 
     // master DOF の復元（RigidLink がある場合: slave変位から逆変換）
-    if (master_dof_num > 0)
+    if (reduced->master_dof_num > 0)
     {
-        Eigen::VectorXd d_slave(slave_indices.size());
-        for (size_t i = 0; i < slave_indices.size(); i++)
+        Eigen::VectorXd d_slave(reduced->slave_indices.size());
+        for (size_t i = 0; i < reduced->slave_indices.size(); i++)
         {
-            size_t idx = slave_indices[i];
+            size_t idx = reduced->slave_indices[i];
             size_t pos = idx % NODE_DOF;
             size_t node_id = idx / NODE_DOF;
             if (node_id >= disps.size())
                 return false;
             d_slave(i) = disps[node_id].displace[pos];
         }
-        Eigen::SparseMatrix<double> TtT = linkTransMat.transpose() * linkTransMat;
+        Eigen::SparseMatrix<double> TtT = reduced->linkTransMat.transpose() * reduced->linkTransMat;
         Eigen::SimplicialLDLT<Eigen::SparseMatrix<double>> solver(TtT);
-        current_disp.head(master_dof_num) =
-            solver.solve(Eigen::VectorXd(linkTransMat.transpose() * d_slave));
+        current_disp.head(reduced->master_dof_num) =
+            solver.solve(Eigen::VectorXd(reduced->linkTransMat.transpose() * d_slave));
     }
 
     return true;
@@ -479,36 +475,40 @@ bool DynamicAnalysis::SetDisplacements(std::vector<Displacement> disps)
 
 bool DynamicAnalysis::SetVelocities(std::vector<Displacement> vels)
 {
-    // free DOF の復元（master_dof_num 分のオフセット付き）
-    for (size_t i = 0; i < free_indices.size(); i++)
+    // 縮約系が未構築(Initialize前・Clear後)では状態を復元できない
+    if (!reduced)
+        return false;
+
+    // free DOF の復元（master DOF 分のオフセット付き）
+    for (size_t i = 0; i < reduced->free_indices.size(); i++)
     {
-        size_t idx = free_indices[i];
+        size_t idx = reduced->free_indices[i];
         size_t pos = idx % NODE_DOF;
         size_t node_id = idx / NODE_DOF;
 
         if (node_id >= vels.size())
             return false;
 
-        current_vel(master_dof_num + i) = vels[node_id].displace[pos];
+        current_vel(reduced->master_dof_num + i) = vels[node_id].displace[pos];
     }
 
     // master DOF の復元（RigidLink がある場合: slave速度から逆変換）
-    if (master_dof_num > 0)
+    if (reduced->master_dof_num > 0)
     {
-        Eigen::VectorXd v_slave(slave_indices.size());
-        for (size_t i = 0; i < slave_indices.size(); i++)
+        Eigen::VectorXd v_slave(reduced->slave_indices.size());
+        for (size_t i = 0; i < reduced->slave_indices.size(); i++)
         {
-            size_t idx = slave_indices[i];
+            size_t idx = reduced->slave_indices[i];
             size_t pos = idx % NODE_DOF;
             size_t node_id = idx / NODE_DOF;
             if (node_id >= vels.size())
                 return false;
             v_slave(i) = vels[node_id].displace[pos];
         }
-        Eigen::SparseMatrix<double> TtT = linkTransMat.transpose() * linkTransMat;
+        Eigen::SparseMatrix<double> TtT = reduced->linkTransMat.transpose() * reduced->linkTransMat;
         Eigen::SimplicialLDLT<Eigen::SparseMatrix<double>> solver(TtT);
-        current_vel.head(master_dof_num) =
-            solver.solve(Eigen::VectorXd(linkTransMat.transpose() * v_slave));
+        current_vel.head(reduced->master_dof_num) =
+            solver.solve(Eigen::VectorXd(reduced->linkTransMat.transpose() * v_slave));
     }
 
     return true;
@@ -516,36 +516,40 @@ bool DynamicAnalysis::SetVelocities(std::vector<Displacement> vels)
 
 bool DynamicAnalysis::SetAccelerations(std::vector<Displacement> accs)
 {
-    // free DOF の復元（master_dof_num 分のオフセット付き）
-    for (size_t i = 0; i < free_indices.size(); i++)
+    // 縮約系が未構築(Initialize前・Clear後)では状態を復元できない
+    if (!reduced)
+        return false;
+
+    // free DOF の復元（master DOF 分のオフセット付き）
+    for (size_t i = 0; i < reduced->free_indices.size(); i++)
     {
-        size_t idx = free_indices[i];
+        size_t idx = reduced->free_indices[i];
         size_t pos = idx % NODE_DOF;
         size_t node_id = idx / NODE_DOF;
 
         if (node_id >= accs.size())
             return false;
 
-        current_accel(master_dof_num + i) = accs[node_id].displace[pos];
+        current_accel(reduced->master_dof_num + i) = accs[node_id].displace[pos];
     }
 
     // master DOF の復元（RigidLink がある場合: slave加速度から逆変換）
-    if (master_dof_num > 0)
+    if (reduced->master_dof_num > 0)
     {
-        Eigen::VectorXd a_slave(slave_indices.size());
-        for (size_t i = 0; i < slave_indices.size(); i++)
+        Eigen::VectorXd a_slave(reduced->slave_indices.size());
+        for (size_t i = 0; i < reduced->slave_indices.size(); i++)
         {
-            size_t idx = slave_indices[i];
+            size_t idx = reduced->slave_indices[i];
             size_t pos = idx % NODE_DOF;
             size_t node_id = idx / NODE_DOF;
             if (node_id >= accs.size())
                 return false;
             a_slave(i) = accs[node_id].displace[pos];
         }
-        Eigen::SparseMatrix<double> TtT = linkTransMat.transpose() * linkTransMat;
+        Eigen::SparseMatrix<double> TtT = reduced->linkTransMat.transpose() * reduced->linkTransMat;
         Eigen::SimplicialLDLT<Eigen::SparseMatrix<double>> solver(TtT);
-        current_accel.head(master_dof_num) =
-            solver.solve(Eigen::VectorXd(linkTransMat.transpose() * a_slave));
+        current_accel.head(reduced->master_dof_num) =
+            solver.solve(Eigen::VectorXd(reduced->linkTransMat.transpose() * a_slave));
     }
 
     return true;
@@ -553,25 +557,13 @@ bool DynamicAnalysis::SetAccelerations(std::vector<Displacement> accs)
 
 std::vector<Displacement> DynamicAnalysis::GetDisplacements()
 {
+    // 未初期化(Initialize前・Clear後)は零の応答を返す
+    if (!reduced)
+        return std::vector<Displacement>(model->Nodes.size());
+
     std::vector<Displacement> disp;
-    Eigen::VectorXd d = Eigen::VectorXd::Zero(model->Nodes.size() * 6);
-
-    if (master_dof_num > 0) {
-        // RigidLinkがある場合: master → slave に展開
-        Eigen::VectorXd d_master = current_disp.head(master_dof_num);
-        Eigen::VectorXd d_free = current_disp.tail(free_indices.size());
-        Eigen::VectorXd d_slave = linkTransMat * d_master;
-
-        for (size_t i = 0; i < slave_indices.size(); i++)
-            d(slave_indices[i]) = d_slave(i);
-        for (size_t i = 0; i < free_indices.size(); i++)
-            d(free_indices[i]) = d_free(i);
-    }
-    else {
-        // RigidLinkがない場合: 従来通り
-        for (size_t i = 0; i < free_indices.size(); i++)
-            d(free_indices[i]) = current_disp(i);
-    }
+    Eigen::VectorXd d = reduced->ExpandVector(
+        current_disp, static_cast<int>(model->Nodes.size() * NODE_DOF));
 
     for (size_t i = 0; i < model->Nodes.size(); i++)
     {
@@ -584,25 +576,13 @@ std::vector<Displacement> DynamicAnalysis::GetDisplacements()
 
 std::vector<Displacement> DynamicAnalysis::GetVelocities()
 {
+    // 未初期化(Initialize前・Clear後)は零の応答を返す
+    if (!reduced)
+        return std::vector<Displacement>(model->Nodes.size());
+
     std::vector<Displacement> vel;
-    Eigen::VectorXd d = Eigen::VectorXd::Zero(model->Nodes.size() * 6);
-
-    if (master_dof_num > 0) {
-        // RigidLinkがある場合: master → slave に展開
-        Eigen::VectorXd d_master = current_vel.head(master_dof_num);
-        Eigen::VectorXd d_free = current_vel.tail(free_indices.size());
-        Eigen::VectorXd d_slave = linkTransMat * d_master;
-
-        for (size_t i = 0; i < slave_indices.size(); i++)
-            d(slave_indices[i]) = d_slave(i);
-        for (size_t i = 0; i < free_indices.size(); i++)
-            d(free_indices[i]) = d_free(i);
-    }
-    else {
-        // RigidLinkがない場合: 従来通り
-        for (size_t i = 0; i < free_indices.size(); i++)
-            d(free_indices[i]) = current_vel(i);
-    }
+    Eigen::VectorXd d = reduced->ExpandVector(
+        current_vel, static_cast<int>(model->Nodes.size() * NODE_DOF));
 
     for (size_t i = 0; i < model->Nodes.size(); i++)
     {
@@ -615,25 +595,13 @@ std::vector<Displacement> DynamicAnalysis::GetVelocities()
 
 std::vector<Displacement> DynamicAnalysis::GetAccelerations()
 {
+    // 未初期化(Initialize前・Clear後)は零の応答を返す
+    if (!reduced)
+        return std::vector<Displacement>(model->Nodes.size());
+
     std::vector<Displacement> acc;
-    Eigen::VectorXd d = Eigen::VectorXd::Zero(model->Nodes.size() * 6);
-
-    if (master_dof_num > 0) {
-        // RigidLinkがある場合: master → slave に展開
-        Eigen::VectorXd d_master = current_accel.head(master_dof_num);
-        Eigen::VectorXd d_free = current_accel.tail(free_indices.size());
-        Eigen::VectorXd d_slave = linkTransMat * d_master;
-
-        for (size_t i = 0; i < slave_indices.size(); i++)
-            d(slave_indices[i]) = d_slave(i);
-        for (size_t i = 0; i < free_indices.size(); i++)
-            d(free_indices[i]) = d_free(i);
-    }
-    else {
-        // RigidLinkがない場合: 従来通り
-        for (size_t i = 0; i < free_indices.size(); i++)
-            d(free_indices[i]) = current_accel(i);
-    }
+    Eigen::VectorXd d = reduced->ExpandVector(
+        current_accel, static_cast<int>(model->Nodes.size() * NODE_DOF));
 
     for (size_t i = 0; i < model->Nodes.size(); i++)
     {

@@ -99,6 +99,7 @@
 %ignore FEModel::AssembleMassMatrix;
 %ignore FEModel::AssembleGeometricStiffnessMatrix;
 %ignore FEModel::AssembleLoadVector;
+%ignore FEModel::ApplySpringReactions;
 
 // Ignore pure virtual methods that use Eigen types
 %ignore ElementBase::geometric_local_stiffness_matrix;

@@ -69,6 +69,7 @@ void DynamicAnalysis::Clear()
     matK_aa.resize(0, 0);
     matC_aa.resize(0, 0);
     reduced.reset();
+    has_spring_support = false;
 }
 
 void DynamicAnalysis::AddLoad(std::shared_ptr<DynamicLoad> load)
@@ -241,6 +242,7 @@ bool DynamicAnalysis::InitializeInternal(bool rebuild_system)
         // 縮約系の構築（RigidLinkを考慮。剛性行列は自由度の分類にも用いる）
         Eigen::SparseMatrix<double> k_full = model->AssembleStiffnessMatrix();
         reduced = std::make_unique<ReducedSystem>(*model, k_full);
+        has_spring_support = model->HasSpringSupport();
 
         // 時間グリッドは解析が所有する。未指定の場合のみ荷重のヒントから決定する。
         if (dt <= 0.0 || num_steps <= 0)
@@ -304,8 +306,10 @@ bool DynamicAnalysis::InitializeInternal(bool rebuild_system)
                 continue;
             throw std::runtime_error(
                 "DynamicAnalysis::Initialize: the system matrix has DOF(s) with neither mass "
-                "nor stiffness. The model is unstable (e.g. a node connected only by truss "
-                "elements, or a node not attached to any element).");
+                "nor stiffness (" + DescribeReducedDOF(*reduced, (int)i, *model) +
+                "). The model is unstable: the DOF is not supported and has no mass, and no "
+                "element (or spring) gives it stiffness. Typical causes are a node not attached "
+                "to any element, or a DOF set to Spring with a zero spring constant.");
         }
 
         solver = createSolver();
@@ -342,10 +346,12 @@ void DynamicAnalysis::UpdateReactForces(const Eigen::VectorXd &f_fix)
     for (size_t i = 0; i < reduced->fixed_indices.size(); i++)
         rf_full(reduced->fixed_indices[i]) = rf(i);
 
-    // ばね支持の反力 R = -k・u (ばね自由度は解く側にあるため上式には現れない)
-    model->ApplySpringReactions(
-        reduced->ExpandVector(current_disp, static_cast<int>(model->Nodes.size() * NODE_DOF)),
-        rf_full);
+    // ばね支持の反力 R = -k・u (ばね自由度は解く側にあるため上式には現れない)。
+    // 全体変位への展開はステップ毎のコストになるため、ばね支持があるときだけ行う。
+    if (has_spring_support)
+        model->ApplySpringReactions(
+            reduced->ExpandVector(current_disp, static_cast<int>(model->Nodes.size() * NODE_DOF)),
+            rf_full);
 
     // 出力するのはユーザーが支点指定した自由度のみ(自動拘束された回転は支点ではない)
     current_react_force.clear();

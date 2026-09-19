@@ -157,6 +157,9 @@ private:
     // 自由度の分類(slave/free/fixed)と剛体リンク変換。Initialize() で構築し、
     // ステップを進める間も保持する。未初期化・Clear() 後は nullptr。
     std::unique_ptr<ReducedSystem> reduced;
+    // ばね支持の有無(Initialize()時に判定)。反力計算で毎ステップ全体変位へ
+    // 展開するコストを避けるためのキャッシュ。
+    bool has_spring_support = false;
 
     Eigen::VectorXd current_disp, current_vel, current_accel;
     std::vector<NodeLoad> current_react_force;

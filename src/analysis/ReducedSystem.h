@@ -1,6 +1,7 @@
 #ifndef _REDUCED_SYSTEM_
 #define _REDUCED_SYSTEM_
 
+#include <string>
 #include <vector>
 #include <Eigen/Sparse>
 
@@ -53,5 +54,9 @@ private:
     // 全体自由度を slave / fixed / free に分類する。
     void Classify(FEModel &model, const Eigen::SparseMatrix<double> &stiffness);
 };
+
+// 縮約空間のインデックスが、どの節点のどの自由度に対応するかを表す文字列を返す
+// (剛性ゼロ等のエラーメッセージ用。例: "node 12, Rz")。
+std::string DescribeReducedDOF(const ReducedSystem &rs, int reduced_index, FEModel &model);
 
 #endif

@@ -1,12 +1,13 @@
 // ばね支持(ConstraintType::Spring)の検証テスト
 //   1) 1自由度ばね: u = P/k、反力 R = -P
-//   2) ばね支持された片持ち梁: 直列剛性 1/(1/k + 1/k_beam)
+//   2) ばね支持された片持ち梁: 並列剛性 k + k_beam
 //   3) ばね支持の固有値: omega = sqrt(k/m)
 //   4) ばね支持と固定支持の混在: 反力の合計が荷重と釣り合う
 #include <algorithm>
 #include <cmath>
 #include <iostream>
 #include <memory>
+#include <string>
 #include <vector>
 
 #include "Model.h"
@@ -70,10 +71,10 @@ void TestSingleSpring()
         CheckNear(react[0].Pz(), -P, 1e-10, "ばね反力 R = -P");
 }
 
-// 2) 先端ばね支持の片持ち梁: 直列ばねの等価剛性と一致するか
+// 2) 先端ばね支持の片持ち梁: ばねと梁が並列に効く等価剛性と一致するか
 void TestSpringWithBeam()
 {
-    std::cout << "[2] ばね支持された片持ち梁(直列剛性)" << std::endl;
+    std::cout << "[2] ばね支持された片持ち梁(並列剛性)" << std::endl;
     const double L = 2000.0, E = 205000.0, I = 1.0e7;
     const double k_beam = 3.0 * E * I / (L * L * L); // 片持ち梁の先端剛性
     const double k = 0.5 * k_beam;                   // ばねは梁の半分の剛性

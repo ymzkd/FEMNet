@@ -4,10 +4,13 @@
 
 namespace
 {
-// 回転自由度に剛性が「付いていない」とみなすしきい値(最大対角成分に対する比)。
+// 回転自由度に剛性が「付いていない」とみなすしきい値(回転自由度の最大対角成分に対する比)。
 // 剛性行列の対角成分がこの値以下の回転自由度は、剛性のない死んだ自由度として
 // 自動的に拘束する(トラスのみが接続する節点の回転、板要素の面内回転など)。
-//   - 絶対値ではなく最大対角成分との比で判定する(単位系に依存しないため)
+//   - 絶対値ではなく比で判定する(単位系に依存しないため)
+//   - 比較の基準は「回転自由度だけの最大対角成分」とする。並進(N/mm)と回転
+//     (N・mm/rad)では単位が異なり、全体の最大値を基準にすると柔らかい回転自由度を
+//     取りこぼす/拾いすぎるため
 //   - 丸め誤差程度の剛性しか付かない自由度まで拾うための余裕。厳密にゼロのみを
 //     対象にしたい場合は 0.0 にする
 //   - ごく小さい実剛性を持つ自由度まで拘束してしまう場合は小さくする
@@ -32,10 +35,13 @@ void ReducedSystem::Classify(FEModel &model, const Eigen::SparseMatrix<double> &
         if (idx >= 0 && idx < dof_num)
             is_slave[idx] = true;
 
-    // 剛性が付かない回転自由度のしきい値(全体最大の対角成分に対する比)
+    // 剛性が付かない回転自由度のしきい値(回転自由度の最大対角成分に対する比)
     const Eigen::VectorXd kdiag = stiffness.diagonal();
-    const double diag_max = (kdiag.size() > 0) ? kdiag.maxCoeff() : 0.0;
-    const double dead_tol = kDeadRotationDiagRelTol * ((diag_max > 0.0) ? diag_max : 0.0);
+    double rot_diag_max = 0.0;
+    for (Eigen::Index i = 0; i < kdiag.size(); i++)
+        if ((i % NODE_DOF) >= 3 && kdiag(i) > rot_diag_max)
+            rot_diag_max = kdiag(i);
+    const double dead_tol = kDeadRotationDiagRelTol * rot_diag_max;
 
     for (int i = 0; i < dof_num; i++)
     {
@@ -59,6 +65,22 @@ void ReducedSystem::Classify(FEModel &model, const Eigen::SparseMatrix<double> &
         else
             free_indices.push_back(i);
     }
+}
+
+std::string DescribeReducedDOF(const ReducedSystem &rs, int reduced_index, FEModel &model)
+{
+    if (reduced_index < 0)
+        return "invalid DOF";
+    if (reduced_index < rs.master_dof_num)
+        return "rigid link master DOF " + std::to_string(reduced_index);
+
+    int i = reduced_index - rs.master_dof_num;
+    if (i >= (int)rs.free_indices.size())
+        return "reduced DOF " + std::to_string(reduced_index);
+
+    static const char *kDofName[NODE_DOF] = {"Ux", "Uy", "Uz", "Rx", "Ry", "Rz"};
+    int global = rs.free_indices[i];
+    return "node " + std::to_string(global / NODE_DOF) + ", " + kDofName[global % NODE_DOF];
 }
 
 void ReducedSystem::Reduce(const Eigen::SparseMatrix<double> &full,

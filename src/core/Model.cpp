@@ -270,6 +270,14 @@ Eigen::SparseMatrix<double> FEModel::AssembleStiffnessMatrix(const ElementStates
     return mat;
 }
 
+bool FEModel::HasSpringSupport() const
+{
+    for (const Node &n : Nodes)
+        if (n.Fix.HasSpring())
+            return true;
+    return false;
+}
+
 void FEModel::ApplySpringReactions(const Eigen::VectorXd &u_full, Eigen::VectorXd &r_full) const
 {
     // つり合い K_s・u + k・u = f より、ばねが構造へ及ぼす力は R = -k・u。

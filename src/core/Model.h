@@ -99,6 +99,10 @@ public:
 	// states: 状態依存要素の状態(nullptrなら全要素を規定剛性で組立)
     Eigen::SparseMatrix<double> AssembleStiffnessMatrix(const ElementStates *states = nullptr);
 
+    // ばね支持(ConstraintType::Spring)の自由度が1つでもあるか。
+    // 反力計算でばね分の処理が必要かどうかの判定に使う。
+    bool HasSpringSupport() const;
+
     // ばね支持の反力 R = -k・u を全体反力ベクトルへ書き込む(該当自由度のみ上書き)。
     // ばね支持の自由度は拘束されず解く側に入るため、固定自由度の反力
     // (R = K_ab^T・d - f_b)には現れない。解析後にこの関数で補う。
@@ -133,11 +137,15 @@ public:
 
     /// <summary>
     /// 拘束自由度の全自由度におけるインデックスを格納した配列を返す関数
+    /// (ユーザー指定の支持条件のみで判定する)
     /// </summary>
     std::vector<int> FixIndices();
 
     int NodeNum() { return Nodes.size(); }
     int DOFNum() { return NodeNum() * 6; }
+    // ユーザーが設定した支持条件に基づく自由度数。
+    // 解析は数値的な安定性のため、剛性が付かない回転自由度を内部で自動拘束する
+    // ことがあるため、実際に解かれる自由度数とは一致しないことがある。
 	int FreeDOFNum() { return FreeIndices().size(); }
 	int FixedDOFNum() { return FixIndices().size(); }
 

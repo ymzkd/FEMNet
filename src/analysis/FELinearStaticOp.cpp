@@ -43,9 +43,12 @@ void FELinearStaticOp::Compute()
             if (kdiag(i) > 0.0)
                 continue;
             throw std::runtime_error(
-                "FELinearStaticOp::Compute: the stiffness matrix has DOF(s) with no stiffness. "
-                "The model is unstable (e.g. a node connected only by truss elements, "
-                "or a node not attached to any element).");
+                "FELinearStaticOp::Compute: the stiffness matrix has DOF(s) with no stiffness ("
+                + DescribeReducedDOF(rs, (int)i, *model) +
+                "). The model is unstable: the DOF is not supported and no element (or spring) "
+                "gives it stiffness. Typical causes are a node not attached to any element, "
+                "a translational DOF with no element in that direction, or a DOF set to Spring "
+                "with a zero spring constant.");
         }
 
         // 分解に失敗した状態でsolve()を呼ぶと不正メモリアクセスでプロセスごと

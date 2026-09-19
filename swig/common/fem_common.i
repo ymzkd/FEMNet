@@ -100,6 +100,7 @@
 %ignore FEModel::AssembleGeometricStiffnessMatrix;
 %ignore FEModel::AssembleLoadVector;
 %ignore FEModel::ApplySpringReactions;
+// HasSpringSupport() はEigen型を使わないため公開する(%ignore不要)
 
 // Ignore pure virtual methods that use Eigen types
 %ignore ElementBase::geometric_local_stiffness_matrix;

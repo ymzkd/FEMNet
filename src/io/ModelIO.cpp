@@ -10,7 +10,7 @@
 //   - 材料は要素が値コピーで保持し位置を復元できないため、要素ごとに
 //     材料定数(Young/Poisson/dense)をインライン保存する。
 //
-// フォーマット(v1, 空白・改行非依存のトークン列):
+// フォーマット(v3, 空白・改行非依存のトークン列):
 //   FEMNET_MODEL_TEXT_V3
 //   GRAVITY <g>
 //   NODES <count>      ... <idx> <x> <y> <z> <btype0..5> <spring0..5>
@@ -26,7 +26,8 @@
 //             <tplane> <tplate> <tweight> <beta>
 //   RIGIDLINKS <count>
 //     <flag0..5> <mx> <my> <mz> <mbtype0..5> <mspring0..5> <slaveCount> <slaveIdx...>
-//     マスタは仮想節点(剛床の重心など)を含むため、座標＋拘束(fix/lock)を実体で常にインライン保持。
+//     マスタは仮想節点(剛床の重心など)を含むため、座標＋支持条件(btype/spring)を
+//     実体で常にインライン保持。節点と同じ並び(V2 は fix/lock)。
 //   END
 //
 // 要素種別タグは ElementType に対応する名前(Truss/Beam/ComplexBeam/
@@ -103,6 +104,9 @@ void ReadSupport(std::istream &is, Support &sup, bool legacy_v2)
     for (int i = 0; i < 6; i++)
     {
         int t = ReadToken<int>(is, "Support boundary type");
+        if (t < static_cast<int>(ConstraintType::Free) || t > static_cast<int>(ConstraintType::Spring))
+            throw std::runtime_error("ModelIO: 支持条件の種別が範囲外です (0=Free, 1=Fix, 2=Spring): " +
+                                     std::to_string(t));
         sup.BoundaryTypes[i] = static_cast<ConstraintType>(t);
     }
     for (int i = 0; i < 6; i++)

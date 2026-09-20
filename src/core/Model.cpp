@@ -278,10 +278,13 @@ bool FEModel::HasSpringSupport() const
     return false;
 }
 
-void FEModel::ApplySpringReactions(const Eigen::VectorXd &u_full, Eigen::VectorXd &r_full) const
+void FEModel::ApplySpringReactions(const Eigen::VectorXd &u_full, Eigen::VectorXd &r_full,
+                                   const Eigen::VectorXd *v_full, double damp_coef) const
 {
-    // つり合い K_s・u + k・u = f より、ばねが構造へ及ぼす力は R = -k・u。
-    // (減衰力は含めない。剛性比例減衰ではばねにも減衰が付くが、反力は弾性分のみ報告する)
+    // つり合い (M・a + C・v + K・u)_i = f_i より、ばねが構造へ及ぼす力は
+    //   R = -(k・u + c・v),  c = damp_coef・k (剛性比例成分による付随減衰)
+    // 静的解析など減衰を考慮しない場合は v_full = nullptr で弾性分のみとなる。
+    const bool with_damping = (v_full != nullptr && damp_coef != 0.0);
     for (size_t i = 0; i < Nodes.size(); i++)
     {
         const Support &sup = Nodes[i].Fix;
@@ -292,8 +295,12 @@ void FEModel::ApplySpringReactions(const Eigen::VectorXd &u_full, Eigen::VectorX
             if (sup.BoundaryTypes[k] != ConstraintType::Spring)
                 continue;
             int idx = (int)i * 6 + k;
-            if (idx < u_full.size() && idx < r_full.size())
-                r_full(idx) = -sup.Springs[k] * u_full(idx);
+            if (idx >= u_full.size() || idx >= r_full.size())
+                continue;
+            double r = -sup.Springs[k] * u_full(idx);
+            if (with_damping && idx < v_full->size())
+                r -= damp_coef * sup.Springs[k] * (*v_full)(idx);
+            r_full(idx) = r;
         }
     }
 }

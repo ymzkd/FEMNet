@@ -14,6 +14,7 @@
 #include "Elements/Elements.h"
 #include "FELinearStaticOp.h"
 #include "FEVibrationAnalysis.h"
+#include "FEDynamic.h"
 
 namespace
 {
@@ -184,6 +185,65 @@ void TestMixedSupports()
     CheckNear(sum_pz, -P, 1e-8, "反力の合計が荷重と釣り合う");
     CheckNear(r_spring, -k * op.GetDisplacements()[2].Dz(), 1e-8, "ばね反力 R = -k・u");
 }
+// 5) 動的解析: 減衰があるばね支持でも、荷重と反力(弾性+減衰)が釣り合うか
+//    剛性比例減衰では C = a·K なので、ばね自由度には c = a·k の減衰が付く。
+//    反力が -k·u のみだと速度が非零のステップで釣り合いが崩れる。
+void TestSpringDynamicReaction()
+{
+    std::cout << "[5] 減衰のあるばね支持の動的反力" << std::endl;
+    const double k = 200.0;      // N/mm
+    const double weight = 500.0; // N
+    const int n = 5;
+    const double P = -1000.0;
+
+    auto m = std::make_shared<FEModel>();
+    for (int i = 0; i < n; i++)
+    {
+        m->Nodes.push_back(Node(i, i * 1000.0, 0.0, 0.0));
+        for (int d = 0; d < 6; d++)
+            m->Nodes[i].Fix.BoundaryTypes[d] = ConstraintType::Fix;
+        m->Nodes[i].Fix.BoundaryTypes[2] = ConstraintType::Free;
+        SetSpring(m->Nodes[i], 2, k * (i + 1));
+        m->Nodes[i].MassData.Mass = weight;
+    }
+
+    // 節点0に正弦波の鉛直荷重
+    const double dt = 0.002;
+    const int steps = 200;
+    std::vector<NodeLoadData> pattern{NodeLoadData(0, 0.0, 0.0, P)};
+    std::vector<double> factors(steps + 1);
+    for (int i = 0; i <= steps; i++)
+        factors[i] = std::sin(2.0 * PI * (i * dt) / 0.2);
+    auto load = std::make_shared<NodalDynamicLoad>(dt, pattern, factors);
+
+    auto damp = std::make_shared<FEDynamicStiffDampInitializer>(0.05);
+    DynamicAnalysis da(m, load, damp);
+    da.SetTimeGrid(dt, steps);
+    Check(da.Initialize(), "初期化できる");
+
+    // 各ステップで「外力 + 反力 + 慣性力 = 0」(鉛直成分)を確認する
+    double max_residual = 0.0, max_scale = 0.0;
+    for (int s = 0; s < steps; s++)
+    {
+        da.ComputeStep();
+        double t = da.CurrentTime();
+        double f_ext = P * std::sin(2.0 * PI * t / 0.2); // 節点0のみに作用
+
+        double r_sum = 0.0;
+        std::vector<NodeLoad> react = da.GetReactForces();
+        for (NodeLoad &nl : react)
+            r_sum += nl.Pz();
+
+        double inertia = 0.0;
+        std::vector<Displacement> acc = da.GetAccelerations();
+        for (size_t i = 0; i < m->Nodes.size(); i++)
+            inertia += -(m->Nodes[i].MassData.SumMass() / m->GraityAccel) * acc[i].Dz();
+
+        max_residual = std::max(max_residual, std::abs(f_ext + r_sum + inertia));
+        max_scale = std::max(max_scale, std::abs(r_sum));
+    }
+    CheckNear(max_residual / max_scale, 0.0, 1e-8, "各ステップで 外力+反力+慣性力 = 0 (相対)");
+}
 } // namespace
 
 int main()
@@ -193,6 +253,7 @@ int main()
     TestSpringWithBeam();
     TestSpringVibration();
     TestMixedSupports();
+    TestSpringDynamicReaction();
 
     if (g_failed == 0)
         std::cout << "\nRESULT: PASS (all checks)" << std::endl;

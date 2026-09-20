@@ -339,6 +339,13 @@ public:
     /// 固有周期 t における減衰比を返す(算定不能な場合は -1)
     /// </summary>
     virtual double DampRateAtPeriod(double t) = 0;
+
+    /// <summary>
+    /// 減衰マトリクスのうち剛性マトリクスに比例する成分の係数 a (C = a·K + ...) を返す。
+    /// ばね支持の反力 R = -(k·u + a·k·v) で減衰力を求めるために用いる。
+    /// 剛性に比例する成分を持たない場合は 0(既定)。
+    /// </summary>
+    virtual double StiffnessDampCoefficient() const { return 0.0; }
 };
 
 /// <summary>
@@ -358,6 +365,12 @@ public:
     bool Initialize(const FEVibrationAnalysis& vibrate_result) override;
 
     double DampRateAtPeriod(double t) override;
+
+    // C = (2h/ω)·K
+    double StiffnessDampCoefficient() const override
+    {
+        return (natural_angle_velocity > 0.0) ? (2.0 * damp_rate / natural_angle_velocity) : 0.0;
+    }
 };
 
 /// <summary>
@@ -400,5 +413,8 @@ public:
     bool Initialize(const FEVibrationAnalysis& vibrate_result) override;
 
     double DampRateAtPeriod(double t) override;
+
+    // C = α·M + β·K の剛性比例成分
+    double StiffnessDampCoefficient() const override { return beta; }
 };
 #endif

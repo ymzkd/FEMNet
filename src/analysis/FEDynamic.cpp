@@ -346,12 +346,25 @@ void DynamicAnalysis::UpdateReactForces(const Eigen::VectorXd &f_fix)
     for (size_t i = 0; i < reduced->fixed_indices.size(); i++)
         rf_full(reduced->fixed_indices[i]) = rf(i);
 
-    // ばね支持の反力 R = -k・u (ばね自由度は解く側にあるため上式には現れない)。
+    // ばね支持の反力 R = -(k・u + c・v) (ばね自由度は解く側にあるため上式には現れない)。
+    // c は減衰マトリクスの剛性比例成分による付随減衰 (C = a・K なら c = a・k)。
     // 全体変位への展開はステップ毎のコストになるため、ばね支持があるときだけ行う。
     if (has_spring_support)
-        model->ApplySpringReactions(
-            reduced->ExpandVector(current_disp, static_cast<int>(model->Nodes.size() * NODE_DOF)),
-            rf_full);
+    {
+        const int full_size = static_cast<int>(model->Nodes.size() * NODE_DOF);
+        const double damp_coef =
+            damp_initializer ? damp_initializer->StiffnessDampCoefficient() : 0.0;
+        Eigen::VectorXd u_full = reduced->ExpandVector(current_disp, full_size);
+        if (damp_coef != 0.0)
+        {
+            Eigen::VectorXd v_full = reduced->ExpandVector(current_vel, full_size);
+            model->ApplySpringReactions(u_full, rf_full, &v_full, damp_coef);
+        }
+        else
+        {
+            model->ApplySpringReactions(u_full, rf_full);
+        }
+    }
 
     // 出力するのはユーザーが支点指定した自由度のみ(自動拘束された回転は支点ではない)
     current_react_force.clear();

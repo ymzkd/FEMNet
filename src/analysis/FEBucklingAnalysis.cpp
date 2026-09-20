@@ -12,12 +12,17 @@ int FEBucklingAnalysis::SolveBuckling()
     int computed_num = mode_num;
 
     // 剛性行列の組み立て
-    Eigen::SparseMatrix<double> k_full = model->AssembleStiffnessMatrix();
+    Eigen::SparseMatrix<double> k_elastic = model->AssembleStiffnessMatrix();
+
+    // 縮約系の構築（RigidLinkを考慮）。
+    // 「剛性が付かない自由度か」はモデルの構成で決まる性質なので、分類には弾性剛性のみを
+    // 用いる。幾何剛性を含めると、強い圧縮時に回転自由度の対角が負になり(4EI/L + 2NL/15)、
+    // 剛性を持つ自由度が誤って自動拘束される。
+    ReducedSystem rs(*model, k_elastic);
+
+    Eigen::SparseMatrix<double> k_full = k_elastic;
     if (InitailDeformOp != nullptr)
         k_full += model->AssembleGeometricStiffnessMatrix(InitailDeformOp->GetDisplacements());
-
-    // 縮約系の構築（RigidLinkを考慮。剛性行列は自由度の分類にも用いる）
-    ReducedSystem rs(*model, k_full);
 
     // 幾何剛性行列の組み立て
     Eigen::SparseMatrix<double> kg_full =

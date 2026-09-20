@@ -103,10 +103,14 @@ public:
     // 反力計算でばね分の処理が必要かどうかの判定に使う。
     bool HasSpringSupport() const;
 
-    // ばね支持の反力 R = -k・u を全体反力ベクトルへ書き込む(該当自由度のみ上書き)。
+    // ばね支持の反力 R = -(k・u + c・v) を全体反力ベクトルへ書き込む(該当自由度のみ上書き)。
     // ばね支持の自由度は拘束されず解く側に入るため、固定自由度の反力
     // (R = K_ab^T・d - f_b)には現れない。解析後にこの関数で補う。
-    void ApplySpringReactions(const Eigen::VectorXd &u_full, Eigen::VectorXd &r_full) const;
+    //   v_full     : 速度ベクトル(減衰力を含める場合。不要なら nullptr)
+    //   damp_coef  : 減衰マトリクスの剛性比例成分の係数 a (C = a・K + ...)。c = a・k となる
+    void ApplySpringReactions(const Eigen::VectorXd &u_full, Eigen::VectorXd &r_full,
+                              const Eigen::VectorXd *v_full = nullptr,
+                              double damp_coef = 0.0) const;
 
     // 荷重リストから全体節点荷重ベクトルを組み立てる(InertialForceは要素質量から展開)
     Eigen::VectorXd AssembleLoadVector(const std::vector<std::shared_ptr<LoadBase>> &loads);

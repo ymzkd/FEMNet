@@ -10,10 +10,13 @@
 //   - 材料は要素が値コピーで保持し位置を復元できないため、要素ごとに
 //     材料定数(Young/Poisson/dense)をインライン保存する。
 //
-// フォーマット(v1, 空白・改行非依存のトークン列):
-//   FEMNET_MODEL_TEXT_V2
+// フォーマット(v3, 空白・改行非依存のトークン列):
+//   FEMNET_MODEL_TEXT_V3
 //   GRAVITY <g>
-//   NODES <count>      ... <idx> <x> <y> <z> <fix0..5> <lock0..5>
+//   NODES <count>      ... <idx> <x> <y> <z> <btype0..5>
+//     btype は ConstraintType (0=Free, 1=Fix)。
+//     V2 は <fix0..5> <lock0..5> (0/1) で、fix をそのまま btype として読み、lock は無視する
+//     (剛性の付かない回転自由度の拘束は解析側が剛性行列から判定するため)。
 //   MATERIALS <count>  ... <idx> <Young> <Poisson> <dense>
 //   SECTIONS <count>   ... <idx> <A> <Iy> <Iz> <Iyz> <K>
 //   ELEMENTS <count>
@@ -21,13 +24,15 @@
 //             [<beta>] [<バネ12値>]
 //     面・板: <eid> <Kind> <nodeIdx...> <Young> <Poisson> <dense>
 //             <tplane> <tplate> <tweight> <beta>
+//     支点ばね: <eid> SupportSpring <nodeIdx> <k0..5>
 //   RIGIDLINKS <count>
-//     <flag0..5> <mx> <my> <mz> <mfix0..5> <mlock0..5> <slaveCount> <slaveIdx...>
-//     マスタは仮想節点(剛床の重心など)を含むため、座標＋拘束(fix/lock)を実体で常にインライン保持。
+//     <flag0..5> <mx> <my> <mz> <mbtype0..5> <slaveCount> <slaveIdx...>
+//     マスタは仮想節点(剛床の重心など)を含むため、座標＋支持条件(btype)を
+//     実体で常にインライン保持。節点と同じ並び(V2 は fix/lock)。
 //   END
 //
 // 要素種別タグは ElementType に対応する名前(Truss/Beam/ComplexBeam/
-// TriMembrane/QuadMembrane/DKT/DKQ)。
+// TriMembrane/QuadMembrane/DKT/DKQ/SupportSpring)。
 
 #include <fstream>
 #include <sstream>
@@ -41,7 +46,15 @@
 
 namespace {
 
-const char *kMagic = "FEMNET_MODEL_TEXT_V2";
+const char *kMagic = "FEMNET_MODEL_TEXT_V3";
+const char *kMagicV2 = "FEMNET_MODEL_TEXT_V2"; // 旧形式(読み込みのみ対応)
+
+// 支持条件の書き出し/読み込み(節点・剛体リンクのマスタ節点で共通)
+void WriteSupport(std::ostream &os, const Support &sup)
+{
+    for (int i = 0; i < 6; i++)
+        os << " " << static_cast<int>(sup.BoundaryTypes[i]);
+}
 
 // ElementType -> シリアライズ用タグ名
 std::string KindName(ElementType t)
@@ -55,6 +68,7 @@ std::string KindName(ElementType t)
     case ElementType::QuadMembrane: return "QuadMembrane";
     case ElementType::DKT:          return "DKT";
     case ElementType::DKQ:          return "DKQ";
+    case ElementType::SupportSpring: return "SupportSpring";
     default:
         throw std::runtime_error("ModelIO: 未対応の要素種別です (Type=" +
                                  std::to_string(static_cast<int>(t)) + ")");
@@ -71,6 +85,7 @@ ElementType ParseKind(const std::string &name)
     if (name == "QuadMembrane") return ElementType::QuadMembrane;
     if (name == "DKT")          return ElementType::DKT;
     if (name == "DKQ")          return ElementType::DKQ;
+    if (name == "SupportSpring") return ElementType::SupportSpring;
     throw std::runtime_error("ModelIO: 不明な要素種別タグ: " + name);
 }
 
@@ -82,6 +97,24 @@ T ReadToken(std::istream &is, const char *what)
     if (!(is >> v))
         throw std::runtime_error(std::string("ModelIO: ") + what + " の読み取りに失敗しました");
     return v;
+}
+
+// legacy_v2: V2 形式(<fix0..5> <lock0..5>)として読む。lock は読み捨てる。
+void ReadSupport(std::istream &is, Support &sup, bool legacy_v2)
+{
+    for (int i = 0; i < 6; i++)
+    {
+        int t = ReadToken<int>(is, "Support boundary type");
+        if (t < static_cast<int>(ConstraintType::Free) || t > static_cast<int>(ConstraintType::Fix))
+            throw std::runtime_error("ModelIO: 支持条件の種別が範囲外です (0=Free, 1=Fix): " +
+                                     std::to_string(t));
+        sup.BoundaryTypes[i] = static_cast<ConstraintType>(t);
+    }
+    if (legacy_v2)
+    {
+        for (int i = 0; i < 6; i++)
+            ReadToken<int>(is, "Support lock (V2, 無視)");
+    }
 }
 
 // 期待するキーワードを読み、一致しなければ例外。
@@ -118,10 +151,7 @@ void FEModel::Save(const std::string &path)
         const Node &n = Nodes[i];
         ofs << i << " "
             << n.Location.x << " " << n.Location.y << " " << n.Location.z;
-        for (int j = 0; j < 6; j++)
-            ofs << " " << (n.Fix.flags[j] ? 1 : 0);
-        for (int j = 0; j < 6; j++)
-            ofs << " " << (n.Fix.lockflags.flags[j] ? 1 : 0);
+        WriteSupport(ofs, n.Fix);
         ofs << "\n";
     }
 
@@ -174,6 +204,13 @@ void FEModel::Save(const std::string &path)
                     << " " << cb->lyi << " " << cb->lyj;
             }
         }
+        else if (t == ElementType::SupportSpring)
+        {
+            SupportSpringElement *sp = dynamic_cast<SupportSpringElement *>(el.get());
+            ofs << " " << (sp->Nodes[0] - node_base);
+            for (int i = 0; i < 6; i++)
+                ofs << " " << sp->K[i];
+        }
         else // 平面・板要素
         {
             PlaneElementBase *pe = dynamic_cast<PlaneElementBase *>(el.get());
@@ -199,10 +236,7 @@ void FEModel::Save(const std::string &path)
         // マスタ節点: 実体(値)で保持しているため、座標＋拘束(fix/lock)を常にインライン出力。
         const Node &m = link.Master;
         ofs << m.Location.x << " " << m.Location.y << " " << m.Location.z;
-        for (int j = 0; j < 6; j++)
-            ofs << " " << (m.Fix.flags[j] ? 1 : 0);
-        for (int j = 0; j < 6; j++)
-            ofs << " " << (m.Fix.lockflags.flags[j] ? 1 : 0);
+        WriteSupport(ofs, m.Fix);
 
         ofs << " " << link.Slaves.size();
         for (const Node &slave : link.Slaves)
@@ -223,7 +257,8 @@ void FEModel::Load(const std::string &path)
         throw std::runtime_error("ModelIO: ファイルを開けません: " + path);
 
     std::string magic = ReadToken<std::string>(ifs, "magic");
-    if (magic != kMagic)
+    const bool legacy_v2 = (magic == kMagicV2);
+    if (magic != kMagic && !legacy_v2)
         throw std::runtime_error("ModelIO: フォーマット識別子が一致しません: " + magic);
 
     // 既存内容をクリア
@@ -250,10 +285,7 @@ void FEModel::Load(const std::string &path)
         double y = ReadToken<double>(ifs, "Node y");
         double z = ReadToken<double>(ifs, "Node z");
         Node n(idx, x, y, z); // id = 添字に正規化
-        for (int i = 0; i < 6; i++)
-            n.Fix.flags[i] = (ReadToken<int>(ifs, "Node fix") != 0);
-        for (int i = 0; i < 6; i++)
-            n.Fix.lockflags.flags[i] = (ReadToken<int>(ifs, "Node lock") != 0);
+        ReadSupport(ifs, n.Fix, legacy_v2);
         Nodes[idx] = n;
     }
 
@@ -352,6 +384,17 @@ void FEModel::Load(const std::string &path)
                 }
             }
         }
+        else if (t == ElementType::SupportSpring)
+        {
+            int ni = ReadToken<int>(ifs, "SupportSpring node");
+            if (ni < 0 || ni >= node_count)
+                throw std::runtime_error("ModelIO: SupportSpring の節点が範囲外です: " + std::to_string(ni));
+            double k[6];
+            for (int i = 0; i < 6; i++)
+                k[i] = ReadToken<double>(ifs, "SupportSpring k");
+            Elements.push_back(std::make_shared<SupportSpringElement>(
+                id, &Nodes[ni], k[0], k[1], k[2], k[3], k[4], k[5]));
+        }
         else // 平面・板要素
         {
             int nnum = (t == ElementType::TriMembrane || t == ElementType::DKT) ? 3 : 4;
@@ -405,10 +448,7 @@ void FEModel::Load(const std::string &path)
         double my = ReadToken<double>(ifs, "RigidLink master y");
         double mz = ReadToken<double>(ifs, "RigidLink master z");
         Node m(-1, mx, my, mz);
-        for (int i = 0; i < 6; i++)
-            m.Fix.flags[i] = (ReadToken<int>(ifs, "RigidLink master fix") != 0);
-        for (int i = 0; i < 6; i++)
-            m.Fix.lockflags.flags[i] = (ReadToken<int>(ifs, "RigidLink master lock") != 0);
+        ReadSupport(ifs, m.Fix, legacy_v2);
         link.Master = m;
 
         int slave_count = ReadToken<int>(ifs, "RigidLink slave 数");

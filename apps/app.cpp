@@ -2524,7 +2524,8 @@ void TestBucklingCheck() {
     // 剛性ゼロ自由度により全体Kが特異になり解けないため）
     {
         FEModel model = PyramidTrussModel(1000, 4, 100);
-        model.Nodes[0].Fix = Support(false, false, false, true, true, true);
+        model.Nodes[0].Fix = Support(ConstraintType::Free, ConstraintType::Free, ConstraintType::Free,
+                                     ConstraintType::Fix, ConstraintType::Fix, ConstraintType::Fix);
         std::vector<std::shared_ptr<LoadBase>> loads;
         loads.push_back(std::make_shared<NodeLoad>(NodeLoad(0, 0, 0, -1.0)));
         PrintBucklingCheck(model, loads, 1, "PyramidTruss(1000,4,100)");

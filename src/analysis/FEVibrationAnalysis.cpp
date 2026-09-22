@@ -244,11 +244,12 @@ int FEVibrationAnalysis::Compute(const int nev)
     mode_vectors.clear();
     m_computed = false;
 
-    // 縮約系の構築（RigidLinkを考慮）
-    ReducedSystem rs(*model);
+    // 縮約系の構築（RigidLinkを考慮。剛性行列は自由度の分類にも用いる）
+    Eigen::SparseMatrix<double> k_full = model->AssembleStiffnessMatrix();
+    ReducedSystem rs(*model, k_full);
 
     Eigen::SparseMatrix<double> ka, ma;
-    rs.Reduce(model->AssembleStiffnessMatrix(), ka);
+    rs.Reduce(k_full, ka);
     rs.Reduce(model->AssembleMassMatrix(), ma);
 
     // 質量あり自由度の抽出

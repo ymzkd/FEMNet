@@ -71,8 +71,6 @@ void FEModel::add_element(BeamElement data)
     std::shared_ptr<BeamElement> ptr = std::make_shared<BeamElement>(data);
     Elements.push_back(ptr);
     
-    Nodes[data.Nodes[0]->id].Fix.UnlockAllRot();
-    Nodes[data.Nodes[1]->id].Fix.UnlockAllRot();
 }
 
 void FEModel::add_element(ComplexBeamElement data)
@@ -80,8 +78,6 @@ void FEModel::add_element(ComplexBeamElement data)
     std::shared_ptr<ComplexBeamElement> ptr = std::make_shared<ComplexBeamElement>(data);
     Elements.push_back(ptr);
 
-    Nodes[data.Nodes[0]->id].Fix.UnlockAllRot();
-    Nodes[data.Nodes[1]->id].Fix.UnlockAllRot();
 }
 
 void FEModel::add_element(TrussElement data)
@@ -107,9 +103,6 @@ void FEModel::add_element(TriPlateElement data)
     std::shared_ptr<TriPlateElement> ptr = std::make_shared<TriPlateElement>(data);
     Elements.push_back(ptr);
 
-    Nodes[ptr->Nodes[0]->id].Fix.UnlockAllRot();
-    Nodes[ptr->Nodes[1]->id].Fix.UnlockAllRot();
-    Nodes[ptr->Nodes[2]->id].Fix.UnlockAllRot();
 }
 
 void FEModel::add_element(QuadPlaneElement data)
@@ -123,10 +116,12 @@ void FEModel::add_element(QuadPlateElement data)
     std::shared_ptr<QuadPlateElement> ptr = std::make_shared<QuadPlateElement>(data);
     Elements.push_back(ptr);
 
-    Nodes[ptr->Nodes[0]->id].Fix.UnlockAllRot();
-    Nodes[ptr->Nodes[1]->id].Fix.UnlockAllRot();
-    Nodes[ptr->Nodes[2]->id].Fix.UnlockAllRot();
-    Nodes[ptr->Nodes[3]->id].Fix.UnlockAllRot();
+}
+
+void FEModel::add_element(SupportSpringElement data)
+{
+    std::shared_ptr<SupportSpringElement> ptr = std::make_shared<SupportSpringElement>(data);
+    Elements.push_back(ptr);
 }
 
 void FEModel::add_truss_element(int id, int n1_id, int n2_id, int sec_id, int mat_id)
@@ -150,8 +145,6 @@ void FEModel::add_beam_element(int id, int n1_id, int n2_id, int sec_id, int mat
     std::shared_ptr<BeamElement> ptr = std::make_shared<BeamElement>(id, n1, n2, sec, mat, beta);
     Elements.push_back(ptr);
 
-    Nodes[ptr->Nodes[0]->id].Fix.UnlockAllRot();
-    Nodes[ptr->Nodes[1]->id].Fix.UnlockAllRot();
 }
 
 void FEModel::add_tri_plate_element(int id, int n1_id, int n2_id, int n3_id, double thickness, int mat_id)
@@ -164,9 +157,6 @@ void FEModel::add_tri_plate_element(int id, int n1_id, int n2_id, int n3_id, dou
     std::shared_ptr<TriPlateElement> ptr = std::make_shared<TriPlateElement>(id, n1, n2, n3, thickness, mat);
     Elements.push_back(ptr);
 
-    Nodes[ptr->Nodes[0]->id].Fix.UnlockAllRot();
-    Nodes[ptr->Nodes[1]->id].Fix.UnlockAllRot();
-    Nodes[ptr->Nodes[2]->id].Fix.UnlockAllRot();
 
 }
 
@@ -182,10 +172,6 @@ void FEModel::add_quad_plate_element(int id, int n1_id, int n2_id, int n3_id, in
         std::make_shared<QuadPlateElement>(id, n1, n2, n3, n4, thickness, mat);
     Elements.push_back(ptr);
 
-    Nodes[ptr->Nodes[0]->id].Fix.UnlockAllRot();
-    Nodes[ptr->Nodes[1]->id].Fix.UnlockAllRot();
-    Nodes[ptr->Nodes[2]->id].Fix.UnlockAllRot();
-    Nodes[ptr->Nodes[3]->id].Fix.UnlockAllRot();
 }
 
 BarElementBase* FEModel::GetBarElement(int id)
@@ -272,6 +258,57 @@ Eigen::SparseMatrix<double> FEModel::AssembleStiffnessMatrix(const ElementStates
     mat.setFromTriplets(tripletList.begin(), tripletList.end());
 
     return mat;
+}
+
+bool FEModel::HasSpringSupport() const
+{
+    for (const std::shared_ptr<ElementBase> &el : Elements)
+        if (dynamic_cast<const SupportSpringElement *>(el.get()))
+            return true;
+    return false;
+}
+
+void FEModel::AddSpringReactions(const Eigen::VectorXd &u_full, Eigen::VectorXd &r_full,
+                                 const Eigen::VectorXd *v_full, double damp_coef) const
+{
+    for (const std::shared_ptr<ElementBase> &el : Elements)
+        if (auto *spring = dynamic_cast<const SupportSpringElement *>(el.get()))
+            spring->AddReaction(u_full, r_full, v_full, damp_coef);
+}
+
+std::vector<NodeLoad> FEModel::CollectReactions(const Eigen::VectorXd &r_full) const
+{
+    // 節点ごとに反力を報告する自由度: 固定した自由度 + ばねが効く自由度
+    std::vector<std::array<bool, 6>> report(Nodes.size());
+    for (size_t i = 0; i < Nodes.size(); i++)
+        report[i] = Nodes[i].Fix.isdof_fixed();
+    for (const std::shared_ptr<ElementBase> &el : Elements)
+    {
+        auto *spring = dynamic_cast<const SupportSpringElement *>(el.get());
+        if (!spring)
+            continue;
+        const int nid = spring->Nodes[0]->id;
+        if (nid < 0 || nid >= (int)Nodes.size())
+            continue;
+        const std::array<bool, 6> active = spring->ActiveDOFs();
+        std::array<bool, 6> &rep = report[nid];
+        for (int k = 0; k < 6; k++)
+            rep[k] = rep[k] || active[k];
+    }
+
+    std::vector<NodeLoad> reactions;
+    for (size_t i = 0; i < Nodes.size(); i++)
+    {
+        const std::array<bool, 6> &rep = report[i];
+        if (std::none_of(rep.begin(), rep.end(), [](bool b) { return b; }))
+            continue;
+        int pos = (int)i * 6;
+        double v[6];
+        for (int k = 0; k < 6; k++)
+            v[k] = (rep[k] && pos + k < r_full.size()) ? r_full[pos + k] : 0.0;
+        reactions.push_back(NodeLoad((int)i, v[0], v[1], v[2], v[3], v[4], v[5]));
+    }
+    return reactions;
 }
 
 Eigen::SparseMatrix<double> FEModel::AssembleMassMatrix()

@@ -24,6 +24,10 @@ import sys
 sys.path.insert(0, '..')
 
 from femnet import *
+
+# 支持条件の指定(ConstraintType: Free / Fix。ばね支持は SupportSpringElement を要素として追加)
+FREE = ConstraintType_Free
+FIX = ConstraintType_Fix
 import math
 
 print("=" * 60)
@@ -60,18 +64,17 @@ print("\n2. Setting boundary conditions...")
 # - Intermediate: All translational DOFs free for buckling, out-of-plane fixed
 
 # Bottom node: Pinned (translations fixed, Rz free for bending)
-model.GetNode(0).Fix = Support(True, True, True, True, True, False)
+model.GetNode(0).Fix = Support(FIX, FIX, FIX, FIX, FIX, FREE)
 
 # Top node: Roller in Y direction (Ux, Uz fixed; Uy, Rz free)
 top_node = model.GetNode(n_elements)
-top_node.Fix = Support(True, False, True, True, True, False)
+top_node.Fix = Support(FIX, FREE, FIX, FIX, FIX, FREE)
 
 # Intermediate nodes: Free in Ux, Uy, Rz for buckling mode
 # Fixed: Uz, Rx, Ry (out-of-plane constraints)
 for i in range(1, n_elements):
     node = model.GetNode(i)
-    node.Fix = Support(False, False, True, True, True, False)
-    node.Fix.UnlockAllRot()
+    node.Fix = Support(FREE, FREE, FIX, FIX, FIX, FREE)
 
 print(f"   Total DOF: {model.DOFNum()}")
 print(f"   Free DOF: {model.FreeDOFNum()}")

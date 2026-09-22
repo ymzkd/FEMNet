@@ -94,31 +94,32 @@ Point Point::divide(const Point p0, const double t)
     return Point(p0.x / t, p0.y / t, p0.z / t);
 }
 
-Support::Support(bool ux, bool uy, bool uz, bool rx, bool ry, bool rz)
-    : DOFFlags(ux, uy, uz, rx, ry, rz), lockflags()
+Support::Support(ConstraintType ux, ConstraintType uy, ConstraintType uz,
+                 ConstraintType rx, ConstraintType ry, ConstraintType rz)
 {
-    lockflags.flags[0] = Unlock; lockflags.flags[1] = Unlock;
-    lockflags.flags[2] = Unlock; lockflags.flags[3] = Lock;
-    lockflags.flags[4] = Lock; lockflags.flags[5] = Lock;
+    BoundaryTypes[0] = ux; BoundaryTypes[1] = uy; BoundaryTypes[2] = uz;
+    BoundaryTypes[3] = rx; BoundaryTypes[4] = ry; BoundaryTypes[5] = rz;
 }
 
 // Constrain translational movement and rotation.
 void Support::FixAll()
 {
-    Ux() = true; Uy() = true; Uz() = true;
-    Rx() = true; Ry() = true; Rz() = true;
+    BoundaryTypes.fill(ConstraintType::Fix);
 }
 
 void Support::PinFix()
 {
-    Ux() = true; Uy() = true; Uz() = true;
-    Rx() = false; Ry() = false; Rz() = false;
+    BoundaryTypes[0] = ConstraintType::Fix;
+    BoundaryTypes[1] = ConstraintType::Fix;
+    BoundaryTypes[2] = ConstraintType::Fix;
+    BoundaryTypes[3] = ConstraintType::Free;
+    BoundaryTypes[4] = ConstraintType::Free;
+    BoundaryTypes[5] = ConstraintType::Free;
 }
 
 void Support::ReleaseAll()
 {
-    Ux() = false; Uy() = false; Uz() = false;
-    Rx() = false; Ry() = false; Rz() = false;
+    BoundaryTypes.fill(ConstraintType::Free);
 }
 
 //NodeFix::NodeFix(bool ux, bool uy, bool uz, bool rx, bool ry, bool rz)

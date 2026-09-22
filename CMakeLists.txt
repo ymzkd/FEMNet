@@ -199,8 +199,10 @@ set(FEMNET_SOURCES
     src/Elements/QuadPlaneElement.cpp
     src/Elements/TriPlateElement.cpp
     src/Elements/QuadPlateElement.cpp
+    src/Elements/SupportSpringElement.cpp
     src/analysis/SeismicModule.cpp
     src/analysis/FEAnalysis.cpp
+    src/analysis/ReducedSystem.cpp
     src/analysis/FELinearStaticOp.cpp
     src/analysis/FEDynamic.cpp
     src/analysis/DASampler.cpp
@@ -332,6 +334,16 @@ add_executable(loadio_test
 target_include_directories(loadio_test PUBLIC ${FEMNET_INCLUDE_DIRS})
 configure_mkl_target(loadio_test)
 configure_cuda_target(loadio_test)
+
+# === Spring support test ===
+add_executable(spring_support_test
+    tests/spring_support_test.cpp
+    ${FEMNET_SOURCES}
+    $<$<BOOL:${CUDA_FOUND}>:${CUDA_SOLVER_SOURCES}>
+)
+target_include_directories(spring_support_test PUBLIC ${FEMNET_INCLUDE_DIRS})
+configure_mkl_target(spring_support_test)
+configure_cuda_target(spring_support_test)
 
 # === DynamicAnalysis::Rewind test ===
 add_executable(rewind_test

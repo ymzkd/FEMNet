@@ -89,22 +89,34 @@ public:
 
 class FEModel
 {
-private:
-    /// <summary>
-    /// 集中質量マトリクスの対象でない(並進以外の回転自由度等)または固定自由度の
-    /// 全体自由度におけるインデックスを格納した配列を返す関数
-    /// </summary>
-    /// <returns></returns>
-    std::vector<int> UnLumpedFixIndices();
-
 public:
     // === 行列・ベクトル組立サービス(解析Operator向け, SWIG非公開) ===
     // FEModelは構造データの保持と組立のみを担い、解析(ソルバー)は
     // 各解析Operator(FELinearStaticOp, FEVibrationAnalysis等)が実装する。
 
 	// 剛性マトリクスの組み立て(上三角格納)
+	// 支点ばね要素(SupportSpringElement)も要素の1つとして組み込まれる。
 	// states: 状態依存要素の状態(nullptrなら全要素を規定剛性で組立)
     Eigen::SparseMatrix<double> AssembleStiffnessMatrix(const ElementStates *states = nullptr);
+
+    // 支点ばね要素が1つでもあるか。
+    // 反力計算でばね分の処理が必要かどうかの判定に使う。
+    bool HasSpringSupport() const;
+
+    // 支点ばね要素の反力 R = -(k・u + c・v) を全体反力ベクトルへ加算する。
+    // ばねの自由度は拘束されず解く側に入るため、固定自由度の反力
+    // (R = K_ab^T・d - f_b)には現れない。解析後にこの関数で補う。
+    // 加算なので、固定とばねが同じ自由度にあっても固定反力は失われない。
+    //   v_full     : 速度ベクトル(減衰力を含める場合。不要なら nullptr)
+    //   damp_coef  : 減衰マトリクスの剛性比例成分の係数 a (C = a・K + ...)。c = a・k となる
+    void AddSpringReactions(const Eigen::VectorXd &u_full, Eigen::VectorXd &r_full,
+                            const Eigen::VectorXd *v_full = nullptr,
+                            double damp_coef = 0.0) const;
+
+    // 全体反力ベクトルから、支点の節点ごとの反力を取り出す。
+    // 対象はユーザーが固定した自由度と、支点ばね要素が効く自由度。剛性が付かないために
+    // 自動拘束された回転自由度は支点ではないため含めない。出力は節点インデックスの昇順。
+    std::vector<NodeLoad> CollectReactions(const Eigen::VectorXd &r_full) const;
 
     // 荷重リストから全体節点荷重ベクトルを組み立てる(InertialForceは要素質量から展開)
     Eigen::VectorXd AssembleLoadVector(const std::vector<std::shared_ptr<LoadBase>> &loads);
@@ -122,9 +134,11 @@ public:
 
     /// <summary>
     /// 非拘束自由度の全自由度におけるインデックスを格納した配列を返す関数
+    /// (ユーザー指定の支持条件のみで判定する。剛性が付かない回転自由度の
+    ///  自動拘束は解析側の ReducedSystem が剛性行列から判定する)
     /// </summary>
     std::vector<int> FreeIndices(bool rigid_link = false);
-    
+
 
     /// <summary>
     /// 剛体連結されている自由度の全自由度におけるインデックスを格納した配列を返す関数
@@ -133,11 +147,15 @@ public:
 
     /// <summary>
     /// 拘束自由度の全自由度におけるインデックスを格納した配列を返す関数
+    /// (ユーザー指定の支持条件のみで判定する)
     /// </summary>
     std::vector<int> FixIndices();
 
     int NodeNum() { return Nodes.size(); }
     int DOFNum() { return NodeNum() * 6; }
+    // ユーザーが設定した支持条件に基づく自由度数。
+    // 解析は数値的な安定性のため、剛性が付かない回転自由度を内部で自動拘束する
+    // ことがあるため、実際に解かれる自由度数とは一致しないことがある。
 	int FreeDOFNum() { return FreeIndices().size(); }
 	int FixedDOFNum() { return FixIndices().size(); }
 
@@ -156,6 +174,7 @@ public:
     void add_element(TriPlateElement data);
     void add_element(QuadPlaneElement data);
     void add_element(QuadPlateElement data);
+    void add_element(SupportSpringElement data);
 
     // index based element addition
     void add_truss_element(int id, int n1_id, int n2_id, int sec_id, int mat_id);

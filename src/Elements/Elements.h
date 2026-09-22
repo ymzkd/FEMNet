@@ -27,4 +27,7 @@
 #include "TriPlateElement.h"   // 三角形板要素
 #include "QuadPlateElement.h"  // 四角形板要素
 
+// 支点要素
+#include "SupportSpringElement.h" // 支点ばね要素（1節点）
+
 #endif // _ELEMENTS_H_

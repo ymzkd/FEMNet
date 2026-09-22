@@ -56,8 +56,7 @@ std::shared_ptr<FEModel> BuildModel()
 
     // 支点: 板側・梁根元を固定
     for (int id : {0, 3, 4})
-        for (int i = 0; i < 6; i++)
-            m->Nodes[id].Fix.flags[i] = true;
+        m->Nodes[id].Fix.FixAll();
     // 節点2に質量(NodeBodyForce が非ゼロになるよう)
     m->Nodes[2].MassData.Mass = 100.0;
 

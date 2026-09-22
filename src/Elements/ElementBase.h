@@ -24,6 +24,7 @@ enum class ElementType
     ComplexBeam = 7,  // ComplexBeamElement
     TriMembrane = 8,  // TriPlaneElement
     QuadMembrane = 9, // QuadPlaneElement
+    SupportSpring = 10, // SupportSpringElement
 };
 
 // 要素種別の分類判定（分類の定義をここ1箇所に集約する）

@@ -99,6 +99,9 @@
 %ignore FEModel::AssembleMassMatrix;
 %ignore FEModel::AssembleGeometricStiffnessMatrix;
 %ignore FEModel::AssembleLoadVector;
+%ignore FEModel::AddSpringReactions;
+%ignore FEModel::CollectReactions;
+// HasSpringSupport() はEigen型を使わないため公開する(%ignore不要)
 
 // Ignore pure virtual methods that use Eigen types
 %ignore ElementBase::geometric_local_stiffness_matrix;
@@ -135,6 +138,11 @@ namespace std {
 
     // Support::isdof_fixed() の戻り値(未定義だと bool[6] の不透明ポインタになる)
     %template(ArrayBool6) std::array<bool, 6>;
+
+    // Support の支持条件(BoundaryTypes)と SupportSpringElement のばね定数(K)。
+    // メンバとして公開するため、添字アクセスできるようテンプレートを定義する。
+    %template(ArrayConstraintType6) std::array<ConstraintType, 6>;
+    %template(ArrayDouble6) std::array<double, 6>;
 
     // Vector(3次元ベクトル)のコンテナ。PlateLoad::load_vecs と
     // PlaneElementBase::AreaForceToNodeLoadData() で使用する。

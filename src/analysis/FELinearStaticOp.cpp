@@ -15,12 +15,13 @@ void FELinearStaticOp::Compute()
     Eigen::VectorXd residual_vec = force_vec;
     Eigen::VectorXd disp_vec = Eigen::VectorXd::Zero(full_size);
 
-    ReducedSystem rs(m);
-
     // 状態依存要素の状態を初期化 (規定剛性で機能する状態へ)
     m_states.Clear();
 
     Eigen::SparseMatrix<double> full_stiffmat = m.AssembleStiffnessMatrix(&m_states);
+
+    // 自由度の分類は剛性行列を用いるため、組立後に構築する
+    ReducedSystem rs(m, full_stiffmat);
 
     int iter_result = -max_iter;
     for (int iter = 0; iter < max_iter; iter++)
@@ -42,9 +43,12 @@ void FELinearStaticOp::Compute()
             if (kdiag(i) > 0.0)
                 continue;
             throw std::runtime_error(
-                "FELinearStaticOp::Compute: the stiffness matrix has DOF(s) with no stiffness. "
-                "The model is unstable (e.g. a node connected only by truss elements, "
-                "or a node not attached to any element).");
+                "FELinearStaticOp::Compute: the stiffness matrix has DOF(s) with no stiffness ("
+                + DescribeReducedDOF(rs, (int)i, *model) +
+                "). The model is unstable: the DOF is not supported and no element (or spring) "
+                "gives it stiffness. Typical causes are a node not attached to any element, "
+                "a translational DOF with no element in that direction, or a support spring "
+                "with a zero spring constant.");
         }
 
         // 分解に失敗した状態でsolve()を呼ぶと不正メモリアクセスでプロセスごと
@@ -58,19 +62,6 @@ void FELinearStaticOp::Compute()
         Eigen::VectorXd d_result = solver_static->solve(f_input);
         Eigen::VectorXd r_fix = mij.transpose() * d_result - f_fix;
 
-        // 反力データ整理
-        Eigen::VectorXd r = Eigen::VectorXd::Zero(full_size);
-        for (size_t i = 0; i < rs.fixed_indices.size(); i++)
-            r(rs.fixed_indices[i]) = r_fix(i);
-        react_force.clear();
-        for (size_t i = 0; i < m.Nodes.size(); i++)
-        {
-            if (!m.Nodes[i].Fix.IsAnyFix())
-                continue;
-            int pos = i * 6;
-            react_force.push_back(NodeLoad(i, r[pos], r[pos + 1], r[pos + 2], r[pos + 3], r[pos + 4], r[pos + 5]));
-        }
-
         // 変形データ整理
         disp_vec += rs.ExpandVector(d_result, full_size);
         displace.clear();
@@ -79,6 +70,15 @@ void FELinearStaticOp::Compute()
             int pos = i * 6;
             displace.push_back(Displacement(disp_vec[pos], disp_vec[pos + 1], disp_vec[pos + 2], disp_vec[pos + 3], disp_vec[pos + 4], disp_vec[pos + 5]));
         }
+
+        // 反力データ整理(ばね反力は全体変位から求めるため変形の整理後に行う)
+        // 出力するのはユーザーが支点指定した自由度(固定・ばね)のみ。剛性が付かないために
+        // 自動拘束された回転自由度は支点ではないため反力に含めない。
+        Eigen::VectorXd r = Eigen::VectorXd::Zero(full_size);
+        for (size_t i = 0; i < rs.fixed_indices.size(); i++)
+            r(rs.fixed_indices[i]) = r_fix(i);
+        m.AddSpringReactions(disp_vec, r);
+        react_force = m.CollectReactions(r);
 
         // 判定と更新
         // 状態依存要素の次状態を判定し、状態変化があれば剛性を再構築する

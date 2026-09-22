@@ -2,24 +2,30 @@
 03_modal_analysis.py - Modal Analysis (Eigenvalue Problem)
 
 This example demonstrates:
-- Creating a simple cantilever beam with lumped mass
+- Creating a cantilever beam whose distributed mass is lumped to the nodes
 - Running modal (eigenvalue) analysis
 - Extracting natural frequencies and mode shapes
+- Comparing with the exact solution of a uniform cantilever beam
 
 Structure:
-                      m (lumped mass)
-    ▓==================|
-    ▓                  ↓
-    ▓   L = 3000 mm
+      m/2n    m/n   m/n   m/n   m/2n   (lumped mass)
+    ▓==o======o=====o=====o=====o
+    ▓   L = 3000 mm, n elements
   Fixed
 
-Cantilever beam with tip mass
+Units: N, mm, s. Mass is t (= N·s^2/mm).
+FEMNet takes node mass as weight [N] (MassData.Mass) and divides it by
+the gravitational acceleration (FEModel.GraityAccel [mm/s^2]).
 
 """
 import sys
 sys.path.insert(0, '..')
 
 from femnet import *
+
+# 支持条件の指定(ConstraintType: Free / Fix。ばね支持は SupportSpringElement を要素として追加)
+FREE = ConstraintType_Free
+FIX = ConstraintType_Fix
 import math
 
 print("=" * 60)
@@ -53,14 +59,14 @@ print("\n2. Setting boundary conditions...")
 # Fixed support at node 0 (all DOFs constrained)
 model.GetNode(0).Fix.FixAll()
 
-# For 2D beam in XY plane, constrain out-of-plane for all other nodes
-# Only keep Uy free (translational DOF for bending)
-# Note: Rz is constrained because mass matrix only includes translational mass
+# For 2D beam in XY plane, keep only the in-plane bending DOFs free
+# Note: Rz has no mass, but the vibration analysis condenses massless DOFs
+#       statically, so it does not need to be constrained
 for i in range(1, model.NodeNum()):
     node = model.GetNode(i)
-    # Free: Uy only (bending displacement)
-    # Fixed: All others (Ux, Uz, Rx, Ry, Rz)
-    node.Fix = Support(True, False, True, True, True, True)
+    # Free: Uy, Rz (in-plane bending)
+    # Fixed: Ux, Uz, Rx, Ry
+    node.Fix = Support(FIX, FREE, FIX, FIX, FIX, FREE)
 
 print(f"   Total DOF: {model.DOFNum()}")
 print(f"   Free DOF: {model.FreeDOFNum()}")
@@ -70,11 +76,12 @@ print(f"   Free DOF: {model.FreeDOFNum()}")
 # ============================================================
 print("\n3. Adding material and section...")
 
-# Steel material with density
-E = 205e3       # Young's modulus [N/mm^2]
-nu = 0.3        # Poisson's ratio
-rho = 7.85e-9   # Density [kg/mm^3] (7850 kg/m^3)
-model.AddMaterialWithDensity(E, nu, rho)
+# Steel material with unit weight
+# (element self-weight is not used as mass here: ComputeElementNodeMass() is not called)
+E = 205e3        # Young's modulus [N/mm^2]
+nu = 0.3         # Poisson's ratio
+gamma = 7.85e-5  # Unit weight [N/mm^3] (78.5 kN/m^3)
+model.AddMaterialWithDensity(E, nu, gamma)
 
 # Rectangular section: 100mm x 200mm
 b = 100.0  # width [mm]
@@ -85,7 +92,7 @@ Iz = h * b**3 / 12  # Moment of inertia (weak axis - for bending in XY plane)
 K = b * h**3 / 3 * (1 - 0.63 * b / h)
 model.AddSection(A, Iy, Iz, K)
 
-print(f"   Material: Steel (E={E/1e3:.0f} GPa, rho={rho*1e9:.0f} kg/m^3)")
+print(f"   Material: Steel (E={E/1e3:.0f} GPa, gamma={gamma*1e6:.1f} kN/m^3)")
 print(f"   Section: Rectangular {b:.0f}x{h:.0f}mm")
 print(f"     A = {A:.0f} mm^2")
 print(f"     Iz = {Iz:.2e} mm^4 (for bending in XY plane)")
@@ -101,20 +108,25 @@ for i in range(n_elements):
 print(f"   Number of elements: {len(model.Elements)}")
 
 # ============================================================
-# 5. Add lumped mass to all free nodes
+# 5. Lump the distributed mass to the nodes
 # ============================================================
 print("\n5. Adding lumped masses...")
 
-# Distribute mass to all free nodes
-total_mass = 1000.0  # 1000 kg total
-mass_per_node = total_mass / (n_elements)  # Distribute among free nodes
+# Uniformly distributed mass of 1000 kg (= 1.0 t) over the beam.
+# Each element puts half of its mass on each end node, so the end nodes
+# get m/2n and the interior nodes get m/n.
+total_mass = 1.0                     # [t] (1000 kg)
+m_elem = total_mass / n_elements     # [t] per element
+g = model.GraityAccel                # [mm/s^2]
 
-for i in range(1, model.NodeNum()):
-    node = model.GetNode(i)
-    node.MassData.Mass = mass_per_node
+for i in range(model.NodeNum()):
+    node_mass = m_elem if 0 < i < n_elements else 0.5 * m_elem
+    # FEMNet takes the node mass as weight [N]
+    model.GetNode(i).MassData.Mass = node_mass * g
 
-print(f"   Mass per node: {mass_per_node:.0f} kg")
-print(f"   Total model mass: {model.SumNodeMass():.0f} kg")
+print(f"   Mass per interior node: {m_elem * 1e3:.0f} kg (end nodes: {0.5 * m_elem * 1e3:.0f} kg)")
+print(f"   Total model mass: {model.SumNodeMass() / g * 1e3:.0f} kg "
+      f"(weight {model.SumNodeMass() / 1e3:.2f} kN)")
 
 # ============================================================
 # 6. Run modal analysis
@@ -168,30 +180,21 @@ if len(mode_vectors) > 0:
         mode3_dy = mode_vectors[2][node_id].Dy() if len(mode_vectors) > 2 else 0
         print(f"   {node_id:<6} {node.Location.x:<10.0f} {mode1_dy:<12.6f} {mode2_dy:<12.6f} {mode3_dy:<12.6f}")
 
-# Theoretical estimate for first mode of cantilever with distributed mass
-# For uniform beam: omega_n = (beta_n)^2 * sqrt(E*I / (rho*A*L^4))
-# beta_1 = 1.875 for first mode
-print("\n   === Theoretical Comparison ===")
+# Exact solution of a uniform cantilever beam with distributed mass:
+#   omega_n = (beta_n*L)^2 * sqrt(E*I / (m_bar * L^4)),  m_bar = total_mass / L [t/mm]
+#   beta_n*L = 1.8751, 4.6941, 7.8548 for modes 1-3
+print("\n   === Theoretical Comparison (uniform cantilever beam) ===")
 I = Iz  # For bending in XY plane
+m_bar = total_mass / L
+beta_L = [1.8751, 4.6941, 7.8548]
 
-# Approximate formula for cantilever with lumped masses (SDOF approximation)
-# Using equivalent mass at tip: m_eff = 0.23 * m_beam + m_tip
-# For our case: total_mass distributed uniformly, treat as m_eff ~ 0.5 * total_mass
-m_eff = 0.5 * total_mass
-omega_theory = math.sqrt(3 * E * I / (m_eff * L**3))
-f_theory = omega_theory / (2 * math.pi)
-T_theory = 1 / f_theory
-
-print(f"   1st mode (approximate SDOF model):")
-print(f"     Equivalent tip mass: {m_eff:.0f} kg")
-print(f"     Theoretical omega: {omega_theory:.4f} rad/s")
-print(f"     Theoretical f:     {f_theory:.4f} Hz")
-print(f"     Theoretical T:     {T_theory:.4f} s")
-print(f"")
-print(f"     FEM omega: {eigen_values[0]:.4f} rad/s")
-print(f"     FEM f:     {eigen_values[0]/(2*math.pi):.4f} Hz")
-print(f"     FEM T:     {2*math.pi/eigen_values[0]:.4f} s")
-print("   (Note: Difference expected due to distributed mass approximation)")
+print(f"   {'Mode':<6} {'Theory [rad/s]':<16} {'FEM [rad/s]':<14} {'Error':<8}")
+print("   " + "-" * 44)
+for i in range(min(len(beta_L), len(eigen_values))):
+    omega_theory = beta_L[i] ** 2 * math.sqrt(E * I / (m_bar * L ** 4))
+    error = (eigen_values[i] - omega_theory) / omega_theory * 100
+    print(f"   {i+1:<6} {omega_theory:<16.4f} {eigen_values[i]:<14.4f} {error:+.2f}%")
+print(f"   (Lumping the mass to {n_elements} elements lowers the accuracy of higher modes)")
 
 print("\n" + "=" * 60)
 print("Example 03 completed successfully!")

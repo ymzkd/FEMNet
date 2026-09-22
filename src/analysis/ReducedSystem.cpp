@@ -49,12 +49,11 @@ void ReducedSystem::Classify(FEModel &model, const Eigen::SparseMatrix<double> &
             continue;
 
         const Support &sup = model.Nodes[i / NODE_DOF].Fix;
-        const ConstraintType type = sup.BoundaryTypes[i % NODE_DOF];
-
-        bool fixed = (type == ConstraintType::Fix);
-        if (!fixed && type == ConstraintType::Free && (i % NODE_DOF) >= 3)
+        bool fixed = (sup.BoundaryTypes[i % NODE_DOF] == ConstraintType::Fix);
+        if (!fixed && (i % NODE_DOF) >= 3)
         {
-            // 回転自由度で剛性が付かないものは自動拘束する。
+            // 回転自由度で剛性が付かないものは自動拘束する。支点ばね要素の剛性も
+            // 対角に含まれるので、回転ばねで支えた自由度は拘束されない。
             // (並進自由度は本当に不安定なモデルなので各解析側で例外にする)
             if (i < kdiag.size() && kdiag(i) <= dead_tol)
                 fixed = true;

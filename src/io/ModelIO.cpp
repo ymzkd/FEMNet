@@ -13,8 +13,8 @@
 // フォーマット(v3, 空白・改行非依存のトークン列):
 //   FEMNET_MODEL_TEXT_V3
 //   GRAVITY <g>
-//   NODES <count>      ... <idx> <x> <y> <z> <btype0..5> <spring0..5>
-//     btype は ConstraintType (0=Free, 1=Fix, 2=Spring)、spring は各自由度のばね定数。
+//   NODES <count>      ... <idx> <x> <y> <z> <btype0..5>
+//     btype は ConstraintType (0=Free, 1=Fix)。
 //     V2 は <fix0..5> <lock0..5> (0/1) で、fix をそのまま btype として読み、lock は無視する
 //     (剛性の付かない回転自由度の拘束は解析側が剛性行列から判定するため)。
 //   MATERIALS <count>  ... <idx> <Young> <Poisson> <dense>
@@ -24,14 +24,15 @@
 //             [<beta>] [<バネ12値>]
 //     面・板: <eid> <Kind> <nodeIdx...> <Young> <Poisson> <dense>
 //             <tplane> <tplate> <tweight> <beta>
+//     支点ばね: <eid> SupportSpring <nodeIdx> <k0..5>
 //   RIGIDLINKS <count>
-//     <flag0..5> <mx> <my> <mz> <mbtype0..5> <mspring0..5> <slaveCount> <slaveIdx...>
-//     マスタは仮想節点(剛床の重心など)を含むため、座標＋支持条件(btype/spring)を
+//     <flag0..5> <mx> <my> <mz> <mbtype0..5> <slaveCount> <slaveIdx...>
+//     マスタは仮想節点(剛床の重心など)を含むため、座標＋支持条件(btype)を
 //     実体で常にインライン保持。節点と同じ並び(V2 は fix/lock)。
 //   END
 //
 // 要素種別タグは ElementType に対応する名前(Truss/Beam/ComplexBeam/
-// TriMembrane/QuadMembrane/DKT/DKQ)。
+// TriMembrane/QuadMembrane/DKT/DKQ/SupportSpring)。
 
 #include <fstream>
 #include <sstream>
@@ -53,8 +54,6 @@ void WriteSupport(std::ostream &os, const Support &sup)
 {
     for (int i = 0; i < 6; i++)
         os << " " << static_cast<int>(sup.BoundaryTypes[i]);
-    for (int i = 0; i < 6; i++)
-        os << " " << sup.Springs[i];
 }
 
 // ElementType -> シリアライズ用タグ名
@@ -69,6 +68,7 @@ std::string KindName(ElementType t)
     case ElementType::QuadMembrane: return "QuadMembrane";
     case ElementType::DKT:          return "DKT";
     case ElementType::DKQ:          return "DKQ";
+    case ElementType::SupportSpring: return "SupportSpring";
     default:
         throw std::runtime_error("ModelIO: 未対応の要素種別です (Type=" +
                                  std::to_string(static_cast<int>(t)) + ")");
@@ -85,6 +85,7 @@ ElementType ParseKind(const std::string &name)
     if (name == "QuadMembrane") return ElementType::QuadMembrane;
     if (name == "DKT")          return ElementType::DKT;
     if (name == "DKQ")          return ElementType::DKQ;
+    if (name == "SupportSpring") return ElementType::SupportSpring;
     throw std::runtime_error("ModelIO: 不明な要素種別タグ: " + name);
 }
 
@@ -104,17 +105,15 @@ void ReadSupport(std::istream &is, Support &sup, bool legacy_v2)
     for (int i = 0; i < 6; i++)
     {
         int t = ReadToken<int>(is, "Support boundary type");
-        if (t < static_cast<int>(ConstraintType::Free) || t > static_cast<int>(ConstraintType::Spring))
-            throw std::runtime_error("ModelIO: 支持条件の種別が範囲外です (0=Free, 1=Fix, 2=Spring): " +
+        if (t < static_cast<int>(ConstraintType::Free) || t > static_cast<int>(ConstraintType::Fix))
+            throw std::runtime_error("ModelIO: 支持条件の種別が範囲外です (0=Free, 1=Fix): " +
                                      std::to_string(t));
         sup.BoundaryTypes[i] = static_cast<ConstraintType>(t);
     }
-    for (int i = 0; i < 6; i++)
+    if (legacy_v2)
     {
-        if (legacy_v2)
+        for (int i = 0; i < 6; i++)
             ReadToken<int>(is, "Support lock (V2, 無視)");
-        else
-            sup.Springs[i] = ReadToken<double>(is, "Support spring");
     }
 }
 
@@ -204,6 +203,13 @@ void FEModel::Save(const std::string &path)
                     << " " << cb->lzi << " " << cb->lzj
                     << " " << cb->lyi << " " << cb->lyj;
             }
+        }
+        else if (t == ElementType::SupportSpring)
+        {
+            SupportSpringElement *sp = dynamic_cast<SupportSpringElement *>(el.get());
+            ofs << " " << (sp->Nodes[0] - node_base);
+            for (int i = 0; i < 6; i++)
+                ofs << " " << sp->K[i];
         }
         else // 平面・板要素
         {
@@ -377,6 +383,17 @@ void FEModel::Load(const std::string &path)
                     Elements.push_back(cb);
                 }
             }
+        }
+        else if (t == ElementType::SupportSpring)
+        {
+            int ni = ReadToken<int>(ifs, "SupportSpring node");
+            if (ni < 0 || ni >= node_count)
+                throw std::runtime_error("ModelIO: SupportSpring の節点が範囲外です: " + std::to_string(ni));
+            double k[6];
+            for (int i = 0; i < 6; i++)
+                k[i] = ReadToken<double>(ifs, "SupportSpring k");
+            Elements.push_back(std::make_shared<SupportSpringElement>(
+                id, &Nodes[ni], k[0], k[1], k[2], k[3], k[4], k[5]));
         }
         else // 平面・板要素
         {

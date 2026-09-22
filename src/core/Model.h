@@ -95,22 +95,28 @@ public:
     // 各解析Operator(FELinearStaticOp, FEVibrationAnalysis等)が実装する。
 
 	// 剛性マトリクスの組み立て(上三角格納)
-	// ばね支持(ConstraintType::Spring)の自由度は対角にばね定数を加算する。
+	// 支点ばね要素(SupportSpringElement)も要素の1つとして組み込まれる。
 	// states: 状態依存要素の状態(nullptrなら全要素を規定剛性で組立)
     Eigen::SparseMatrix<double> AssembleStiffnessMatrix(const ElementStates *states = nullptr);
 
-    // ばね支持(ConstraintType::Spring)の自由度が1つでもあるか。
+    // 支点ばね要素が1つでもあるか。
     // 反力計算でばね分の処理が必要かどうかの判定に使う。
     bool HasSpringSupport() const;
 
-    // ばね支持の反力 R = -(k・u + c・v) を全体反力ベクトルへ書き込む(該当自由度のみ上書き)。
-    // ばね支持の自由度は拘束されず解く側に入るため、固定自由度の反力
+    // 支点ばね要素の反力 R = -(k・u + c・v) を全体反力ベクトルへ加算する。
+    // ばねの自由度は拘束されず解く側に入るため、固定自由度の反力
     // (R = K_ab^T・d - f_b)には現れない。解析後にこの関数で補う。
+    // 加算なので、固定とばねが同じ自由度にあっても固定反力は失われない。
     //   v_full     : 速度ベクトル(減衰力を含める場合。不要なら nullptr)
     //   damp_coef  : 減衰マトリクスの剛性比例成分の係数 a (C = a・K + ...)。c = a・k となる
-    void ApplySpringReactions(const Eigen::VectorXd &u_full, Eigen::VectorXd &r_full,
-                              const Eigen::VectorXd *v_full = nullptr,
-                              double damp_coef = 0.0) const;
+    void AddSpringReactions(const Eigen::VectorXd &u_full, Eigen::VectorXd &r_full,
+                            const Eigen::VectorXd *v_full = nullptr,
+                            double damp_coef = 0.0) const;
+
+    // 全体反力ベクトルから、支点の節点ごとの反力を取り出す。
+    // 対象はユーザーが固定した自由度と、支点ばね要素が効く自由度。剛性が付かないために
+    // 自動拘束された回転自由度は支点ではないため含めない。出力は節点インデックスの昇順。
+    std::vector<NodeLoad> CollectReactions(const Eigen::VectorXd &r_full) const;
 
     // 荷重リストから全体節点荷重ベクトルを組み立てる(InertialForceは要素質量から展開)
     Eigen::VectorXd AssembleLoadVector(const std::vector<std::shared_ptr<LoadBase>> &loads);
@@ -168,6 +174,7 @@ public:
     void add_element(TriPlateElement data);
     void add_element(QuadPlaneElement data);
     void add_element(QuadPlateElement data);
+    void add_element(SupportSpringElement data);
 
     // index based element addition
     void add_truss_element(int id, int n1_id, int n2_id, int sec_id, int mat_id);

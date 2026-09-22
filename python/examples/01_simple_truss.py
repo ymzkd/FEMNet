@@ -25,7 +25,7 @@ sys.path.insert(0, '..')
 
 from femnet import *
 
-# 支持条件の指定(ConstraintType: Free / Fix / Spring)
+# 支持条件の指定(ConstraintType: Free / Fix。ばね支持は SupportSpringElement を要素として追加)
 FREE = ConstraintType_Free
 FIX = ConstraintType_Fix
 

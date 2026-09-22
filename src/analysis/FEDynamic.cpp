@@ -309,7 +309,7 @@ bool DynamicAnalysis::InitializeInternal(bool rebuild_system)
                 "nor stiffness (" + DescribeReducedDOF(*reduced, (int)i, *model) +
                 "). The model is unstable: the DOF is not supported and has no mass, and no "
                 "element (or spring) gives it stiffness. Typical causes are a node not attached "
-                "to any element, or a DOF set to Spring with a zero spring constant.");
+                "to any element, or a support spring with a zero spring constant.");
         }
 
         solver = createSolver();
@@ -358,27 +358,16 @@ void DynamicAnalysis::UpdateReactForces(const Eigen::VectorXd &f_fix)
         if (damp_coef != 0.0)
         {
             Eigen::VectorXd v_full = reduced->ExpandVector(current_vel, full_size);
-            model->ApplySpringReactions(u_full, rf_full, &v_full, damp_coef);
+            model->AddSpringReactions(u_full, rf_full, &v_full, damp_coef);
         }
         else
         {
-            model->ApplySpringReactions(u_full, rf_full);
+            model->AddSpringReactions(u_full, rf_full);
         }
     }
 
-    // 出力するのはユーザーが支点指定した自由度のみ(自動拘束された回転は支点ではない)
-    current_react_force.clear();
-    for (size_t i = 0; i < model->Nodes.size(); i++)
-    {
-        const Support &sup = model->Nodes[i].Fix;
-        if (!sup.IsSupported())
-            continue;
-        int pos = i * 6;
-        double v[6];
-        for (int k = 0; k < 6; k++)
-            v[k] = (sup.BoundaryTypes[k] != ConstraintType::Free) ? rf_full[pos + k] : 0.0;
-        current_react_force.push_back(NodeLoad(i, v[0], v[1], v[2], v[3], v[4], v[5]));
-    }
+    // 出力するのはユーザーが支点指定した自由度(固定・ばね)のみ(自動拘束された回転は支点ではない)
+    current_react_force = model->CollectReactions(rf_full);
 }
 
 void DynamicAnalysis::ComputeStep()

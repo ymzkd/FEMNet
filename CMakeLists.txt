@@ -199,6 +199,7 @@ set(FEMNET_SOURCES
     src/Elements/QuadPlaneElement.cpp
     src/Elements/TriPlateElement.cpp
     src/Elements/QuadPlateElement.cpp
+    src/Elements/SupportSpringElement.cpp
     src/analysis/SeismicModule.cpp
     src/analysis/FEAnalysis.cpp
     src/analysis/ReducedSystem.cpp

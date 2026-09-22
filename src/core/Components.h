@@ -336,28 +336,26 @@ public:
 enum class ConstraintType
 {
     Free = 0,
-    Fix = 1,
-    Spring = 2
+    Fix = 1
 };
 
-// 節点の支持条件。自由度ごとに Free / Fix / Spring を指定する。
+// 節点の支持条件。自由度ごとに Free / Fix を指定する。
 //
 // 設計方針:
 //   - 保持するのは「ユーザーが指定した支持条件」のみ。回転剛性を持つ要素が
 //     取り付かない自由度の自動拘束は、解析側(ReducedSystem)が剛性行列から判定する。
-//   - BoundaryTypes が正であり、Springs[i] は BoundaryTypes[i] == Spring の
-//     自由度でのみ参照する(Free/Fix の自由度の値は無視する)。
-//   - 値の妥当性(負のばね定数など)はここでは検査しない。入力側の責務とする。
+//   - ばね支持は支持条件ではなく、1節点の要素(SupportSpringElement)として
+//     要素リストに追加する。固定は自由度を系から除き、ばねは剛性を足すという
+//     役割の違いによる。
 class Support {
 public:
     std::array<ConstraintType, 6> BoundaryTypes{}; // 既定は全 Free
-    std::array<double, 6> Springs{};               // 各自由度のばね定数(全体座標系)
 
     Support() = default;
     Support(ConstraintType ux, ConstraintType uy, ConstraintType uz,
             ConstraintType rx, ConstraintType ry, ConstraintType rz);
 
-    // 固定されている自由度(ばねは剛性を持つ自由自由度なので false)
+    // 固定されている自由度
     std::array<bool, 6> isdof_fixed() const {
         std::array<bool, 6> fixed{};
         for (int i = 0; i < 6; i++)
@@ -372,19 +370,6 @@ public:
     bool IsAnyFix() const {
         for (const ConstraintType t : BoundaryTypes)
             if (t == ConstraintType::Fix) return true;
-        return false;
-    }
-
-    bool HasSpring() const {
-        for (const ConstraintType t : BoundaryTypes)
-            if (t == ConstraintType::Spring) return true;
-        return false;
-    }
-
-    // 支点として何らかの指定がある(反力の出力対象となる)か
-    bool IsSupported() const {
-        for (const ConstraintType t : BoundaryTypes)
-            if (t != ConstraintType::Free) return true;
         return false;
     }
 };

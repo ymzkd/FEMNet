@@ -118,6 +118,12 @@ void FEModel::add_element(QuadPlateElement data)
 
 }
 
+void FEModel::add_element(SupportSpringElement data)
+{
+    std::shared_ptr<SupportSpringElement> ptr = std::make_shared<SupportSpringElement>(data);
+    Elements.push_back(ptr);
+}
+
 void FEModel::add_truss_element(int id, int n1_id, int n2_id, int sec_id, int mat_id)
 {
     Node* n1 = &Nodes[n1_id];
@@ -247,22 +253,6 @@ Eigen::SparseMatrix<double> FEModel::AssembleStiffnessMatrix(const ElementStates
         eh->GetStiffnessTriplets(tripletList);
     }
 
-    // ばね支持: 指定自由度の対角にばね定数を加算する。
-    // 地面側の自由度は変位0で消去済みのため、全体自由度は増えない。
-    for (size_t i = 0; i < Nodes.size(); i++)
-    {
-        const Support &sup = Nodes[i].Fix;
-        if (!sup.HasSpring())
-            continue;
-        for (int k = 0; k < 6; k++)
-        {
-            if (sup.BoundaryTypes[k] != ConstraintType::Spring)
-                continue;
-            int idx = (int)i * 6 + k;
-            tripletList.emplace_back(idx, idx, sup.Springs[k]);
-        }
-    }
-
     // Tripletから疎行列を一括構築
     Eigen::SparseMatrix<double> mat(mat_size, mat_size);
     mat.setFromTriplets(tripletList.begin(), tripletList.end());
@@ -272,37 +262,53 @@ Eigen::SparseMatrix<double> FEModel::AssembleStiffnessMatrix(const ElementStates
 
 bool FEModel::HasSpringSupport() const
 {
-    for (const Node &n : Nodes)
-        if (n.Fix.HasSpring())
+    for (const std::shared_ptr<ElementBase> &el : Elements)
+        if (dynamic_cast<const SupportSpringElement *>(el.get()))
             return true;
     return false;
 }
 
-void FEModel::ApplySpringReactions(const Eigen::VectorXd &u_full, Eigen::VectorXd &r_full,
-                                   const Eigen::VectorXd *v_full, double damp_coef) const
+void FEModel::AddSpringReactions(const Eigen::VectorXd &u_full, Eigen::VectorXd &r_full,
+                                 const Eigen::VectorXd *v_full, double damp_coef) const
 {
-    // つり合い (M・a + C・v + K・u)_i = f_i より、ばねが構造へ及ぼす力は
-    //   R = -(k・u + c・v),  c = damp_coef・k (剛性比例成分による付随減衰)
-    // 静的解析など減衰を考慮しない場合は v_full = nullptr で弾性分のみとなる。
-    const bool with_damping = (v_full != nullptr && damp_coef != 0.0);
+    for (const std::shared_ptr<ElementBase> &el : Elements)
+        if (auto *spring = dynamic_cast<const SupportSpringElement *>(el.get()))
+            spring->AddReaction(u_full, r_full, v_full, damp_coef);
+}
+
+std::vector<NodeLoad> FEModel::CollectReactions(const Eigen::VectorXd &r_full) const
+{
+    // 節点ごとに反力を報告する自由度: 固定した自由度 + ばねが効く自由度
+    std::vector<std::array<bool, 6>> report(Nodes.size());
+    for (size_t i = 0; i < Nodes.size(); i++)
+        report[i] = Nodes[i].Fix.isdof_fixed();
+    for (const std::shared_ptr<ElementBase> &el : Elements)
+    {
+        auto *spring = dynamic_cast<const SupportSpringElement *>(el.get());
+        if (!spring)
+            continue;
+        const int nid = spring->Nodes[0]->id;
+        if (nid < 0 || nid >= (int)Nodes.size())
+            continue;
+        const std::array<bool, 6> active = spring->ActiveDOFs();
+        std::array<bool, 6> &rep = report[nid];
+        for (int k = 0; k < 6; k++)
+            rep[k] = rep[k] || active[k];
+    }
+
+    std::vector<NodeLoad> reactions;
     for (size_t i = 0; i < Nodes.size(); i++)
     {
-        const Support &sup = Nodes[i].Fix;
-        if (!sup.HasSpring())
+        const std::array<bool, 6> &rep = report[i];
+        if (std::none_of(rep.begin(), rep.end(), [](bool b) { return b; }))
             continue;
+        int pos = (int)i * 6;
+        double v[6];
         for (int k = 0; k < 6; k++)
-        {
-            if (sup.BoundaryTypes[k] != ConstraintType::Spring)
-                continue;
-            int idx = (int)i * 6 + k;
-            if (idx >= u_full.size() || idx >= r_full.size())
-                continue;
-            double r = -sup.Springs[k] * u_full(idx);
-            if (with_damping && idx < v_full->size())
-                r -= damp_coef * sup.Springs[k] * (*v_full)(idx);
-            r_full(idx) = r;
-        }
+            v[k] = (rep[k] && pos + k < r_full.size()) ? r_full[pos + k] : 0.0;
+        reactions.push_back(NodeLoad((int)i, v[0], v[1], v[2], v[3], v[4], v[5]));
     }
+    return reactions;
 }
 
 Eigen::SparseMatrix<double> FEModel::AssembleMassMatrix()

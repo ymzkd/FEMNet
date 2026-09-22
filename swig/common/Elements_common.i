@@ -12,6 +12,7 @@
 %shared_ptr(QuadPlateElement);
 %shared_ptr(TriPlaneElement);
 %shared_ptr(QuadPlaneElement);
+%shared_ptr(SupportSpringElement);
 
 %{
     #include "Elements/Elements.h"
@@ -29,6 +30,7 @@
 %ignore QuadPlaneElement::Nodes;
 %ignore TriPlateElement::Nodes;
 %ignore QuadPlateElement::Nodes;
+%ignore SupportSpringElement::Nodes;
 
 // AssembleMatrix() は Eigen 型を直接やり取りする内部API。
 // 仮想関数ではないため基底クラスの %ignore が波及せず、クラスごとの指定が必要。
@@ -101,6 +103,18 @@
 %ignore QuadPlateElement::GetStiffnessTriplets;
 %ignore QuadPlateElement::GetGeometricStiffnessTriplets;
 
+%ignore SupportSpringElement::StiffnessMatrix();
+%ignore SupportSpringElement::AssembleStiffMatrix(Eigen::SparseMatrix<double>& mat);
+%ignore SupportSpringElement::AssembleGeometricStiffMatrix;
+%ignore SupportSpringElement::AssembleMassMatrix(Eigen::SparseMatrix<double>& mat);
+%ignore SupportSpringElement::NodeLumpedMass();
+%ignore SupportSpringElement::NodeConsistentMass();
+%ignore SupportSpringElement::InertialForceToNodeLoadData;
+%ignore SupportSpringElement::GetStiffnessTriplets;
+%ignore SupportSpringElement::GetGeometricStiffnessTriplets;
+// 反力の加算は Eigen 型を直接やり取りする内部API(解析Operatorが使う)
+%ignore SupportSpringElement::AddReaction;
+
 %ignore ElementBase::StiffnessMatrix();
 %ignore ElementBase::AssembleStiffMatrix(Eigen::SparseMatrix<double>& mat);
 %ignore ElementBase::AssembleGeometricStiffMatrix(Eigen::SparseMatrix<double>& mat, const std::vector<Displacement>& disp);
@@ -147,6 +161,7 @@
 %include "Elements/QuadPlaneElement.h"
 %include "Elements/TriPlateElement.h"
 %include "Elements/QuadPlateElement.h"
+%include "Elements/SupportSpringElement.h"
 
 // STL templates for Elements
 namespace std {
@@ -187,5 +202,11 @@ namespace std {
 %extend PlaneElementBase {
     Node* getNodes(int index) {
         return $self->NodesList()[index];
+    }
+}
+
+%extend SupportSpringElement {
+    Node* getNodes(int index) {
+        return $self->Nodes[index];
     }
 }

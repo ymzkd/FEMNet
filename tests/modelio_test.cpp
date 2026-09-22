@@ -1,6 +1,6 @@
 // FEModel テキスト形式 Save/Load の往復テスト
 //
-// 全要素種別(Truss/Beam/ComplexBeam/TriMembrane/QuadMembrane/DKT/DKQ) +
+// 全要素種別(Truss/Beam/ComplexBeam/TriMembrane/QuadMembrane/DKT/DKQ/SupportSpring) +
 // 支点条件 + 剛体連結 + 非既定の重力加速度を含むモデルを構築し、
 //   save -> load -> save の2ファイルがバイト一致すること、および
 //   主要フィールドが一致すること
@@ -51,13 +51,9 @@ FEModel BuildSampleModel()
     for (int i = 0; i < 12; i++)
         m.Nodes.push_back(Node(i, coords[i][0], coords[i][1], coords[i][2]));
 
-    // 支点: node0 完全固定
+    // 支点: node0 完全固定、node1 は Dx のみ固定(ばねは要素として後で追加)
     m.Nodes[0].Fix.FixAll();
-    // node1 にばね支持のパターンを設定(往復確認用)
-    m.Nodes[1].Fix.BoundaryTypes[2] = ConstraintType::Spring;
-    m.Nodes[1].Fix.Springs[2] = 1234.5;
-    m.Nodes[1].Fix.BoundaryTypes[4] = ConstraintType::Spring;
-    m.Nodes[1].Fix.Springs[4] = 6.78e5;
+    m.Nodes[1].Fix.BoundaryTypes[0] = ConstraintType::Fix;
 
     // --- Materials ---
     Material mat0(205000.0, 0.3, 7.85e-9);
@@ -99,6 +95,9 @@ FEModel BuildSampleModel()
         5, &m.Nodes[8], &m.Nodes[9], &m.Nodes[10], th, m.Materials[0], 0.3));
     m.Elements.push_back(std::make_shared<QuadPlateElement>(
         6, &m.Nodes[8], &m.Nodes[9], &m.Nodes[10], &m.Nodes[11], th, m.Materials[1], 0.4));
+    // 支点ばね: node1 の Dz と Ry(往復確認用)
+    m.Elements.push_back(std::make_shared<SupportSpringElement>(
+        7, &m.Nodes[1], 0.0, 0.0, 1234.5, 0.0, 6.78e5, 0.0));
 
     // --- RigidLink ---
     RigidLink link(true, false, true, false, true, false);
@@ -136,7 +135,7 @@ int main()
     Check(m2.Nodes.size() == 12, "Node 数 = 12");
     Check(m2.Materials.size() == 2, "Material 数 = 2");
     Check(m2.Sections.size() == 2, "Section 数 = 2");
-    Check(m2.Elements.size() == 7, "Element 数 = 7");
+    Check(m2.Elements.size() == 8, "Element 数 = 8");
     Check(std::abs(m2.GraityAccel - 9800.0) < 1e-12, "重力加速度の往復");
 
     // 支点
@@ -144,12 +143,9 @@ int main()
     for (int i = 0; i < 6; i++)
         node0_fixed = node0_fixed && (m2.Nodes[0].Fix.BoundaryTypes[i] == ConstraintType::Fix);
     Check(node0_fixed, "node0 完全固定の往復");
-    Check(m2.Nodes[1].Fix.BoundaryTypes[2] == ConstraintType::Spring &&
-              m2.Nodes[1].Fix.BoundaryTypes[4] == ConstraintType::Spring &&
-              m2.Nodes[1].Fix.BoundaryTypes[0] == ConstraintType::Free &&
-              std::abs(m2.Nodes[1].Fix.Springs[2] - 1234.5) < 1e-9 &&
-              std::abs(m2.Nodes[1].Fix.Springs[4] - 6.78e5) < 1e-9,
-          "node1 ばね支持の往復");
+    Check(m2.Nodes[1].Fix.BoundaryTypes[0] == ConstraintType::Fix &&
+              m2.Nodes[1].Fix.BoundaryTypes[2] == ConstraintType::Free,
+          "node1 一部固定の往復");
 
     // 座標
     Check(std::abs(m2.Nodes[10].Location.x - 1000.0) < 1e-9 &&
@@ -165,6 +161,18 @@ int main()
     Check(m2.Elements[4]->Type() == ElementType::QuadMembrane, "elem4 = QuadMembrane");
     Check(m2.Elements[5]->Type() == ElementType::DKT, "elem5 = DKT");
     Check(m2.Elements[6]->Type() == ElementType::DKQ, "elem6 = DKQ");
+    Check(m2.Elements[7]->Type() == ElementType::SupportSpring, "elem7 = SupportSpring");
+
+    // 支点ばね: 接続とばね定数
+    if (auto *sp = dynamic_cast<SupportSpringElement *>(m2.Elements[7].get()))
+    {
+        Check(sp->Nodes[0]->id == 1, "SupportSpring 接続の往復");
+        Check(sp->K[0] == 0.0 && std::abs(sp->K[2] - 1234.5) < 1e-9 &&
+                  std::abs(sp->K[4] - 6.78e5) < 1e-9,
+              "SupportSpring ばね定数の往復");
+    }
+    else
+        Check(false, "elem7 を SupportSpringElement にキャスト");
 
     // Beam beta / 接続 / 材料・断面 id
     if (auto *beam = dynamic_cast<BeamElement *>(m2.Elements[1].get()))

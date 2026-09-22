@@ -513,25 +513,20 @@ std::vector<NodeLoad> ResponseSpectrumMethod::calculate_react_forces(const std::
     // AssembleStiffnessMatrix()は上三角格納
     Eigen::VectorXd r = model->AssembleStiffnessMatrix().selfadjointView<Eigen::Upper>() * u;
 
-    // ばね支持の自由度では K・u が「構造の内力 + ばね反力」になり反力として使えない。
-    // ばね反力 R = -k・u で上書きする。
-    model->ApplySpringReactions(u, r);
-
-    std::vector<NodeLoad> reacts;
+    // 固定自由度では K・u が反力になる。それ以外の自由度(ばねの自由度を含む)の K・u は
+    // 「構造の内力 + ばね反力」で反力として使えないため0にし、ばね反力 R = -k・u を加算する。
     for (size_t i = 0; i < N; i++)
     {
-        const Support &sup = model->Nodes[i].Fix;
-        if (!sup.IsSupported())
-            continue;
-
-        // 静的解析(FELinearStaticOp)と同様、ユーザーが支点指定した自由度の成分のみ
-        // 反力として報告する(剛性が付かないために自動拘束された回転は支点ではない)
-        double v[6];
+        const std::array<bool, 6> fixed = model->Nodes[i].Fix.isdof_fixed();
         for (int k = 0; k < 6; k++)
-            v[k] = (sup.BoundaryTypes[k] != ConstraintType::Free) ? r[i * 6 + k] : 0.0;
-        reacts.push_back(NodeLoad(i, v[0], v[1], v[2], v[3], v[4], v[5]));
+            if (!fixed[k])
+                r[i * 6 + k] = 0.0;
     }
-    return reacts;
+    model->AddSpringReactions(u, r);
+
+    // 静的解析(FELinearStaticOp)と同様、ユーザーが支点指定した自由度(固定・ばね)の成分のみ
+    // 反力として報告する(剛性が付かないために自動拘束された回転は支点ではない)
+    return model->CollectReactions(r);
 }
 
 ResponseSpectrumMethod::ResponseSpectrumMethod(std::shared_ptr<FEModel> model,

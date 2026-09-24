@@ -567,8 +567,8 @@ Eigen::MatrixXd ComplexBeamElement::stiffness_matrix_local()
 
     Eigen::Matrix4d Kby = stiffness_matrix_beam_rot_y(Mat.Young, Sec->Iy, ly_);
     Eigen::Matrix4d Tby = Eigen::Matrix4d::Identity();
-    Tby(0, 1) = -lzi;
-    Tby(2, 3) = lzj;
+    Tby(0, 1) = -lyi;
+    Tby(2, 3) = lyj;
 
     Eigen::Matrix2d Kx = stiffness_matrix_truss(Mat.Young, Sec->A, l);
     Eigen::Matrix2d Kt = stiffness_matrix_beam_rot_x(Mat.G(), Sec->K, l);
@@ -607,7 +607,7 @@ Eigen::MatrixXd ComplexBeamElement::stiffness_matrix_local()
     K(2, 2) = Kby(0, 0);
     K(2, 4) = Kby(0, 1);
     K(2, 8) = Kby(0, 2);
-    K(1, 10) = Kby(0, 3);
+    K(2, 10) = Kby(0, 3);
     K(4, 2) = Kby(1, 0);
     K(4, 4) = Kby(1, 1);
     K(4, 8) = Kby(1, 2);
@@ -769,25 +769,25 @@ Displacement ComplexBeamElement::DisplaceAt(Displacement d0, Displacement d1, do
 
 double ComplexBeamElement::get_ksyi()
 {
-	double lz = length() - -lzi - lzj;
+	double lz = length() - lzi - lzj;
 	return Lambda_syi / (1.0 - Lambda_syi) * Sec->Iz * Mat.Young * 12.0 / (lz * lz * lz);
 }
 
 double ComplexBeamElement::get_kbzi()
 {
-	double lz = length() - -lzi - lzj;
+	double lz = length() - lzi - lzj;
 	return Lambda_bzi / (1.0 - Lambda_bzi) * Sec->Iz * Mat.Young * 4.0 / lz;
 }
 
 double ComplexBeamElement::get_ksyj()
 {
-	double lz = length() - -lzi - lzj;
+	double lz = length() - lzi - lzj;
 	return Lambda_syj / (1.0 - Lambda_syj) * Sec->Iz * Mat.Young * 12.0 / (lz * lz * lz);
 }
 
 double ComplexBeamElement::get_kbzj()
 {
-	double lz = length() - -lzi - lzj;
+	double lz = length() - lzi - lzj;
 	return Lambda_bzj / (1.0 - Lambda_bzj) * Sec->Iz * Mat.Young * 4.0 / lz;
 }
 
@@ -796,25 +796,25 @@ double ComplexBeamElement::get_kbzj()
 
 double ComplexBeamElement::get_kszi()
 {
-	double ly = length() - -lyi - lyj;
+	double ly = length() - lyi - lyj;
 	return Lambda_szi / (1.0 - Lambda_szi) * Sec->Iy * Mat.Young * 12.0 / (ly * ly * ly);
 }
 
 double ComplexBeamElement::get_kbyi()
 {
-	double ly = length() - -lyi - lyj;
+	double ly = length() - lyi - lyj;
 	return Lambda_byi / (1.0 - Lambda_byi) * Sec->Iy * Mat.Young * 4.0 / ly;
 }
 
 double ComplexBeamElement::get_kszj()
 {
-	double ly = length() - -lyi - lyj;
+	double ly = length() - lyi - lyj;
 	return Lambda_szj / (1.0 - Lambda_szj) * Sec->Iy * Mat.Young * 12.0 / (ly * ly * ly);
 }
 
 double ComplexBeamElement::get_kbyj()
 {
-	double ly = length() - -lyi - lyj;
+	double ly = length() - lyi - lyj;
 	return Lambda_byj / (1.0 - Lambda_byj) * Sec->Iy * Mat.Young * 4.0 / ly;
 }
 
@@ -822,49 +822,49 @@ double ComplexBeamElement::get_kbyj()
 
 void ComplexBeamElement::set_ksyi(double ksyi)
 {
-	double lz = length() - -lzi - lzj;
+	double lz = length() - lzi - lzj;
 	Lambda_syi = ksyi / (Sec->Iz * Mat.Young * 12.0 / (lz * lz * lz) + ksyi);
 }
 
 void ComplexBeamElement::set_kbzi(double kbzi)
 {
-	double lz = length() - -lzi - lzj;
+	double lz = length() - lzi - lzj;
 	Lambda_bzi = kbzi / (Sec->Iz * Mat.Young * 4.0 / lz + kbzi);
 }
 
 void ComplexBeamElement::set_ksyj(double ksyj)
 {
-	double lz = length() - -lzi - lzj;
+	double lz = length() - lzi - lzj;
 	Lambda_syj = ksyj / (Sec->Iz * Mat.Young * 12.0 / (lz * lz * lz) + ksyj);
 }
 
 void ComplexBeamElement::set_kbzj(double kbzj)
 {
-	double lz = length() - -lzi - lzj;
+	double lz = length() - lzi - lzj;
 	Lambda_bzj = kbzj / (Sec->Iz * Mat.Young * 4.0 / lz + kbzj);
 }
 
 
 void ComplexBeamElement::set_kszi(double kszi)
 {
-	double ly = length() - -lyi - lyj;
+	double ly = length() - lyi - lyj;
 	Lambda_szi = kszi / (Sec->Iy * Mat.Young * 12.0 / (ly * ly * ly) + kszi);
 }
 
 void ComplexBeamElement::set_kbyi(double kbyi)
 {
-	double ly = length() - -lyi - lyj;
+	double ly = length() - lyi - lyj;
 	Lambda_byi = kbyi / (Sec->Iy * Mat.Young * 4.0 / ly + kbyi);
 }
 
 void ComplexBeamElement::set_kszj(double kszj)
 {
-	double ly = length() - -lyi - lyj;
+	double ly = length() - lyi - lyj;
 	Lambda_szj = kszj / (Sec->Iy * Mat.Young * 12.0 / (ly * ly * ly) + kszj);
 }
 
 void ComplexBeamElement::set_kbyj(double kbyj)
 {
-	double ly = length() - -lyi - lyj;
+	double ly = length() - lyi - lyj;
 	Lambda_byj = kbyj / (Sec->Iy * Mat.Young * 4.0 / ly + kbyj);
 }

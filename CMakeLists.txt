@@ -265,7 +265,6 @@ if(BUILD_PYTHON)
 
     set_property(SOURCE swig/python/fem_python.i PROPERTY CPLUSPLUS ON)
     set_source_files_properties(swig/python/fem_python.i PROPERTIES
-        SWIG_FLAGS "-py3"
         INCLUDE_DIRECTORIES "${CMAKE_CURRENT_SOURCE_DIR}/swig/common;${FEMNET_INCLUDE_DIRS}")
 
     swig_add_library(femnet

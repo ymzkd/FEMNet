@@ -109,8 +109,6 @@
 %ignore ElementBase::NodeLumpedMass;
 %ignore ElementBase::NodeConsistentMass;
 %ignore ElementBase::StiffnessMatrix;
-%ignore ElementBase::AssembleStiffMatrix;
-%ignore ElementBase::AssembleGeometricStiffMatrix;
 %ignore ElementBase::AssembleMassMatrix;
 
 // ===================================================================

@@ -1130,68 +1130,6 @@ Eigen::MatrixXd QuadPlateElement::GeometricStiffnessMatrix(const std::vector<Dis
     return trMat.transpose() * mat * trMat;
 }
 
-void QuadPlateElement::AssembleMatrix(Eigen::SparseMatrix<double> &mat, Eigen::MatrixXd K)
-{
-    int indices[total_dof];
-    for (size_t i = 0; i < node_num; i++)
-        for (size_t j = 0; j < node_dof; j++)
-            indices[node_dof * i + j] = Nodes[i]->id * 6 + j;
-
-    for (size_t i = 0; i < total_dof; i++)
-    {
-        for (size_t j = 0; j < i + 1; j++)
-        {
-            int ci, rj;
-            if (indices[j] <= indices[i])
-            {
-                ci = indices[i];
-                rj = indices[j];
-            }
-            else
-            {
-                ci = indices[j];
-                rj = indices[i];
-            }
-            mat.coeffRef(rj, ci) += K(i, j);
-        }
-    }
-}
-
-// 非推奨: GetStiffnessTriplets()を使用してください（coeffRef方式は非効率）
-void QuadPlateElement::AssembleStiffMatrix(Eigen::SparseMatrix<double> &mat)
-{
-    AssembleMatrix(mat, StiffnessMatrix());
-    // int indices[total_dof];
-    // for (size_t i = 0; i < node_num; i++)
-    // 	for (size_t j = 0; j < node_dof; j++)
-    // 		indices[node_dof * i + j] = Nodes[i]->id * 6 + j;
-
-    // Eigen::MatrixXd smat = StiffnessMatrix();
-    // for (size_t i = 0; i < total_dof; i++)
-    // {
-    // 	for (size_t j = 0; j < i + 1; j++)
-    // 	{
-    // 		int ci, rj;
-    // 		if (indices[j] <= indices[i]) {
-    // 			ci = indices[i];
-    // 			rj = indices[j];
-    // 		}
-    // 		else {
-    // 			ci = indices[j];
-    // 			rj = indices[i];
-    // 		}
-    // 		mat.coeffRef(rj, ci) += smat(i, j);
-    // 	}
-    // }
-}
-
-// 非推奨: GetGeometricStiffnessTriplets()を使用してください（coeffRef方式は非効率）
-void QuadPlateElement::AssembleGeometricStiffMatrix(
-    Eigen::SparseMatrix<double> &mat, const std::vector<Displacement> &disp)
-{
-    AssembleMatrix(mat, GeometricStiffnessMatrix(disp));
-}
-
 void QuadPlateElement::GetStiffnessTriplets(std::vector<Eigen::Triplet<double>>& triplets)
 {
     Eigen::MatrixXd K = StiffnessMatrix();

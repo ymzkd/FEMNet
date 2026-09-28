@@ -32,15 +32,6 @@
 %ignore QuadPlateElement::Nodes;
 %ignore SupportSpringElement::Nodes;
 
-// AssembleMatrix() は Eigen 型を直接やり取りする内部API。
-// 仮想関数ではないため基底クラスの %ignore が波及せず、クラスごとの指定が必要。
-%ignore BeamElement::AssembleMatrix;
-%ignore TrussElement::AssembleMatrix;
-%ignore TriPlaneElement::AssembleMatrix;
-%ignore QuadPlaneElement::AssembleMatrix;
-%ignore TriPlateElement::AssembleMatrix;
-%ignore QuadPlateElement::AssembleMatrix;
-
 // 幾何剛性行列(Eigen::MatrixXd)を返すため公開しない。
 // 座屈解析は Operator側(FEBucklingAnalysis)から利用する。
 %ignore TriPlateElement::GeometricStiffnessMatrix;
@@ -48,16 +39,12 @@
 
 // Ignore Element methods that use Eigen matrices
 %ignore BeamElement::StiffnessMatrix();
-%ignore BeamElement::AssembleStiffMatrix(Eigen::SparseMatrix<double>& mat);
-%ignore BeamElement::AssembleGeometricStiffMatrix;
 %ignore BeamElement::AssembleMassMatrix(Eigen::SparseMatrix<double>& mat);
 %ignore BeamElement::NodeLumpedMass();
 %ignore BeamElement::GetStiffnessTriplets;
 %ignore BeamElement::GetGeometricStiffnessTriplets;
 
 %ignore TrussElement::StiffnessMatrix();
-%ignore TrussElement::AssembleStiffMatrix(Eigen::SparseMatrix<double>& mat);
-%ignore TrussElement::AssembleGeometricStiffMatrix;
 %ignore TrussElement::AssembleMassMatrix(Eigen::SparseMatrix<double>& mat);
 %ignore TrussElement::NodeLumpedMass();
 %ignore TrussElement::GetStiffnessTriplets;
@@ -72,40 +59,30 @@
 %ignore TensionTrussElement::NextState;
 
 %ignore TriPlaneElement::StiffnessMatrix();
-%ignore TriPlaneElement::AssembleStiffMatrix(Eigen::SparseMatrix<double>& mat);
-%ignore TriPlaneElement::AssembleGeometricStiffMatrix;
 %ignore TriPlaneElement::AssembleMassMatrix(Eigen::SparseMatrix<double>& mat);
 %ignore TriPlaneElement::NodeLumpedMass();
 %ignore TriPlaneElement::GetStiffnessTriplets;
 %ignore TriPlaneElement::GetGeometricStiffnessTriplets;
 
 %ignore TriPlateElement::StiffnessMatrix();
-%ignore TriPlateElement::AssembleStiffMatrix(Eigen::SparseMatrix<double>& mat);
-%ignore TriPlateElement::AssembleGeometricStiffMatrix;
 %ignore TriPlateElement::AssembleMassMatrix(Eigen::SparseMatrix<double>& mat);
 %ignore TriPlateElement::NodeLumpedMass();
 %ignore TriPlateElement::GetStiffnessTriplets;
 %ignore TriPlateElement::GetGeometricStiffnessTriplets;
 
 %ignore QuadPlaneElement::StiffnessMatrix();
-%ignore QuadPlaneElement::AssembleStiffMatrix(Eigen::SparseMatrix<double>& mat);
-%ignore QuadPlaneElement::AssembleGeometricStiffMatrix;
 %ignore QuadPlaneElement::AssembleMassMatrix(Eigen::SparseMatrix<double>& mat);
 %ignore QuadPlaneElement::NodeLumpedMass();
 %ignore QuadPlaneElement::GetStiffnessTriplets;
 %ignore QuadPlaneElement::GetGeometricStiffnessTriplets;
 
 %ignore QuadPlateElement::StiffnessMatrix();
-%ignore QuadPlateElement::AssembleStiffMatrix(Eigen::SparseMatrix<double>& mat);
-%ignore QuadPlateElement::AssembleGeometricStiffMatrix;
 %ignore QuadPlateElement::AssembleMassMatrix(Eigen::SparseMatrix<double>& mat);
 %ignore QuadPlateElement::NodeLumpedMass();
 %ignore QuadPlateElement::GetStiffnessTriplets;
 %ignore QuadPlateElement::GetGeometricStiffnessTriplets;
 
 %ignore SupportSpringElement::StiffnessMatrix();
-%ignore SupportSpringElement::AssembleStiffMatrix(Eigen::SparseMatrix<double>& mat);
-%ignore SupportSpringElement::AssembleGeometricStiffMatrix;
 %ignore SupportSpringElement::AssembleMassMatrix(Eigen::SparseMatrix<double>& mat);
 %ignore SupportSpringElement::NodeLumpedMass();
 %ignore SupportSpringElement::NodeConsistentMass();
@@ -116,16 +93,12 @@
 %ignore SupportSpringElement::AddReaction;
 
 %ignore ElementBase::StiffnessMatrix();
-%ignore ElementBase::AssembleStiffMatrix(Eigen::SparseMatrix<double>& mat);
-%ignore ElementBase::AssembleGeometricStiffMatrix(Eigen::SparseMatrix<double>& mat, const std::vector<Displacement>& disp);
 %ignore ElementBase::AssembleMassMatrix(Eigen::SparseMatrix<double>& mat);
 %ignore ElementBase::NodeLumpedMass();
 %ignore ElementBase::GetStiffnessTriplets;
 %ignore ElementBase::GetGeometricStiffnessTriplets;
 
 %ignore BarElementBase::StiffnessMatrix();
-%ignore BarElementBase::AssembleStiffMatrix(Eigen::SparseMatrix<double>& mat);
-%ignore BarElementBase::AssembleGeometricStiffMatrix;
 %ignore BarElementBase::AssembleMassMatrix(Eigen::SparseMatrix<double>& mat);
 %ignore BarElementBase::NodeLumpedMass();
 %ignore BarElementBase::stress;
@@ -133,16 +106,12 @@
 %ignore BarElementBase::GetGeometricStiffnessTriplets;
 
 %ignore ComplexBeamElement::StiffnessMatrix();
-%ignore ComplexBeamElement::AssembleStiffMatrix(Eigen::SparseMatrix<double>& mat);
-%ignore ComplexBeamElement::AssembleGeometricStiffMatrix;
 %ignore ComplexBeamElement::AssembleMassMatrix(Eigen::SparseMatrix<double>& mat);
 %ignore ComplexBeamElement::NodeLumpedMass();
 %ignore ComplexBeamElement::GetStiffnessTriplets;
 %ignore ComplexBeamElement::GetGeometricStiffnessTriplets;
 
 %ignore PlaneElementBase::StiffnessMatrix();
-%ignore PlaneElementBase::AssembleStiffMatrix(Eigen::SparseMatrix<double>& mat);
-%ignore PlaneElementBase::AssembleGeometricStiffMatrix;
 %ignore PlaneElementBase::AssembleMassMatrix(Eigen::SparseMatrix<double>& mat);
 %ignore PlaneElementBase::NodeLumpedMass();
 %ignore PlaneElementBase::GetStiffnessTriplets;

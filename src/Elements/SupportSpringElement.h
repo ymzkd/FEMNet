@@ -42,10 +42,6 @@ public:
     // ばね定数を対角に並べた剛性行列(6x6)
     Eigen::MatrixXd StiffnessMatrix() override;
 
-    [[deprecated("Use GetStiffnessTriplets() instead. This coeffRef-based method is less efficient and will be removed in a future version.")]]
-    void AssembleStiffMatrix(Eigen::SparseMatrix<double> &mat) override;
-    [[deprecated("Use GetGeometricStiffnessTriplets() instead. This coeffRef-based method is less efficient and will be removed in a future version.")]]
-    void AssembleGeometricStiffMatrix(Eigen::SparseMatrix<double> &mat, const std::vector<Displacement> &disp) override {}
     void AssembleMassMatrix(Eigen::SparseMatrix<double> &mat) override {}
 
     // Triplet方式での行列組立

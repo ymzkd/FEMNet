@@ -22,17 +22,6 @@ Eigen::MatrixXd SupportSpringElement::StiffnessMatrix()
     return mat;
 }
 
-// 非推奨: GetStiffnessTriplets()を使用してください（coeffRef方式は非効率）
-void SupportSpringElement::AssembleStiffMatrix(Eigen::SparseMatrix<double> &mat)
-{
-    Eigen::MatrixXd k = StiffnessMatrix();
-    for (int i = 0; i < total_dof; i++)
-    {
-        int idx = Nodes[0]->id * 6 + i;
-        mat.coeffRef(idx, idx) += k(i, i);
-    }
-}
-
 void SupportSpringElement::GetStiffnessTriplets(std::vector<Eigen::Triplet<double>> &triplets)
 {
     Eigen::MatrixXd k = StiffnessMatrix();

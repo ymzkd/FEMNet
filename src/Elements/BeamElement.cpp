@@ -18,49 +18,6 @@ Eigen::MatrixXd BeamElement::StiffnessMatrix()
     return tr.transpose() * k * tr;
 }
 
-void BeamElement::AssembleMatrix(Eigen::SparseMatrix<double> &mat, Eigen::MatrixXd K)
-{
-    int indices[12];
-    for (size_t i = 0; i < 6; i++)
-        indices[i] = Nodes[0]->id * 6 + i;
-    for (size_t i = 0; i < 6; i++)
-        indices[i + 6] = Nodes[1]->id * 6 + i;
-
-    // Eigen::MatrixXd smat = StiffnessMatrix();
-    for (size_t i = 0; i < 12; i++)
-    {
-
-        for (size_t j = 0; j < i + 1; j++)
-        {
-            int ci, rj;
-            if (indices[j] <= indices[i])
-            {
-                ci = indices[i];
-                rj = indices[j];
-            }
-            else
-            {
-                ci = indices[j];
-                rj = indices[i];
-            }
-            mat.coeffRef(rj, ci) += K(i, j);
-        }
-    }
-}
-
-// 非推奨: GetStiffnessTriplets()を使用してください（coeffRef方式は非効率）
-void BeamElement::AssembleStiffMatrix(Eigen::SparseMatrix<double> &mat)
-{
-    AssembleMatrix(mat, StiffnessMatrix());
-}
-
-// 非推奨: GetGeometricStiffnessTriplets()を使用してください（coeffRef方式は非効率）
-void BeamElement::AssembleGeometricStiffMatrix(
-    Eigen::SparseMatrix<double> &mat, const std::vector<Displacement> &disp)
-{
-    AssembleMatrix(mat, geometric_local_stiffness_matrix(disp));
-}
-
 void BeamElement::GetStiffnessTriplets(std::vector<Eigen::Triplet<double>>& triplets)
 {
     Eigen::MatrixXd K = StiffnessMatrix();

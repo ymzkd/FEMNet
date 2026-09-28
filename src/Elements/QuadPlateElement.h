@@ -85,17 +85,6 @@ public:
     Eigen::MatrixXd StiffnessMatrix();
     Eigen::MatrixXd GeometricStiffnessMatrix(const std::vector<Displacement> &disp);
 
-    // 剛性行列を組み込む
-    void AssembleMatrix(Eigen::SparseMatrix<double> &mat, Eigen::MatrixXd K);
-
-    // 剛性行列を組み込む
-    [[deprecated("Use GetStiffnessTriplets() instead. This coeffRef-based method is less efficient and will be removed in a future version.")]]
-    void AssembleStiffMatrix(Eigen::SparseMatrix<double> &mat) override;
-
-    // 幾何剛性行列を組み込む
-    [[deprecated("Use GetGeometricStiffnessTriplets() instead. This coeffRef-based method is less efficient and will be removed in a future version.")]]
-    void AssembleGeometricStiffMatrix(Eigen::SparseMatrix<double> &mat, const std::vector<Displacement> &disp) override;
-
     // 集中質量行列を組み込む
     void AssembleMassMatrix(Eigen::SparseMatrix<double> &mat);
 

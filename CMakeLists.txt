@@ -344,6 +344,16 @@ target_include_directories(spring_support_test PUBLIC ${FEMNET_INCLUDE_DIRS})
 configure_mkl_target(spring_support_test)
 configure_cuda_target(spring_support_test)
 
+# === ComplexBeamElement member load test ===
+add_executable(complex_beam_load_test
+    tests/complex_beam_load_test.cpp
+    ${FEMNET_SOURCES}
+    $<$<BOOL:${CUDA_FOUND}>:${CUDA_SOLVER_SOURCES}>
+)
+target_include_directories(complex_beam_load_test PUBLIC ${FEMNET_INCLUDE_DIRS})
+configure_mkl_target(complex_beam_load_test)
+configure_cuda_target(complex_beam_load_test)
+
 # === DynamicAnalysis::Rewind test ===
 add_executable(rewind_test
     tests/rewind_test.cpp

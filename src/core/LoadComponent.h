@@ -328,9 +328,26 @@ public:
 };
 
 // 梁の多角形分布荷重
+// 材端ばね・剛域のある要素(ComplexBeamElement)では、剛域上の荷重を剛体として節点へ伝え、
+// 内法区間の荷重の固定端力を材端ばねで静的縮小して節点荷重にする。
 class BeamPolyLoad : public BeamLoadBase {
 private:
+    // 全長を両端固定梁とみなした台形荷重(公開している R0 / M0 / bending_moment などはこれで計算する)
     std::vector<BeamTrapezoidalLoad> traps;
+
+#ifndef SWIG
+    // 節点を固定したときの荷重の状態。ベクトルの並びは [v_i, θ_i, v_j, θ_j](θ = dv/dx)
+    struct ReducedLoad {
+        Eigen::Vector4d f_node; // 節点位置の等価節点力
+        Eigen::Vector4d u_b0;   // 内側の梁の端の変位(材端ばねの変形)
+        std::vector<BeamTrapezoidalLoad> inner_traps; // 内法区間の荷重(内法長が基準)
+    };
+
+    BendingPlane plane() const;
+    // 要素の材端条件は荷重を作った後に変わりうるので、呼ぶたびに要素の現在の状態から計算する
+    ReducedLoad reduce(const BeamBendingEnds &ends);
+    NodeLoadData node_load(int end, const Eigen::Vector4d &f_node);
+#endif
 public:
     std::vector<double> w;
     std::vector<double> params;
@@ -346,11 +363,14 @@ public:
 
         double length = element->length();
 
-        // double length 
+        // double length
         for (int i = 0; i < w.size() - 1; i++) {
             double L1 = params[i] * length;
             double L2 = params[i + 1] * length - L1;
             double L3 = length - L1 - L2;
+            // 長さ0の区間(段差)は荷重が無く、分布の式が0除算になるので除く
+            if (L2 <= 0)
+                continue;
             traps.push_back(BeamTrapezoidalLoad(w[i], w[i + 1], L1, L2, L3));
         }
     }
@@ -378,9 +398,7 @@ public:
     NodeLoadData load_j() override;
     BeamStressData GetBeamStress(double p) override;
     Displacement GetDisplacement(double p) override;
-    std::vector<NodeLoadData> NodeLoads() override {
-        return { load_i(), load_j() };
-    }
+    std::vector<NodeLoadData> NodeLoads() override;
 
     // コンストラクタ経由で再構築することで内部のtrapsにも係数を反映する
     std::shared_ptr<LoadBase> scaled(double factor) const override {

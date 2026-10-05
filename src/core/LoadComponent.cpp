@@ -45,62 +45,174 @@ double BeamPolyLoad::deflection(double x, double EI) {
         });
 }
 
-NodeLoadData BeamPolyLoad::load_i()
+// 1次分布の荷重(x0 で w0、x1 で w1)の合力 P と、原点まわりの1次モーメント Px
+static void linear_load_resultant(double w0, double w1, double x0, double x1, double &P, double &Px)
+{
+    double h = x1 - x0;
+    P = (w0 + w1) * h / 2.0;
+    Px = h / 6.0 * (w0 * (2.0 * x0 + x1) + w1 * (x0 + 2.0 * x1));
+}
+
+BendingPlane BeamPolyLoad::plane() const
+{
+    return axis == BeamLoadAxis::ZAxis ? BendingPlane::XZ : BendingPlane::XY;
+}
+
+BeamPolyLoad::ReducedLoad BeamPolyLoad::reduce(const BeamBendingEnds &ends)
+{
+    ReducedLoad r;
+    if (ends.IsPlain())
+    {
+        r.f_node << R0(), M0(), RA(), -MA();
+        r.u_b0.setZero();
+        r.inner_traps = traps;
+        return r;
+    }
+
+    const double L = element->length();
+    const double x0 = ends.li;     // 内法区間の始点
+    const double x1 = L - ends.lj; // 内法区間の終点
+
+    // 剛域上の荷重は剛体として節点へ伝える
+    Eigen::Vector4d f_rz = Eigen::Vector4d::Zero();
+    for (size_t k = 0; k + 1 < w.size(); k++)
+    {
+        const double a = params[k] * L;
+        const double b = params[k + 1] * L;
+        if (b <= a)
+            continue;
+        const double wa = w[k], wb = w[k + 1];
+        auto w_at = [&](double x) { return wa + (wb - wa) * (x - a) / (b - a); };
+
+        // 内法区間の部分: 切り口の荷重強さは線形補間し、内法長を基準にした台形荷重にする
+        double c0 = std::max(a, x0), c1 = std::min(b, x1);
+        if (c1 > c0)
+            r.inner_traps.push_back(BeamTrapezoidalLoad(w_at(c0), w_at(c1), c0 - x0, c1 - c0, x1 - c1));
+
+        double P, Px;
+        // 剛域 i の部分
+        c0 = a;
+        c1 = std::min(b, x0);
+        if (c1 > c0)
+        {
+            linear_load_resultant(w_at(c0), w_at(c1), c0, c1, P, Px);
+            f_rz(0) += P;
+            f_rz(1) += Px;
+        }
+        // 剛域 j の部分(節点 j まわりのモーメントは腕が x - L)
+        c0 = std::max(a, x1);
+        c1 = b;
+        if (c1 > c0)
+        {
+            linear_load_resultant(w_at(c0), w_at(c1), c0, c1, P, Px);
+            f_rz(2) += P;
+            f_rz(3) += Px - L * P;
+        }
+    }
+
+    // 内法区間の両端固定梁としての整合節点力
+    Eigen::Vector4d f_b = Eigen::Vector4d::Zero();
+    for (BeamTrapezoidalLoad &t : r.inner_traps)
+        f_b += Eigen::Vector4d(t.R0(), t.M0(), t.RA(), -t.MA());
+
+    ends.ReduceBeamLoad(f_b, r.f_node, r.u_b0);
+    r.f_node += f_rz;
+    return r;
+}
+
+NodeLoadData BeamPolyLoad::node_load(int end, const Eigen::Vector4d &f_node)
 {
     Eigen::Matrix3d tr = trans_matrix3(
         element->Nodes[0]->Location, element->Nodes[1]->Location, element->Beta).transpose();
 
-    Eigen::Vector3d m, q;
+    const double q = f_node(2 * end);
+    const double m = f_node(2 * end + 1);
+    Eigen::Vector3d mv, qv;
     if (axis == BeamLoadAxis::ZAxis) {
-        m = tr * Eigen::Vector3d(0, -M0(), 0);
-		q = tr * Eigen::Vector3d(0, 0, R0());
-	}
-	else // YAxis
-	{
-		m = tr * Eigen::Vector3d(0, 0, M0());
-		q = tr * Eigen::Vector3d(0, R0(), 0);
+        // XZ面は θ = dw/dx = -θy として計算しているので、モーメントの符号を反転する
+        mv = tr * Eigen::Vector3d(0, -m, 0);
+        qv = tr * Eigen::Vector3d(0, 0, q);
+    }
+    else // YAxis
+    {
+        mv = tr * Eigen::Vector3d(0, 0, m);
+        qv = tr * Eigen::Vector3d(0, q, 0);
     }
 
-    return NodeLoadData(element->Nodes[0]->id, q[0], q[1], q[2], m[0], m[1], m[2]);
+    return NodeLoadData(element->Nodes[end]->id, qv[0], qv[1], qv[2], mv[0], mv[1], mv[2]);
+}
+
+NodeLoadData BeamPolyLoad::load_i()
+{
+    return node_load(0, reduce(element->BendingEnds(plane())).f_node);
 }
 
 NodeLoadData BeamPolyLoad::load_j()
 {
-    Eigen::Matrix3d tr = trans_matrix3(
-        element->Nodes[0]->Location, element->Nodes[1]->Location, element->Beta).transpose();
+    return node_load(1, reduce(element->BendingEnds(plane())).f_node);
+}
 
-    Eigen::Vector3d m, q;
-    if (axis == BeamLoadAxis::ZAxis) {
-        m = tr * Eigen::Vector3d(0, MA(), 0);
-        q = tr * Eigen::Vector3d(0, 0, RA());
-    }
-    else // YAxis
-    {
-        m = tr * Eigen::Vector3d(0, 0, -MA());
-        q = tr * Eigen::Vector3d(0, RA(), 0);
-    }
-
-    return NodeLoadData(element->Nodes[1]->id, q[0], q[1], q[2], m[0], m[1], m[2]);
+std::vector<NodeLoadData> BeamPolyLoad::NodeLoads()
+{
+    Eigen::Vector4d f = reduce(element->BendingEnds(plane())).f_node;
+    return { node_load(0, f), node_load(1, f) };
 }
 
 BeamStressData BeamPolyLoad::GetBeamStress(double p)
 {
+    const double x = p * element->length();
+    double m = bending_moment(x);
+    double q = shear_force(x);
+
+    // 材端ばね・剛域があるときは、i端の端部力を両端固定の値から縮小した値に置き換える。
+    // 節点iの側を切り出した自由体の釣り合いから、分布は i端の力の差分だけ線形に変わる
+    BeamBendingEnds ends = element->BendingEnds(plane());
+    if (!ends.IsPlain())
+    {
+        Eigen::Vector4d f = reduce(ends).f_node;
+        const double dq = f(0) - R0();
+        const double dm = f(1) - M0();
+        m += dq * x - dm;
+        q += dq;
+    }
+
     BeamStressData bsd;
     if (axis == BeamLoadAxis::ZAxis) {
-	    bsd.My = bending_moment(p * element->length());
-        bsd.Qz = shear_force(p * element->length());
-	}
-	else {
-        bsd.Mz = bending_moment(p * element->length());
-        bsd.Qy = shear_force(p * element->length());
-	}
+        bsd.My = m;
+        bsd.Qz = q;
+    }
+    else {
+        bsd.Mz = m;
+        bsd.Qy = q;
+    }
     return bsd;
 }
 
 Displacement BeamPolyLoad::GetDisplacement(double p)
 {
-    double I = (axis == BeamLoadAxis::ZAxis) ? element->Sec->Iy : element->Sec->Iz;
-    double d = deflection(p * element->length(), element->Mat.Young * I);
+    const double x = p * element->length();
+    BeamBendingEnds ends = element->BendingEnds(plane());
+
+    double d = 0;
+    if (ends.IsPlain())
+        d = deflection(x, ends.EI);
+    else
+    {
+        // 節点を固定したときのたわみ。剛域は節点と一体なので動かない。
+        // 内法区間は、材端ばねの変形による分と、内法長の両端固定梁のたわみの和
+        const double xi = x - ends.li;
+        const double ln = ends.l_inner;
+        if (xi >= 0 && xi <= ln)
+        {
+            ReducedLoad r = reduce(ends);
+            const double s = xi / ln, s2 = s * s, s3 = s2 * s;
+            const Eigen::Vector4d N(1 - 3 * s2 + 2 * s3, ln * (s - 2 * s2 + s3), 3 * s2 - 2 * s3, ln * (-s2 + s3));
+            d = N.dot(r.u_b0);
+            for (BeamTrapezoidalLoad &t : r.inner_traps)
+                d += t.deflection(xi, ends.EI);
+        }
+    }
+
     Eigen::Matrix3d tr = trans_matrix3(
         element->Nodes[0]->Location,
         element->Nodes[1]->Location, element->Beta);

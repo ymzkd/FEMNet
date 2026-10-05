@@ -43,6 +43,8 @@
 %ignore BeamElement::NodeLumpedMass();
 %ignore BeamElement::GetStiffnessTriplets;
 %ignore BeamElement::GetGeometricStiffnessTriplets;
+// 部材荷重の縮小計算は Eigen 型をやり取りする内部API
+%ignore BeamBendingEnds::ReduceBeamLoad;
 
 %ignore TrussElement::StiffnessMatrix();
 %ignore TrussElement::AssembleMassMatrix(Eigen::SparseMatrix<double>& mat);

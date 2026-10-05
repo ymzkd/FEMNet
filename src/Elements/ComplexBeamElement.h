@@ -74,7 +74,10 @@ public:
     ElementType Type() override { return ElementType::ComplexBeam; }
 
     // Eigen::MatrixXd NodeConsistentMass();
+    // p は節点iから測った位置を全長で割った値。剛域の中は節点と一体に動く
     Displacement DisplaceAt(Displacement d0, Displacement d1, double p) override;
+
+    BeamBendingEnds BendingEnds(BendingPlane plane) override;
 };
 
 #endif

@@ -354,6 +354,16 @@ target_include_directories(complex_beam_load_test PUBLIC ${FEMNET_INCLUDE_DIRS})
 configure_mkl_target(complex_beam_load_test)
 configure_cuda_target(complex_beam_load_test)
 
+# === InertialForce on beam elements test ===
+add_executable(inertial_force_test
+    tests/inertial_force_test.cpp
+    ${FEMNET_SOURCES}
+    $<$<BOOL:${CUDA_FOUND}>:${CUDA_SOLVER_SOURCES}>
+)
+target_include_directories(inertial_force_test PUBLIC ${FEMNET_INCLUDE_DIRS})
+configure_mkl_target(inertial_force_test)
+configure_cuda_target(inertial_force_test)
+
 # === DynamicAnalysis::Rewind test ===
 add_executable(rewind_test
     tests/rewind_test.cpp

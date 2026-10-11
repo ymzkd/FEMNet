@@ -267,6 +267,25 @@ Displacement AxialPolyLoad::GetDisplacement(double p)
     return Displacement();
 }
 
+std::vector<std::shared_ptr<BeamLoadBase>> InertialForce::ToBeamLoads(BeamElement* element) const
+{
+    // 加速度を局所座標の成分にして、単位長さあたりの質量 ρA を掛ける
+    Eigen::Matrix3d tr = trans_matrix3(
+        element->Nodes[0]->Location, element->Nodes[1]->Location, element->Beta);
+    Eigen::Vector3d w = element->Sec->A * element->Mat.dense * (tr * Eigen::Vector3d(accels.x, accels.y, accels.z));
+
+    // 0 の成分は作らない(AxialPolyLoad は荷重が 0 だと重心位置が 0/0 になる)
+    const std::vector<double> whole{0.0, 1.0};
+    std::vector<std::shared_ptr<BeamLoadBase>> loads;
+    if (w.x() != 0.0)
+        loads.push_back(std::make_shared<AxialPolyLoad>(std::vector<double>{w.x(), w.x()}, whole, element));
+    if (w.y() != 0.0)
+        loads.push_back(std::make_shared<BeamPolyLoad>(std::vector<double>{w.y(), w.y()}, whole, element, BeamLoadAxis::YAxis));
+    if (w.z() != 0.0)
+        loads.push_back(std::make_shared<BeamPolyLoad>(std::vector<double>{w.z(), w.z()}, whole, element, BeamLoadAxis::ZAxis));
+    return loads;
+}
+
 NodeLoadData::NodeLoadData(int _id, double px, double py, double pz)
 {
     id = _id;

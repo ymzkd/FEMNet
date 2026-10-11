@@ -27,6 +27,8 @@ public:
     virtual std::shared_ptr<LoadBase> scaled(double factor) const = 0;
 };
 
+class BeamLoadBase;
+
 class InertialForce: public LoadBase {
 public:
 
@@ -45,6 +47,10 @@ public:
         return std::make_shared<InertialForce>(
             accels.x * factor, accels.y * factor, accels.z * factor);
     }
+
+    // 梁要素の慣性力 ρA·a を、局所座標の各軸方向の等分布の部材荷重にする。
+    // 部材荷重と同じく、材端ばね・剛域を考慮した節点荷重と、部材内の応力・たわみが求まる
+    std::vector<std::shared_ptr<BeamLoadBase>> ToBeamLoads(BeamElement* element) const;
 };
 
 enum class BodyForaceSelector : unsigned int {

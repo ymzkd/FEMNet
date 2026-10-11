@@ -152,6 +152,14 @@ BeamStressData FELinearStaticOp::GetBeamStress(int eid, double p)
     {
         for (const auto &l : loads)
         {
+            // 慣性力は、この要素の等分布の部材荷重として足す
+            if (auto inertial = std::dynamic_pointer_cast<InertialForce>(l))
+            {
+                for (const auto &bl : inertial->ToBeamLoads(beamElement))
+                    strs += bl->GetBeamStress(p);
+                continue;
+            }
+
             // BeamLoadBase* bpl = dynamic_cast<BeamLoadBase*>(l);
             std::shared_ptr<BeamLoadBase> bpl = std::dynamic_pointer_cast<BeamLoadBase>(l);
             if (bpl == NULL)
@@ -223,6 +231,15 @@ Displacement FELinearStaticOp::GetBeamDisplace(int eid, double p)
     // BeamStressData strs = b_strs.Interpolate(p);
     for (const auto &l : loads)
     {
+        // 慣性力は、この要素の等分布の部材荷重として足す(軸方向は部材荷重と同じく未対応)
+        if (auto inertial = std::dynamic_pointer_cast<InertialForce>(l))
+        {
+            for (const auto &bl : inertial->ToBeamLoads(elm))
+                if (bl->axis != BeamLoadAxis::XAxis)
+                    disp += bl->GetDisplacement(p);
+            continue;
+        }
+
         std::shared_ptr<BeamLoadBase> bpl = std::dynamic_pointer_cast<BeamLoadBase>(l);
         if (bpl == NULL)
             continue;

@@ -147,13 +147,48 @@ namespace FemNetTest
                 new VectorDouble(new double[] { 0.0, 1.0 }),
                 m2.GetBeamElement(1), BeamLoadAxis.YAxis));
 
+            var line = new LinePolyLoad(
+                new VectorDouble(new double[] { 2.0, 8.0 }),
+                new VectorDouble(new double[] { 0.2, 0.6 }),
+                m2.GetNode(1), m2.GetNode(2), new Vector(2.0, -3.0, 6.0));
+            loads.Add(line);
+            VectorNodeLoadData lineNodes = line.NodeLoads();
+            Check(lineNodes.Count == 2 && lineNodes[0].id == 1 && lineNodes[1].id == 2,
+                  "LinePolyLoad 節点ID");
+            Check(Math.Abs(lineNodes[0].Px() - 1120.0 * 2.0 / 7.0) < 1e-9 &&
+                  Math.Abs(lineNodes[1].Pz() - 880.0 * 6.0 / 7.0) < 1e-9,
+                  "LinePolyLoad 部分台形荷重と方向の正規化");
+            VectorNodeLoadData scaledLineNodes = line.scaled(-2.0).NodeLoads();
+            Check(Math.Abs(scaledLineNodes[0].Px() + 2.0 * lineNodes[0].Px()) < 1e-9,
+                  "LinePolyLoad scaled と基底クラス経由の呼び出し");
+
+            bool invalidDirectionRejected = false;
+            try
+            {
+                var invalidLine = new LinePolyLoad(new VectorDouble(new double[] { 1.0, 1.0 }),
+                    new VectorDouble(new double[] { 0.0, 1.0 }),
+                    m2.GetNode(1), m2.GetNode(2), new Vector(0.0, 0.0, 0.0));
+                var invalidLoads = new VectorLoad();
+                invalidLoads.Add(invalidLine);
+                global::FEMNet.FEMNet.SaveLoads(loadB, invalidLoads);
+            }
+            catch (Exception)
+            {
+                invalidDirectionRejected = true;
+            }
+            Check(invalidDirectionRejected, "LoadIO での入力エラーがC#例外として伝わる");
+
             global::FEMNet.FEMNet.SaveLoads(loadA, loads);
             VectorLoad loads2 = global::FEMNet.FEMNet.LoadLoads(loadA, m2);
             global::FEMNet.FEMNet.SaveLoads(loadB, loads2);
 
             Check(File.ReadAllText(loadA) == File.ReadAllText(loadB),
                   "loads save->load->save がバイト一致する");
-            Check(loads2.Count == 3, "荷重数 = 3");
+            Check(loads2.Count == 4, "荷重数 = 4");
+            VectorNodeLoadData restoredLineNodes = loads2[3].NodeLoads();
+            Check(Math.Abs(restoredLineNodes[0].Px() - lineNodes[0].Px()) < 1e-9 &&
+                  Math.Abs(restoredLineNodes[1].Pz() - lineNodes[1].Pz()) < 1e-9,
+                  "LinePolyLoad 保存・読込後の節点荷重");
 
             Console.WriteLine();
             if (failures == 0)

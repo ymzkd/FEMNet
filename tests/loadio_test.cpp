@@ -1,7 +1,7 @@
 // 荷重(LoadBase 派生)テキスト形式 SaveLoads/LoadLoads の往復テスト
 //
-// 全6種(NodeLoad/InertialForce/NodeBodyForce/PlateLoad/BeamPolyLoad/
-// AxialPolyLoad)を含む荷重リストを構築し、
+// 全7種(NodeLoad/InertialForce/NodeBodyForce/PlateLoad/BeamPolyLoad/
+// AxialPolyLoad/LinePolyLoad)を含む荷重リストを構築し、
 //   SaveLoads -> LoadLoads(model) -> SaveLoads の2ファイルがバイト一致すること、
 //   主要フィールドが一致すること、
 //   復元した荷重で FELinearStaticOp が解けること
@@ -14,6 +14,8 @@
 #include <cmath>
 #include <memory>
 #include <vector>
+#include <limits>
+#include <stdexcept>
 
 #include "Model.h"
 #include "Elements/Elements.h"
@@ -111,7 +113,63 @@ std::vector<std::shared_ptr<LoadBase>> BuildLoads(FEModel &m)
         std::vector<double>{2.0, 2.0}, std::vector<double>{0.0, 1.0},
         dynamic_cast<BeamElement *>(m.Elements[1].get())));
 
+    // LinePolyLoad (要素に依存しない、段差と部分載荷を含む分布)
+    loads.push_back(std::make_shared<LinePolyLoad>(
+        std::vector<double>{2.0, 4.0, -1.0, -3.0},
+        std::vector<double>{0.2, 0.4, 0.4, 0.8},
+        &m.Nodes[1], &m.Nodes[4], Vector(2.0, -3.0, 6.0)));
+
     return loads;
+}
+
+template <typename F>
+void CheckRejected(F action, const std::string &message)
+{
+    try
+    {
+        action();
+        Check(false, message + " が拒否されない");
+    }
+    catch (const std::runtime_error &) {}
+}
+
+void TestInvalidLineLoads(FEModel &model)
+{
+    const std::string path = "loadio_invalid.txt";
+    const std::vector<std::string> records = {
+        "LinePolyLoad 99 1 1 0 0 2 1 2 2 0 1", // 節点範囲外
+        "LinePolyLoad 0 0 1 0 0 2 1 2 2 0 1",  // 長さ0
+        "LinePolyLoad 0 1 0 0 0 2 1 2 2 0 1",  // 方向0
+        "LinePolyLoad 0 1 1 0 0 1 1 2 0 1",    // 配列の個数不一致
+        "LinePolyLoad 0 1 1 0 0 1 1 1 0.5",    // 1点のみ
+        "LinePolyLoad 0 1 1 0 0 2 1 2 2 0.8 0.2", // 逆順
+        "LinePolyLoad 0 1 1 0 0 2 1 2 2 -0.1 1",  // 範囲外
+        "LinePolyLoad 0 1 1 0 0 2 1 2 2 0 1.1"};
+    for (const std::string &record : records)
+    {
+        {
+            std::ofstream ofs(path);
+            ofs << "FEMNET_LOADS_TEXT_V1\nLOADS 1\n" << record << "\nEND\n";
+        }
+        CheckRejected([&] { LoadLoads(path, model); }, "不正な LinePolyLoad の読込");
+    }
+
+    // クラスの構築・変更では検証せず、外部に保存する際に検証する。
+    auto line = std::make_shared<LinePolyLoad>(
+        std::vector<double>{1, 2}, std::vector<double>{0, 1},
+        &model.Nodes[0], &model.Nodes[1], Vector::XAxis());
+    auto save = [&] { SaveLoads(path, {line}); };
+    line->w[1] = std::numeric_limits<double>::quiet_NaN();
+    CheckRejected(save, "NaN 荷重の保存");
+    line->w[1] = 2;
+    line->params[1] = std::numeric_limits<double>::infinity();
+    CheckRejected(save, "無限大の位置の保存");
+    line->params[1] = 1;
+    line->direction = Vector(0, std::numeric_limits<double>::infinity(), 0);
+    CheckRejected(save, "無限大の方向の保存");
+    line->direction = Vector::XAxis();
+    line->node_i = nullptr;
+    CheckRejected(save, "未設定節点の保存");
 }
 
 } // namespace
@@ -137,7 +195,7 @@ int main()
     Check(a == b, "SaveLoads->LoadLoads->SaveLoads がバイト一致する");
 
     // 2) 件数・種別
-    Check(loads2.size() == 6, "荷重数 = 6");
+    Check(loads2.size() == 7, "荷重数 = 7");
 
     Check(std::dynamic_pointer_cast<NodeLoad>(loads2[0]) != nullptr, "load0 = NodeLoad");
     Check(std::dynamic_pointer_cast<InertialForce>(loads2[1]) != nullptr, "load1 = InertialForce");
@@ -145,6 +203,7 @@ int main()
     Check(std::dynamic_pointer_cast<PlateLoad>(loads2[3]) != nullptr, "load3 = PlateLoad");
     Check(std::dynamic_pointer_cast<BeamPolyLoad>(loads2[4]) != nullptr, "load4 = BeamPolyLoad");
     Check(std::dynamic_pointer_cast<AxialPolyLoad>(loads2[5]) != nullptr, "load5 = AxialPolyLoad");
+    Check(std::dynamic_pointer_cast<LinePolyLoad>(loads2[6]) != nullptr, "load6 = LinePolyLoad");
 
     // 3) 主要フィールド
     if (auto nl = std::dynamic_pointer_cast<NodeLoad>(loads2[0]))
@@ -180,6 +239,23 @@ int main()
         Check(apl->w.size() == 2 && std::abs(apl->w[0] - 2.0) < 1e-12, "AxialPolyLoad w の往復");
     }
 
+    if (auto line = std::dynamic_pointer_cast<LinePolyLoad>(loads2[6]))
+    {
+        Check(line->node_i == &model->Nodes[1] && line->node_j == &model->Nodes[4],
+              "LinePolyLoad 節点参照の往復");
+        Check(line->w == std::vector<double>({2.0, 4.0, -1.0, -3.0}) &&
+              line->params == std::vector<double>({0.2, 0.4, 0.4, 0.8}),
+              "LinePolyLoad 多角形分布の往復");
+        Check(line->direction.x == 2.0 && line->direction.y == -3.0 && line->direction.z == 6.0,
+              "LinePolyLoad 入力方向の往復");
+        const auto before = loads[6]->NodeLoads();
+        const auto after = line->NodeLoads();
+        for (size_t i = 0; i < before.size(); ++i)
+            for (int k = 0; k < 6; ++k)
+                Check(std::abs(before[i].loads[k] - after[i].loads[k]) < 1e-12,
+                      "LinePolyLoad 等価節点荷重の往復");
+    }
+
     // 4) 復元した荷重で解析が走ること
     try
     {
@@ -192,6 +268,8 @@ int main()
     {
         Check(false, std::string("FELinearStaticOp 実行で例外: ") + e.what());
     }
+
+    TestInvalidLineLoads(*model);
 
     std::cout << "\n";
     if (g_failures == 0)

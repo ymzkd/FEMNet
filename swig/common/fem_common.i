@@ -18,6 +18,7 @@
 // Load Pointer
 %shared_ptr(LoadBase);
 %shared_ptr(PlateLoad);
+%shared_ptr(LinePolyLoad);
 %shared_ptr(BeamPolyLoad);
 %shared_ptr(AxialPolyLoad);
 %shared_ptr(BeamLoadBase);

@@ -9,6 +9,7 @@
 //     PlateLoad     <elemIdx> <nNodes> <vx vy vz>*nNodes
 //     BeamPolyLoad  <elemIdx> <axis> <nw> <w...> <np> <params...>
 //     AxialPolyLoad <elemIdx> <nw> <w...> <np> <params...>
+//     LinePolyLoad  <nodeIdx_i> <nodeIdx_j> <dx> <dy> <dz> <nw> <w...> <np> <params...>
 //   END
 //
 // 設計方針: 要素・節点はポインタ参照だが、保存時はモデルを持たないため
@@ -20,6 +21,7 @@
 #include <iomanip>
 #include <stdexcept>
 #include <string>
+#include <cmath>
 
 #include "LoadIO.h"
 #include "Elements/Elements.h"
@@ -87,6 +89,36 @@ std::vector<double> ReadDoubleVec(std::istream &is, const char *what)
     return v;
 }
 
+// 外部入力の検証は入出力側で行い、荷重クラスは計算に専念させる。
+void CheckLinePolyLoad(const LinePolyLoad &load)
+{
+    if (load.node_i == nullptr || load.node_j == nullptr)
+        throw std::runtime_error("LoadIO: LinePolyLoad の節点が未設定です");
+
+    const double length = (load.node_j->Location - load.node_i->Location).norm();
+    if (!std::isfinite(length) || length <= 0.0)
+        throw std::runtime_error("LoadIO: LinePolyLoad の線分長さが不正です");
+
+    Vector direction = load.direction;
+    const double direction_length = direction.norm();
+    if (!std::isfinite(load.direction.x) || !std::isfinite(load.direction.y) ||
+        !std::isfinite(load.direction.z) || !std::isfinite(direction_length) || direction_length <= 0.0)
+        throw std::runtime_error("LoadIO: LinePolyLoad の方向が不正です");
+
+    if (load.w.size() != load.params.size() || load.w.size() < 2)
+        throw std::runtime_error("LoadIO: LinePolyLoad の荷重値と位置は同数で2点以上が必要です");
+
+    for (size_t k = 0; k < load.w.size(); ++k)
+    {
+        if (!std::isfinite(load.w[k]))
+            throw std::runtime_error("LoadIO: LinePolyLoad の荷重値が不正です");
+        if (!std::isfinite(load.params[k]) || load.params[k] < 0.0 || load.params[k] > 1.0)
+            throw std::runtime_error("LoadIO: LinePolyLoad の位置が範囲外です");
+        if (k > 0 && load.params[k] < load.params[k - 1])
+            throw std::runtime_error("LoadIO: LinePolyLoad の位置が逆順です");
+    }
+}
+
 } // namespace
 
 void SaveLoads(const std::string &path,
@@ -119,6 +151,15 @@ void SaveLoads(const std::string &path,
             ofs << "BeamPolyLoad " << beam->element->id << " " << AxisName(beam->axis);
             WriteDoubleVec(ofs, beam->w);
             WriteDoubleVec(ofs, beam->params);
+            ofs << "\n";
+        }
+        else if (auto line = std::dynamic_pointer_cast<LinePolyLoad>(load))
+        {
+            CheckLinePolyLoad(*line);
+            ofs << "LinePolyLoad " << line->node_i->id << " " << line->node_j->id
+                << " " << line->direction.x << " " << line->direction.y << " " << line->direction.z;
+            WriteDoubleVec(ofs, line->w);
+            WriteDoubleVec(ofs, line->params);
             ofs << "\n";
         }
         else if (auto nbf = std::dynamic_pointer_cast<NodeBodyForce>(load))
@@ -259,6 +300,20 @@ std::vector<std::shared_ptr<LoadBase>> LoadLoads(const std::string &path, FEMode
             std::vector<double> w = ReadDoubleVec(ifs, "BeamPolyLoad w");
             std::vector<double> params = ReadDoubleVec(ifs, "BeamPolyLoad params");
             loads.push_back(std::make_shared<BeamPolyLoad>(w, params, beam_ptr(idx), ParseAxis(axis)));
+        }
+        else if (kind == "LinePolyLoad")
+        {
+            int idx_i = ReadToken<int>(ifs, "LinePolyLoad nodeIdx_i");
+            int idx_j = ReadToken<int>(ifs, "LinePolyLoad nodeIdx_j");
+            double dx = ReadToken<double>(ifs, "LinePolyLoad dx");
+            double dy = ReadToken<double>(ifs, "LinePolyLoad dy");
+            double dz = ReadToken<double>(ifs, "LinePolyLoad dz");
+            std::vector<double> w = ReadDoubleVec(ifs, "LinePolyLoad w");
+            std::vector<double> params = ReadDoubleVec(ifs, "LinePolyLoad params");
+            auto line = std::make_shared<LinePolyLoad>(
+                w, params, node_ptr(idx_i), node_ptr(idx_j), Vector(dx, dy, dz));
+            CheckLinePolyLoad(*line);
+            loads.push_back(line);
         }
         else if (kind == "AxialPolyLoad")
         {

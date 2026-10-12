@@ -120,6 +120,26 @@ public:
 };
 
 
+// 2節点間の直線に作用する多角形分布荷重。要素への参照は持たない。
+// 並進変位を辺上で一次補間し、両端の節点力へ変換する(節点モーメントは0)。
+// 板の面外方向では、回転自由度を含む仕事等価荷重に対する近似となる。
+class LinePolyLoad : public LoadBase {
+public:
+    Node* node_i;
+    Node* node_j;
+    std::vector<double> w;      // 力/長さ。負値も許容する。
+    std::vector<double> params; // 始点0、終点1。非減少順で、同じ位置は荷重の段差を表す。
+    Vector direction;           // 全体座標系の方向。計算時に正規化する。
+
+    // 折れ点の範囲外は荷重0。wとparamsは同数で、2点以上を指定する。
+    // 節点はモデルと同じ寿命を持ち、節点コンテナの再配置後は参照を更新すること。
+    LinePolyLoad(const std::vector<double>& w, const std::vector<double>& params,
+                 Node* node_i, Node* node_j, const Vector& direction);
+
+    std::vector<NodeLoadData> NodeLoads() override;
+    std::shared_ptr<LoadBase> scaled(double factor) const override;
+};
+
 // 面荷重(WIP)
 class PlateLoad : public LoadBase {
 public:

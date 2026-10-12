@@ -2,6 +2,45 @@
 
 #include "LoadComponent.h"
 
+LinePolyLoad::LinePolyLoad(const std::vector<double>& w, const std::vector<double>& params,
+                           Node* node_i, Node* node_j, const Vector& direction)
+    : node_i(node_i), node_j(node_j), w(w), params(params), direction(direction)
+{}
+
+std::vector<NodeLoadData> LinePolyLoad::NodeLoads()
+{
+    // 公開フィールド・節点位置の現在の値から計算する。
+    const double length = (node_j->Location - node_i->Location).norm();
+    const Vector unit_direction = direction * (1.0 / direction.norm());
+
+    double force_i = 0.0, force_j = 0.0;
+    for (size_t k = 0; k + 1 < w.size(); ++k)
+    {
+        const double t0 = params[k], t1 = params[k + 1];
+        if (t1 == t0) // 荷重の段差。長さ0なので積分への寄与は0。
+            continue;
+
+        // s = length * t、Ni = 1 - t、Nj = t による台形荷重の厳密積分。
+        const double coeff = length * (t1 - t0) / 6.0;
+        force_i += coeff * (w[k] * (2.0 * (1.0 - t0) + (1.0 - t1)) +
+                            w[k + 1] * ((1.0 - t0) + 2.0 * (1.0 - t1)));
+        force_j += coeff * (w[k] * (2.0 * t0 + t1) + w[k + 1] * (t0 + 2.0 * t1));
+    }
+
+    const Vector load_i = force_i * unit_direction;
+    const Vector load_j = force_j * unit_direction;
+    return {NodeLoadData(node_i->id, load_i.x, load_i.y, load_i.z),
+            NodeLoadData(node_j->id, load_j.x, load_j.y, load_j.z)};
+}
+
+std::shared_ptr<LoadBase> LinePolyLoad::scaled(double factor) const
+{
+    std::vector<double> ws = w;
+    for (double& value : ws)
+        value *= factor;
+    return std::make_shared<LinePolyLoad>(ws, params, node_i, node_j, direction);
+}
+
 
 double BeamPolyLoad::R0() {
     return std::accumulate(traps.begin(), traps.end(), 0.0, [](double sum, BeamTrapezoidalLoad trap) {

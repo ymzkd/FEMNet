@@ -369,10 +369,12 @@ private:
     };
 
     BendingPlane plane() const;
-    // 要素の材端条件は荷重を作った後に変わりうるので、呼ぶたびに要素の現在の状態から計算する
+    // 要素の材端条件(剛域・材端ばね)は荷重を作った後に変わりうるので、呼ぶたびに要素から読み直す。
+    // 荷重の分布(w / params)と要素長は生成時に traps へ確定させる前提で、生成後の変更は想定しない
     ReducedLoad reduce(const BeamBendingEnds &ends);
     NodeLoadData node_load(int end, const Eigen::Vector4d &f_node);
 public:
+    // 生成後に書き換えても traps には反映されない。値を変えるときは荷重を作り直す(係数倍は scaled)
     std::vector<double> w;
     std::vector<double> params;
 

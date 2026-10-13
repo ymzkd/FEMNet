@@ -313,7 +313,7 @@ std::vector<std::shared_ptr<BeamLoadBase>> InertialForce::ToBeamLoads(BeamElemen
         element->Nodes[0]->Location, element->Nodes[1]->Location, element->Beta);
     Eigen::Vector3d w = element->Sec->A * element->Mat.dense * (tr * Eigen::Vector3d(accels.x, accels.y, accels.z));
 
-    // 0 の成分は作らない(AxialPolyLoad は荷重が 0 だと重心位置が 0/0 になる)
+    // 0 の成分は作らない
     const std::vector<double> whole{0.0, 1.0};
     std::vector<std::shared_ptr<BeamLoadBase>> loads;
     if (w.x() != 0.0)

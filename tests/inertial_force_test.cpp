@@ -226,7 +226,7 @@ std::shared_ptr<FEModel> BuildFrame(bool complex)
 
 // 慣性力と同じ荷重を、梁は ρA·a を局所座標の各軸に射影した等分布の部材荷重で、
 // それ以外の要素は要素の等価節点荷重で与える。
-// 0 の成分は作らない(AxialPolyLoad は荷重が 0 だと重心位置が 0/0 になる)
+// 0 の成分は作らない
 Loads EquivalentLoads(FEModel &m, const AccelCase &a)
 {
     Loads loads;

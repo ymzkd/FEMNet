@@ -445,18 +445,19 @@ public:
         : w1(w1), w2(w2), L1(L1), L2(L2), L3(L3) {
     }
 
+    // 重心位置を経由すると w1 + w2 = 0 で 0/0 になるので、区間始点まわりのモーメントで計算する
     double n1() {
         double l = L1 + L2 + L3;
         double p = (w1 + w2) * L2 / 2.0;
-        double dg = (w1 + 2 * w2) / 3.0 / (w1 + w2) * L2;
-        return (L2 + L3 - dg) / l * p;
+        double pd = (w1 + 2 * w2) * L2 * L2 / 6.0;
+        return ((L2 + L3) * p - pd) / l;
     }
 
     double n2() {
         double l = L1 + L2 + L3;
         double p = (w1 + w2) * L2 / 2.0;
-        double dg = (w1 + 2 * w2) / 3.0 / (w1 + w2) * L2;
-        return -(L1 + dg) / l * p;
+        double pd = (w1 + 2 * w2) * L2 * L2 / 6.0;
+        return -(L1 * p + pd) / l;
     }
 
     double axial_force(double x) {
@@ -492,6 +493,9 @@ public:
             double L1 = params[i] * length;
             double L2 = params[i + 1] * length - L1;
             double L3 = length - L1 - L2;
+            // 長さ0の区間(段差)は荷重が無く、分布の式が0除算になるので除く
+            if (L2 <= 0)
+                continue;
             traps.push_back(AxialTrapezoidalLoad(w[i], w[i + 1], L1, L2, L3));
         }
     }

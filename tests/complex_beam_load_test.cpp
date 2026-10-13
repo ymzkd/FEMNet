@@ -6,6 +6,7 @@
 //   5) 剛域上の荷重は、剛体として節点へ移した節点荷重と同じ結果になる
 //   6) 面をまたぐ荷重は、面で切り分けた荷重の和と同じ結果になる(段差のある荷重を含む)
 //   7) 節点荷重の合計と節点iまわりのモーメントが、荷重の合力と釣り合う
+//   8) 荷重0・逆対称の区間と段差を含む軸方向荷重(AxialPolyLoad)が有限で、合力・軸力分布と一致する
 #include <algorithm>
 #include <cmath>
 #include <iomanip>
@@ -693,6 +694,69 @@ void TestNodeLoadEquilibrium()
         CheckClose({mom.x(), mom.y(), mom.z()}, {m_exp.x(), m_exp.y(), m_exp.z()}, 1e-12, tag + " 節点iまわりのモーメント");
     }
 }
+
+// ---------------------------------------------------------------------------
+// 8) 荷重0の区間・逆対称の台形(w1 + w2 = 0)・段差を含む軸方向荷重(AxialPolyLoad)が、
+//    有限で荷重の合力と釣り合い、軸力が N(x) = N_i - ∫w の分布になる
+void TestAxialLoadZeroSum()
+{
+    std::cout << "[8] 荷重0・逆対称の区間と段差を含む軸方向荷重" << std::endl;
+    auto m = BuildFrame(FrameEnds());
+    BeamElement *e = m->GetBeamElement(2);
+    const double L = e->length();
+    const Eigen::Vector3d ex(e->XAxis().x, e->XAxis().y, e->XAxis().z);
+
+    struct Case { std::string tag; std::vector<double> w, params; };
+    const Case cases[] = {
+        // [0,0.3] 荷重0、0.3 で段差、[0.6,1] は -2→2 の逆対称
+        {"荷重0・段差・逆対称", {0.0, 0.0, 4.0, 4.0, -2.0, 2.0}, {0.0, 0.3, 0.3, 0.6, 0.6, 1.0}},
+        {"全長で荷重0", {0.0, 0.0}, {0.0, 1.0}},
+    };
+    for (const Case &cs : cases)
+    {
+        double P = 0.0, Px = 0.0;
+        for (size_t k = 0; k + 1 < cs.w.size(); k++)
+        {
+            double dP, dPx;
+            Resultant(cs.w[k], cs.w[k + 1], cs.params[k] * L, cs.params[k + 1] * L, dP, dPx);
+            P += dP;
+            Px += dPx;
+        }
+
+        AxialPolyLoad load(cs.w, cs.params, e);
+        std::vector<NodeLoadData> nl = load.NodeLoads();
+        Eigen::Vector3d fi(nl[0].Px(), nl[0].Py(), nl[0].Pz()), fj(nl[1].Px(), nl[1].Py(), nl[1].Pz());
+        Check(fi.allFinite() && fj.allFinite(), cs.tag + " 節点荷重が有限");
+        Eigen::Vector3d f = fi + fj, f_exp = P * ex;
+        CheckClose({f.x(), f.y(), f.z()}, {f_exp.x(), f_exp.y(), f_exp.z()}, 1e-12, cs.tag + " 力の合計");
+        // 軸方向の荷重なので、節点iまわりの釣り合いは j端の分担 × L = Px
+        CheckClose({fj.dot(ex) * L}, {Px}, 1e-12, cs.tag + " 節点iまわりの1次モーメント");
+
+        // 軸力 N(x) = N_i - (0~x の荷重の合計)
+        std::vector<double> n, n_exp;
+        for (double p : {0.0, 0.1, 0.3, 0.45, 0.6, 0.8, 1.0})
+        {
+            const double x = p * L;
+            double acc = 0.0;
+            for (size_t k = 0; k + 1 < cs.w.size(); k++)
+            {
+                double x0 = cs.params[k] * L, x1 = cs.params[k + 1] * L;
+                if (x1 <= x0 || x <= x0)
+                    continue;
+                double xe = std::min(x, x1);
+                double we = cs.w[k] + (cs.w[k + 1] - cs.w[k]) * (xe - x0) / (x1 - x0);
+                double dP, dPx;
+                Resultant(cs.w[k], we, x0, xe, dP, dPx);
+                acc += dP;
+            }
+            n.push_back(load.GetBeamStress(p).Nx);
+            n_exp.push_back(fi.dot(ex) - acc);
+        }
+        bool finite = std::all_of(n.begin(), n.end(), [](double v) { return std::isfinite(v); });
+        Check(finite, cs.tag + " 段差の位置でも軸力が有限");
+        CheckClose(n, n_exp, 1e-12, cs.tag + " 軸力の分布");
+    }
+}
 } // namespace
 
 int main()
@@ -706,6 +770,7 @@ int main()
     TestRigidZoneLoad();
     TestCrossingLoadSuperposition();
     TestNodeLoadEquilibrium();
+    TestAxialLoadZeroSum();
 
     if (g_failed == 0)
         std::cout << "\nRESULT: PASS (all checks)" << std::endl;

@@ -361,7 +361,6 @@ private:
     // 全長を両端固定梁とみなした台形荷重(公開している R0 / M0 / bending_moment などはこれで計算する)
     std::vector<BeamTrapezoidalLoad> traps;
 
-#ifndef SWIG
     // 節点を固定したときの荷重の状態。ベクトルの並びは [v_i, θ_i, v_j, θ_j](θ = dv/dx)
     struct ReducedLoad {
         Eigen::Vector4d f_node; // 節点位置の等価節点力
@@ -373,7 +372,6 @@ private:
     // 要素の材端条件は荷重を作った後に変わりうるので、呼ぶたびに要素の現在の状態から計算する
     ReducedLoad reduce(const BeamBendingEnds &ends);
     NodeLoadData node_load(int end, const Eigen::Vector4d &f_node);
-#endif
 public:
     std::vector<double> w;
     std::vector<double> params;

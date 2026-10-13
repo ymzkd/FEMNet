@@ -170,6 +170,15 @@ void TestInvalidLineLoads(FEModel &model)
     line->direction = Vector::XAxis();
     line->node_i = nullptr;
     CheckRejected(save, "未設定節点の保存");
+
+    // 保存が拒否されたときは、既存のファイルを書き換えない(途中まで書いた状態で残さない)
+    auto valid = std::make_shared<LinePolyLoad>(
+        std::vector<double>{1, 2}, std::vector<double>{0, 1},
+        &model.Nodes[0], &model.Nodes[1], Vector::XAxis());
+    SaveLoads(path, {valid});
+    const std::string before = ReadFile(path);
+    CheckRejected([&] { SaveLoads(path, {valid, line}); }, "不正な荷重を含むリストの保存");
+    Check(ReadFile(path) == before, "保存が拒否されたとき既存のファイルが変わらない");
 }
 
 } // namespace

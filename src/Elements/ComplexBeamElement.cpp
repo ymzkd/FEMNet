@@ -691,15 +691,41 @@ Eigen::MatrixXd ComplexBeamElement::StiffnessMatrix()
     return tr.transpose() * k * tr;
 }
 
+BeamBendingEnds ComplexBeamElement::BendingEnds(BendingPlane plane)
+{
+	BeamBendingEnds ends;
+	if (plane == BendingPlane::XY)
+	{
+		ends.li = lzi;
+		ends.lj = lzj;
+		ends.lambda_si = Lambda_syi;
+		ends.lambda_bi = Lambda_bzi;
+		ends.lambda_sj = Lambda_syj;
+		ends.lambda_bj = Lambda_bzj;
+		ends.EI = Mat.Young * Sec->Iz;
+	}
+	else
+	{
+		ends.li = lyi;
+		ends.lj = lyj;
+		ends.lambda_si = Lambda_szi;
+		ends.lambda_bi = Lambda_byi;
+		ends.lambda_sj = Lambda_szj;
+		ends.lambda_bj = Lambda_byj;
+		ends.EI = Mat.Young * Sec->Iy;
+	}
+	ends.l_inner = length() - ends.li - ends.lj;
+	return ends;
+}
+
 Displacement ComplexBeamElement::DisplaceAt(Displacement d0, Displacement d1, double p)
 {
 	Eigen::VectorXd wvec(12);
 	wvec.segment(0, 6) = Eigen::Map<Eigen::VectorXd>(d0.displace, 6);
 	wvec.segment(6, 6) = Eigen::Map<Eigen::VectorXd>(d1.displace, 6);
 	
-	double p2 = p * p;
-	double p3 = p * p * p;
 	double l = length();
+	double x = p * l; // 節点iからの距離
 	double lz = l - lzi - lzj;
 	double ly = l - lyi - lyj;
 
@@ -707,31 +733,64 @@ Displacement ComplexBeamElement::DisplaceAt(Displacement d0, Displacement d1, do
 	wvec = T * wvec;
 
 	// z軸周り, y方向たわみ
-	Eigen::Vector4d vvec_ij(wvec(1), wvec(5), wvec(7), wvec(11));
-	Eigen::Matrix4d Tbz = Eigen::Matrix4d::Identity();
-	Tbz(0, 1) = lzi; Tbz(2, 3) = -lzj;
-	Eigen::Vector4d vvec_mq = Tbz * vvec_ij;
-	Eigen::Matrix4d Kbz = stiffness_matrix_beam_rot_z(Mat.Young, Sec->Iz, lz);
-	Kbz = compute_Displacement_TransformMatrix(Kbz, Lambda_syi, Lambda_bzi, Lambda_syj, Lambda_bzj);
-	Eigen::Vector4d vvec_np = Kbz * vvec_mq;
-	Eigen::Vector4d Nrz_v(1.0 - 3.0 * p2 + 2.0 * p3, p * lz - 2.0 * p2 * lz + p3 * lz, 3.0 * p2 - 2.0 * p3, -p2 * lz + p3 * lz);
-	Eigen::Vector4d Nrz_sz(-6.0 * p / lz + 6.0 * p2 / lz, 1.0 - 4.0 * p + 3.0 * p2, 6.0 * p / lz - 6.0 * p2 / lz, -2.0 * p + 3.0 * p2);
-	double v = Nrz_v.dot(vvec_np);
-	double sz = Nrz_sz.dot(vvec_np);
+	double v, sz;
+	if (x < lzi) // 剛域は節点と一体に動く
+	{
+		v = wvec(1) + wvec(5) * x;
+		sz = wvec(5);
+	}
+	else if (x > l - lzj)
+	{
+		v = wvec(7) + wvec(11) * (x - l);
+		sz = wvec(11);
+	}
+	else
+	{
+		double s = (x - lzi) / lz; // 内法区間での位置
+		double s2 = s * s;
+		double s3 = s2 * s;
+		Eigen::Vector4d vvec_ij(wvec(1), wvec(5), wvec(7), wvec(11));
+		Eigen::Matrix4d Tbz = Eigen::Matrix4d::Identity();
+		Tbz(0, 1) = lzi; Tbz(2, 3) = -lzj;
+		Eigen::Vector4d vvec_mq = Tbz * vvec_ij;
+		Eigen::Matrix4d Kbz = stiffness_matrix_beam_rot_z(Mat.Young, Sec->Iz, lz);
+		Kbz = compute_Displacement_TransformMatrix(Kbz, Lambda_syi, Lambda_bzi, Lambda_syj, Lambda_bzj);
+		Eigen::Vector4d vvec_np = Kbz * vvec_mq;
+		Eigen::Vector4d Nrz_v(1.0 - 3.0 * s2 + 2.0 * s3, s * lz - 2.0 * s2 * lz + s3 * lz, 3.0 * s2 - 2.0 * s3, -s2 * lz + s3 * lz);
+		Eigen::Vector4d Nrz_sz(-6.0 * s / lz + 6.0 * s2 / lz, 1.0 - 4.0 * s + 3.0 * s2, 6.0 * s / lz - 6.0 * s2 / lz, -2.0 * s + 3.0 * s2);
+		v = Nrz_v.dot(vvec_np);
+		sz = Nrz_sz.dot(vvec_np);
+	}
 
-	// y軸周り, z方向たわみ
-	Eigen::Vector4d wvec_ij(wvec(2), wvec(4), wvec(8), wvec(10));
-	Eigen::Matrix4d Tby = Eigen::Matrix4d::Identity();
-	Tby(0, 1) = -lyi; Tby(2, 3) = lyj;
-	Eigen::Vector4d wvec_mq = Tby * wvec_ij;
-	Eigen::Matrix4d Kby = stiffness_matrix_beam_rot_y(Mat.Young, Sec->Iy, ly);
-	Kby = compute_Displacement_TransformMatrix(Kby, Lambda_szi, Lambda_byi, Lambda_szj, Lambda_byj);
-	Eigen::Vector4d wvec_np = Kby * wvec_mq;
-	Eigen::Vector4d Nry_w(1.0 - 3.0 * p2 + 2.0 * p3, -p * ly + 2.0 * p2 * ly - p3 * ly, 3.0 * p2 - 2.0 * p3, p2 * ly - p3 * ly);
-	Eigen::Vector4d Nry_sy(6.0 * p / ly - 6.0 * p2 / ly, 1.0 - 4.0 * p + 3.0 * p2, -6.0 * p / ly + 6.0 * p2 / ly, -2.0 * p + 3.0 * p2);
-
-	double w = Nry_w.dot(wvec_np);
-	double sy = Nry_sy.dot(wvec_np);
+	// y軸周り, z方向たわみ (θy = -dw/dx)
+	double w, sy;
+	if (x < lyi)
+	{
+		w = wvec(2) - wvec(4) * x;
+		sy = wvec(4);
+	}
+	else if (x > l - lyj)
+	{
+		w = wvec(8) - wvec(10) * (x - l);
+		sy = wvec(10);
+	}
+	else
+	{
+		double s = (x - lyi) / ly;
+		double s2 = s * s;
+		double s3 = s2 * s;
+		Eigen::Vector4d wvec_ij(wvec(2), wvec(4), wvec(8), wvec(10));
+		Eigen::Matrix4d Tby = Eigen::Matrix4d::Identity();
+		Tby(0, 1) = -lyi; Tby(2, 3) = lyj;
+		Eigen::Vector4d wvec_mq = Tby * wvec_ij;
+		Eigen::Matrix4d Kby = stiffness_matrix_beam_rot_y(Mat.Young, Sec->Iy, ly);
+		Kby = compute_Displacement_TransformMatrix(Kby, Lambda_szi, Lambda_byi, Lambda_szj, Lambda_byj);
+		Eigen::Vector4d wvec_np = Kby * wvec_mq;
+		Eigen::Vector4d Nry_w(1.0 - 3.0 * s2 + 2.0 * s3, -s * ly + 2.0 * s2 * ly - s3 * ly, 3.0 * s2 - 2.0 * s3, s2 * ly - s3 * ly);
+		Eigen::Vector4d Nry_sy(6.0 * s / ly - 6.0 * s2 / ly, 1.0 - 4.0 * s + 3.0 * s2, -6.0 * s / ly + 6.0 * s2 / ly, -2.0 * s + 3.0 * s2);
+		w = Nry_w.dot(wvec_np);
+		sy = Nry_sy.dot(wvec_np);
+	}
 
 	// 軸方向, ねじり
 	double u = wvec(0) * (1.0 - p) + wvec(6) * p;

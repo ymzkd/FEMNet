@@ -210,11 +210,22 @@ std::vector<NodeLoadData> FEModel::InnertialForceToNodeLoads(const InertialForce
     //if (std::shared_ptr<InertialForce> inertial = std::dynamic_pointer_cast<InertialForce>(load)) {
     for (auto& e : Elements)
     {
+        // 梁は等分布の部材荷重にして、材端ばね・剛域を考慮した節点荷重にする
+        if (BeamElement* be = dynamic_cast<BeamElement*>(e.get()))
+        {
+            for (auto& bl : inertial_force.ToBeamLoads(be))
+            {
+                std::vector<NodeLoadData> nl = bl->NodeLoads();
+                node_loads.insert(node_loads.end(), nl.begin(), nl.end());
+            }
+            continue;
+        }
+
         std::vector<NodeLoadData> elem_loads =
             e->InertialForceToNodeLoadData(
                 Eigen::Vector3d(
-                    inertial_force.accels.x, 
-                    inertial_force.accels.y, 
+                    inertial_force.accels.x,
+                    inertial_force.accels.y,
                     inertial_force.accels.z));
         node_loads.insert(node_loads.end(), elem_loads.begin(), elem_loads.end());
     }
@@ -386,12 +397,7 @@ Eigen::VectorXd FEModel::AssembleLoadVector(const std::vector<std::shared_ptr<Lo
 
         std::vector<NodeLoadData> node_loads;
         if (std::shared_ptr<InertialForce> inertial = std::dynamic_pointer_cast<InertialForce>(load)) {
-            for (auto& e : Elements)
-            {
-                std::vector<NodeLoadData> elem_loads =
-                    e->InertialForceToNodeLoadData(Eigen::Vector3d(inertial->accels.x, inertial->accels.y, inertial->accels.z));
-                node_loads.insert(node_loads.end(), elem_loads.begin(), elem_loads.end());
-            }
+            node_loads = InnertialForceToNodeLoads(*inertial);
         }
         else {
             node_loads = load->NodeLoads();

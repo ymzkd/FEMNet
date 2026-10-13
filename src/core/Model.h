@@ -188,7 +188,7 @@ public:
     QuadPlateElement* GetQuadPlateElement(int id);
     TriPlateElement* GetTriPlateElement(int id);
 
-    // 慣性力を等価な節点荷重に変換
+    // 慣性力を等価な節点荷重に変換(梁は等分布の部材荷重として、材端ばね・剛域を考慮する)
     std::vector<NodeLoadData> InnertialForceToNodeLoads(
 		const InertialForce inertial_force);
 

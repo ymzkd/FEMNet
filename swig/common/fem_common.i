@@ -18,6 +18,7 @@
 // Load Pointer
 %shared_ptr(LoadBase);
 %shared_ptr(PlateLoad);
+%shared_ptr(LinePolyLoad);
 %shared_ptr(BeamPolyLoad);
 %shared_ptr(AxialPolyLoad);
 %shared_ptr(BeamLoadBase);
@@ -124,6 +125,8 @@
 // ===================================================================
 // STEP 3: Include LoadComponent.h (depends on Components.h and Elements)
 // ===================================================================
+// 慣性力の部材荷重化は解析内部(節点荷重の組立・梁の応力計算)でのみ使うため非公開
+%ignore InertialForce::ToBeamLoads;
 %include "LoadComponent.h"
 
 // ===================================================================

@@ -1,4 +1,51 @@
+#include <stdexcept>
+
 #include "BeamElement.h"
+
+void BeamBendingEnds::ReduceBeamLoad(const Eigen::Vector4d &f_b, Eigen::Vector4d &f_node, Eigen::Vector4d &u_b0) const
+{
+    if (l_inner <= 0)
+        throw std::runtime_error("BeamBendingEnds: Length excluding rigid zone is zero or less.");
+
+    // 内側の自由度の釣り合い (Kb + S) u_b0 = f_b を、u_b0 = (I - Λ) y と置いて
+    //   A y = f_b,  A = Kb (I - Λ) + D Λ
+    // の形で解く(S = DΛ(I - Λ)^-1、D = diag(Kb))。λ = 0 や 1 でも発散しない。
+    // 面に伝わる力は f_face = DΛy。単位をそろえるため、回転成分を内法長 l で無次元化して解く
+    // (Kb = EI/l^3 sc K sc、sc = diag(1, l, 1, l))。
+    const double l = l_inner;
+    Eigen::Matrix4d K;
+    K << 12, 6, -12, 6,
+        6, 4, -6, 2,
+        -12, -6, 12, -6,
+        6, 2, -6, 4;
+    const Eigen::Vector4d d(12, 4, 12, 4);
+    const Eigen::Vector4d lam(lambda_si, lambda_bi, lambda_sj, lambda_bj);
+    const Eigen::Vector4d sc(1, l, 1, l);
+
+    Eigen::Matrix4d A = K * (Eigen::Vector4d::Ones() - lam).asDiagonal();
+    A.diagonal() += d.cwiseProduct(lam);
+
+    Eigen::FullPivLU<Eigen::Matrix4d> lu(A);
+    if (!lu.isInvertible())
+        throw std::runtime_error("BeamBendingEnds: The inner beam is unstable due to released end springs.");
+    const Eigen::Vector4d y = lu.solve(f_b.cwiseQuotient(sc));
+
+    const Eigen::Vector4d f_face = sc.cwiseProduct(d.cwiseProduct(lam).cwiseProduct(y));
+    u_b0 = (l * l * l / EI) * (Eigen::Vector4d::Ones() - lam).cwiseProduct(y).cwiseQuotient(sc);
+
+    // 剛域を通して面の力を節点へ移す(Tb^T)
+    f_node = f_face;
+    f_node(1) += li * f_face(0);
+    f_node(3) -= lj * f_face(2);
+}
+
+BeamBendingEnds BeamElement::BendingEnds(BendingPlane plane)
+{
+    BeamBendingEnds ends;
+    ends.EI = Mat.Young * (plane == BendingPlane::XY ? Sec->Iz : Sec->Iy);
+    ends.l_inner = length();
+    return ends;
+}
 
 BeamElement::BeamElement(Node *n0, Node *n1, Section *sec, Material mat, double beta) : BeamElement()
 {

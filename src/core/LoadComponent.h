@@ -27,6 +27,8 @@ public:
     virtual std::shared_ptr<LoadBase> scaled(double factor) const = 0;
 };
 
+class BeamLoadBase;
+
 class InertialForce: public LoadBase {
 public:
 
@@ -45,6 +47,10 @@ public:
         return std::make_shared<InertialForce>(
             accels.x * factor, accels.y * factor, accels.z * factor);
     }
+
+    // 梁要素の慣性力 ρA·a を、局所座標の各軸方向の等分布の部材荷重にする。
+    // 部材荷重と同じく、材端ばね・剛域を考慮した節点荷重と、部材内の応力・たわみが求まる
+    std::vector<std::shared_ptr<BeamLoadBase>> ToBeamLoads(BeamElement* element) const;
 };
 
 enum class BodyForaceSelector : unsigned int {
@@ -113,6 +119,26 @@ public:
     }
 };
 
+
+// 2節点間の直線に作用する多角形分布荷重。要素への参照は持たない。
+// 並進変位を辺上で一次補間し、両端の節点力へ変換する(節点モーメントは0)。
+// 板の面外方向では、回転自由度を含む仕事等価荷重に対する近似となる。
+class LinePolyLoad : public LoadBase {
+public:
+    Node* node_i;
+    Node* node_j;
+    std::vector<double> w;      // 力/長さ。負値も許容する。
+    std::vector<double> params; // 始点0、終点1。非減少順で、同じ位置は荷重の段差を表す。
+    Vector direction;           // 全体座標系の方向。計算時に正規化する。
+
+    // 折れ点の範囲外は荷重0。wとparamsは同数で、2点以上を指定する。
+    // 節点はモデルと同じ寿命を持ち、節点コンテナの再配置後は参照を更新すること。
+    LinePolyLoad(const std::vector<double>& w, const std::vector<double>& params,
+                 Node* node_i, Node* node_j, const Vector& direction);
+
+    std::vector<NodeLoadData> NodeLoads() override;
+    std::shared_ptr<LoadBase> scaled(double factor) const override;
+};
 
 // 面荷重(WIP)
 class PlateLoad : public LoadBase {
@@ -328,10 +354,27 @@ public:
 };
 
 // 梁の多角形分布荷重
+// 材端ばね・剛域のある要素(ComplexBeamElement)では、剛域上の荷重を剛体として節点へ伝え、
+// 内法区間の荷重の固定端力を材端ばねで静的縮小して節点荷重にする。
 class BeamPolyLoad : public BeamLoadBase {
 private:
+    // 全長を両端固定梁とみなした台形荷重(公開している R0 / M0 / bending_moment などはこれで計算する)
     std::vector<BeamTrapezoidalLoad> traps;
+
+    // 節点を固定したときの荷重の状態。ベクトルの並びは [v_i, θ_i, v_j, θ_j](θ = dv/dx)
+    struct ReducedLoad {
+        Eigen::Vector4d f_node; // 節点位置の等価節点力
+        Eigen::Vector4d u_b0;   // 内側の梁の端の変位(材端ばねの変形)
+        std::vector<BeamTrapezoidalLoad> inner_traps; // 内法区間の荷重(内法長が基準)
+    };
+
+    BendingPlane plane() const;
+    // 要素の材端条件(剛域・材端ばね)は荷重を作った後に変わりうるので、呼ぶたびに要素から読み直す。
+    // 荷重の分布(w / params)と要素長は生成時に traps へ確定させる前提で、生成後の変更は想定しない
+    ReducedLoad reduce(const BeamBendingEnds &ends);
+    NodeLoadData node_load(int end, const Eigen::Vector4d &f_node);
 public:
+    // 生成後に書き換えても traps には反映されない。値を変えるときは荷重を作り直す(係数倍は scaled)
     std::vector<double> w;
     std::vector<double> params;
 
@@ -346,11 +389,14 @@ public:
 
         double length = element->length();
 
-        // double length 
+        // double length
         for (int i = 0; i < w.size() - 1; i++) {
             double L1 = params[i] * length;
             double L2 = params[i + 1] * length - L1;
             double L3 = length - L1 - L2;
+            // 長さ0の区間(段差)は荷重が無く、分布の式が0除算になるので除く
+            if (L2 <= 0)
+                continue;
             traps.push_back(BeamTrapezoidalLoad(w[i], w[i + 1], L1, L2, L3));
         }
     }
@@ -378,9 +424,7 @@ public:
     NodeLoadData load_j() override;
     BeamStressData GetBeamStress(double p) override;
     Displacement GetDisplacement(double p) override;
-    std::vector<NodeLoadData> NodeLoads() override {
-        return { load_i(), load_j() };
-    }
+    std::vector<NodeLoadData> NodeLoads() override;
 
     // コンストラクタ経由で再構築することで内部のtrapsにも係数を反映する
     std::shared_ptr<LoadBase> scaled(double factor) const override {
@@ -403,18 +447,19 @@ public:
         : w1(w1), w2(w2), L1(L1), L2(L2), L3(L3) {
     }
 
+    // 重心位置を経由すると w1 + w2 = 0 で 0/0 になるので、区間始点まわりのモーメントで計算する
     double n1() {
         double l = L1 + L2 + L3;
         double p = (w1 + w2) * L2 / 2.0;
-        double dg = (w1 + 2 * w2) / 3.0 / (w1 + w2) * L2;
-        return (L2 + L3 - dg) / l * p;
+        double pd = (w1 + 2 * w2) * L2 * L2 / 6.0;
+        return ((L2 + L3) * p - pd) / l;
     }
 
     double n2() {
         double l = L1 + L2 + L3;
         double p = (w1 + w2) * L2 / 2.0;
-        double dg = (w1 + 2 * w2) / 3.0 / (w1 + w2) * L2;
-        return -(L1 + dg) / l * p;
+        double pd = (w1 + 2 * w2) * L2 * L2 / 6.0;
+        return -(L1 * p + pd) / l;
     }
 
     double axial_force(double x) {
@@ -450,6 +495,9 @@ public:
             double L1 = params[i] * length;
             double L2 = params[i + 1] * length - L1;
             double L3 = length - L1 - L2;
+            // 長さ0の区間(段差)は荷重が無く、分布の式が0除算になるので除く
+            if (L2 <= 0)
+                continue;
             traps.push_back(AxialTrapezoidalLoad(w[i], w[i + 1], L1, L2, L3));
         }
     }

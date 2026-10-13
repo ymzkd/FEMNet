@@ -334,6 +334,17 @@ target_include_directories(loadio_test PUBLIC ${FEMNET_INCLUDE_DIRS})
 configure_mkl_target(loadio_test)
 configure_cuda_target(loadio_test)
 
+# === LinePolyLoad equivalent nodal load test ===
+add_executable(line_poly_load_test
+    tests/line_poly_load_test.cpp
+    ${FEMNET_SOURCES}
+    $<$<BOOL:${CUDA_FOUND}>:${CUDA_SOLVER_SOURCES}>
+)
+
+target_include_directories(line_poly_load_test PUBLIC ${FEMNET_INCLUDE_DIRS})
+configure_mkl_target(line_poly_load_test)
+configure_cuda_target(line_poly_load_test)
+
 # === Spring support test ===
 add_executable(spring_support_test
     tests/spring_support_test.cpp
@@ -343,6 +354,26 @@ add_executable(spring_support_test
 target_include_directories(spring_support_test PUBLIC ${FEMNET_INCLUDE_DIRS})
 configure_mkl_target(spring_support_test)
 configure_cuda_target(spring_support_test)
+
+# === ComplexBeamElement member load test ===
+add_executable(complex_beam_load_test
+    tests/complex_beam_load_test.cpp
+    ${FEMNET_SOURCES}
+    $<$<BOOL:${CUDA_FOUND}>:${CUDA_SOLVER_SOURCES}>
+)
+target_include_directories(complex_beam_load_test PUBLIC ${FEMNET_INCLUDE_DIRS})
+configure_mkl_target(complex_beam_load_test)
+configure_cuda_target(complex_beam_load_test)
+
+# === InertialForce on beam elements test ===
+add_executable(inertial_force_test
+    tests/inertial_force_test.cpp
+    ${FEMNET_SOURCES}
+    $<$<BOOL:${CUDA_FOUND}>:${CUDA_SOLVER_SOURCES}>
+)
+target_include_directories(inertial_force_test PUBLIC ${FEMNET_INCLUDE_DIRS})
+configure_mkl_target(inertial_force_test)
+configure_cuda_target(inertial_force_test)
 
 # === DynamicAnalysis::Rewind test ===
 add_executable(rewind_test

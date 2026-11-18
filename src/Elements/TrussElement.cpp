@@ -142,7 +142,8 @@ Eigen::MatrixXd TrussElement::NodeConsistentMass()
         0, 1, 0, 0, 2, 0,
         0, 0, 1, 0, 0, 2;
 
-    m *= (Sec->A * Mat.dense / 6.0);
+    // 線形の棒要素の整合質量: ρAL/6 · [[2,1],[1,2]] (各並進成分)
+    m *= (Sec->A * length() * Mat.dense / 6.0);
     return m;
 }
 

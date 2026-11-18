@@ -279,6 +279,73 @@ void TestNodeLoadsMatchConsistentMass()
 }
 
 // ---------------------------------------------------------------------------
+// 1b) 要素ごとの慣性力の合力 = 要素の全質量 × 加速度
+//     全質量は ρAL(棒)・ρtA(板) の閉形式と、集中質量(NodeLumpedMass)の和の両方で照合する。
+//     (整合質量 × 加速度どうしの比較では、質量行列そのものの誤りを検出できないため)
+void TestResultantMatchesTotalMass()
+{
+    std::cout << "[1b] 要素ごとの慣性力の合力と、全質量 × 加速度の一致" << std::endl;
+    auto m = BuildFrame(false);
+    for (const AccelCase &a : Accels)
+    {
+        const Eigen::Vector3d acc(a.ax, a.ay, a.az);
+        Eigen::Vector3d total(0, 0, 0);
+        double total_mass = 0.0;
+        for (auto &ep : m->Elements)
+        {
+            double closed = 0.0;
+            std::string kind;
+            if (TrussElement *e = dynamic_cast<TrussElement *>(ep.get()))
+            {
+                closed = e->Sec->A * e->length() * e->Mat.dense;
+                kind = "トラス";
+            }
+            else if (BeamElement *e = dynamic_cast<BeamElement *>(ep.get()))
+            {
+                closed = e->Sec->A * e->length() * e->Mat.dense;
+                kind = "梁";
+            }
+            else if (TriPlateElement *e = dynamic_cast<TriPlateElement *>(ep.get()))
+            {
+                closed = e->Area() * e->thickness.WeightThickness() * e->Mat.dense;
+                kind = "三角形板";
+            }
+            else
+                continue;
+
+            Eigen::Vector3d f(0, 0, 0);
+            if (BeamElement *be = dynamic_cast<BeamElement *>(ep.get()))
+            {
+                // 梁は FEModel と同じく等分布の部材荷重を経由する
+                for (auto &bl : InertialForce(a.ax, a.ay, a.az).ToBeamLoads(be))
+                    for (NodeLoadData &nl : bl->NodeLoads())
+                        f += Eigen::Vector3d(nl.Px(), nl.Py(), nl.Pz());
+            }
+            else
+            {
+                for (NodeLoadData &nl : ep->InertialForceToNodeLoadData(acc))
+                    f += Eigen::Vector3d(nl.Px(), nl.Py(), nl.Pz());
+            }
+            const std::string what = a.name + " " + kind + " id=" + std::to_string(ep->id);
+            CheckClose({f.x(), f.y(), f.z()}, {closed * acc.x(), closed * acc.y(), closed * acc.z()},
+                       1e-12, what + " 合力 = 閉形式の質量 × 加速度");
+            CheckNear(ep->NodeLumpedMass().sum(), closed, 1e-12, what + " 集中質量の和 = 閉形式の質量");
+            total += f;
+            total_mass += closed;
+        }
+
+        // モデル全体(FEModel::InnertialForceToNodeLoads)の合力
+        std::vector<double> fa = SumByNode(m->InnertialForceToNodeLoads(InertialForce(a.ax, a.ay, a.az)), m->Nodes.size());
+        Eigen::Vector3d sum(0, 0, 0);
+        for (size_t n = 0; n < m->Nodes.size(); n++)
+            sum += Eigen::Vector3d(fa[6 * n + 0], fa[6 * n + 1], fa[6 * n + 2]);
+        CheckClose({sum.x(), sum.y(), sum.z()},
+                   {total_mass * acc.x(), total_mass * acc.y(), total_mass * acc.z()},
+                   1e-12, a.name + " モデル全体の合力 = 全質量 × 加速度");
+    }
+}
+
+// ---------------------------------------------------------------------------
 // 2) 慣性力と、等分布の部材荷重にしたものとの一致
 void TestEquivalentMemberLoads()
 {
@@ -553,6 +620,7 @@ int main(int argc, char **argv)
     std::cout << std::setprecision(15);
     std::cout << "InertialForce on beam elements test" << std::endl;
     TestNodeLoadsMatchConsistentMass();
+    TestResultantMatchesTotalMass();
     TestEquivalentMemberLoads();
     TestFixedBeamClosedForm();
     TestComplexBeamClosedForm();

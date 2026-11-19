@@ -346,6 +346,36 @@ void TestResultantMatchesTotalMass()
 }
 
 // ---------------------------------------------------------------------------
+// 1c) 四角形要素の面積と集中質量
+//     平行四辺形でない平面の四角形: Area() = 靴紐公式の面積
+//     ねじれた四角形: 集中質量の和 = 整合質量による慣性力の合力 / |a| (局所平面への投影面積)
+void TestQuadArea()
+{
+    std::cout << "[1c] 四角形要素の面積と集中質量" << std::endl;
+    Material mat(E, 0.3, Rho);
+    const double t = 150.0;
+
+    // 平面(z=0)・平行四辺形でない四角形。靴紐公式の面積 = 3.72e6
+    Node p0(0, 0, 0, 0), p1(1, 2000, 0, 0), p2(2, 2300, 1500, 0), p3(3, -200, 1800, 0);
+    const double planar = 0.5 * ((2000.0 * 1500 - 2300.0 * 0) + (2300.0 * 1800 - (-200.0) * 1500));
+    QuadPlateElement qpt(0, &p0, &p1, &p2, &p3, t, mat);
+    QuadPlaneElement qpl(1, &p0, &p1, &p2, &p3, t, mat);
+    CheckNear(qpt.Area(), planar, 1e-12, "QuadPlate 平面の四角形の Area()");
+    CheckNear(qpl.Area(), planar, 1e-12, "QuadPlane 平面の四角形の Area()");
+    CheckNear(qpt.NodeLumpedMass().sum(), Rho * t * planar, 1e-12, "QuadPlate 平面の四角形の集中質量の和");
+
+    // ねじれた四角形
+    Node w0(4, 0, 0, 0), w1(5, 2000, 0, 300), w2(6, 2300, 1500, -200), w3(7, -200, 1800, 400);
+    QuadPlateElement qw(2, &w0, &w1, &w2, &w3, t, mat);
+    const Eigen::Vector3d acc(1000.0, -2000.0, -G);
+    Eigen::Vector3d f(0, 0, 0);
+    for (NodeLoadData &nl : qw.InertialForceToNodeLoadData(acc))
+        f += Eigen::Vector3d(nl.Px(), nl.Py(), nl.Pz());
+    CheckNear(qw.NodeLumpedMass().sum(), f.norm() / acc.norm(), 1e-12,
+              "QuadPlate ねじれた四角形の集中質量の和 = 整合質量の合力 / |a|");
+}
+
+// ---------------------------------------------------------------------------
 // 2) 慣性力と、等分布の部材荷重にしたものとの一致
 void TestEquivalentMemberLoads()
 {
@@ -621,6 +651,7 @@ int main(int argc, char **argv)
     std::cout << "InertialForce on beam elements test" << std::endl;
     TestNodeLoadsMatchConsistentMass();
     TestResultantMatchesTotalMass();
+    TestQuadArea();
     TestEquivalentMemberLoads();
     TestFixedBeamClosedForm();
     TestComplexBeamClosedForm();

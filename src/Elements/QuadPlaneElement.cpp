@@ -303,14 +303,13 @@ std::vector<NodeLoadData> QuadPlaneElement::AreaForceToNodeLoadData(std::vector<
 
 double QuadPlaneElement::Area()
 {
-    Vector v01 = Nodes[1]->Location - Nodes[0]->Location;
-    Vector v03 = Nodes[3]->Location - Nodes[0]->Location;
-    Vector vn13 = Vector::cross(v01, v03);
-
-    Vector v23 = Nodes[3]->Location - Nodes[2]->Location;
-    Vector v21 = Nodes[1]->Location - Nodes[2]->Location;
-    Vector vn31 = Vector::cross(v01, v03);
-    return (vn13.norm() + vn31.norm()) / 2;
+    // 対角線の外積の半分 = 四角形のベクトル面積。
+    // 平面の四角形では面積そのもの。ねじれた四角形では、要素の局所平面
+    // (辺の中点から作る平面。法線は対角線の外積の向き)に投影した面積となり、
+    // 剛性・整合質量の積分(∫detJ)と一致する。
+    Vector d02 = Nodes[2]->Location - Nodes[0]->Location;
+    Vector d13 = Nodes[3]->Location - Nodes[1]->Location;
+    return Vector::cross(d02, d13).norm() / 2;
 }
 
 Eigen::MatrixXd QuadPlaneElement::StiffnessMatrix()
